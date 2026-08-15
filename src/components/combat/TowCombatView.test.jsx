@@ -140,6 +140,7 @@ describe("compact combat HUD", () => {
 
   it("shows active statuses as tappable icon art with persistent mechanical details", async () => {
     const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const enemyId = base.enemyIds[0];
     const sequence = base.sequence + 1;
     const next = {
       ...base,
@@ -152,6 +153,10 @@ describe("compact combat HUD", () => {
             { type: "initiative", count: 37 },
             { type: "burn", count: 4 },
           ],
+        },
+        [enemyId]: {
+          ...base.actors[enemyId],
+          statuses: [{ type: "initiative", count: 45 }],
         },
       },
       events: [
@@ -193,6 +198,12 @@ describe("compact combat HUD", () => {
 
     await act(async () => initiative.click());
     expect(mounted.querySelector("[data-testid='tow-status-details']")).toBeNull();
+
+    const enemyInitiative = mounted.querySelector(".tow-combat__plate--enemy .tow-combat__status-button");
+    await act(async () => enemyInitiative.click());
+    const enemyDetail = mounted.querySelector("[data-testid='tow-status-details']");
+    expect(enemyDetail.classList.contains("tow-combat__status-details--intent-safe")).toBe(true);
+    expect(mounted.querySelector("[data-testid='tow-enemy-intent']")).toBeTruthy();
   });
 
   it("moves readable receipts behind the compact combat-log icon", async () => {

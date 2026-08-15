@@ -10,7 +10,6 @@ import { ABILITY_CATALOG } from "../../data/abilities.js";
 import { CONDITIONS } from "../../data/conditions.js";
 import {
   getStatusDefinition,
-  hasProvisionalControlLifecycle,
   PROVISIONAL_CONTROL_LIFECYCLE,
   statusTypes,
 } from "../kernel/status-stack.js";
@@ -105,36 +104,23 @@ describe("the matrix stays honest about what it does not cover", () => {
     }
   });
 
-  it("keeps uncaptured status lifecycles visible rather than silently defaulted", () => {
-    const gaps = gapLifecycleStatusTypes();
-    expect(gaps.length).toBeGreaterThan(0);
-    for (const type of gaps) {
-      if (hasProvisionalControlLifecycle(type)) continue;
-      const definition = getStatusDefinition(type);
-      // A gap status must sit inert rather than pretend to a lifecycle it has no evidence for.
-      expect(definition.permanent).toBe(false);
-      expect(definition.removeAtEndOfTurn).toBe(false);
-      expect(definition.decreaseAtEndOfTurn).toBe(false);
-      expect(definition.decreaseWhenHit).toBe(false);
-    }
+  it("covers every status lifecycle in the shipped source table", () => {
+    expect(gapLifecycleStatusTypes()).toEqual([]);
   });
 
   it("consumes control only when it actually forfeits a command window", () => {
-    // Inert-by-default is the right rule and it stays the rule. Sleep, Paralyze and Stun are
-    // the documented exception: a control status that never expires is not an unknown
-    // lifecycle, it is a decided fight. Under permanence, Mortal Blow paralyses its own user
-    // for the rest of the fight and Sleep Grenade removes a foe from it — absurd in opposite
-    // directions, which is decent evidence that neither is meant. Listing the departure here
-    // keeps it a reviewed decision rather than drift.
-    expect(PROVISIONAL_CONTROL_LIFECYCLE.types).toEqual(["paralyze", "sleep", "stun"]);
-    expect(PROVISIONAL_CONTROL_LIFECYCLE.evidence).toBe("gap");
+    // The source activates all four control families on TrySkill and decays them PerTurn.
+    // Consuming one Count in the command it nullifies is the same holder-turn outcome while
+    // preserving newly inflicted control until that holder actually receives a command.
+    expect(PROVISIONAL_CONTROL_LIFECYCLE.types).toEqual(["paralyze", "sleep", "stun", "confuse"]);
+    expect(PROVISIONAL_CONTROL_LIFECYCLE.evidence).toBe("shipped-1.4.16");
     expect(PROVISIONAL_CONTROL_LIFECYCLE.consumeWhenCommandNullified).toBe(true);
     expect(PROVISIONAL_CONTROL_LIFECYCLE.decreaseAtEndOfTurn).toBe(false);
     for (const type of PROVISIONAL_CONTROL_LIFECYCLE.types) {
       const definition = getStatusDefinition(type);
       expect(definition.decreaseAtEndOfTurn).toBe(false);
       expect(definition.permanent).toBe(false);
-      expect(definition.lifecycleEvidence).toBe("gap");
+      expect(definition.lifecycleEvidence).toBe("shipped-1.4.16");
     }
   });
 

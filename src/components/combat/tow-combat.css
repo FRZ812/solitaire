@@ -1240,6 +1240,14 @@
     calc(var(--tow-effect-delay, 0ms) + var(--tow-signature-delay, 0ms)) both;
 }
 
+.tow-combat__effect[data-vfx-source="ability"] .tow-combat__effect-asset {
+  inset: 2%;
+  width: 96%;
+  height: 96%;
+  object-fit: cover;
+  clip-path: circle(46% at 50% 50%);
+}
+
 .tow-combat__effect-outcome {
   z-index: 2;
   inset: -1%;
@@ -2404,6 +2412,11 @@
     gap: 0.52rem;
     width: min(22rem, calc(100vw - 1.4rem));
     padding: 0.54rem;
+  }
+  .tow-combat__status-details--intent-safe {
+    right: 5.35rem;
+    left: auto;
+    width: min(20rem, calc(100vw - 6.45rem));
   }
   .tow-combat__status-details-art { width: 3.25rem; }
   .tow-combat__status-details-copy > strong { font-size: 1.08rem; }

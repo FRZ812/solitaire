@@ -11,6 +11,14 @@ import pierceAsset from "../../assets/generated/winter-tower/vfx/pierce-v1.png";
 import slashAsset from "../../assets/generated/winter-tower/vfx/slash-v1.png";
 import wardAsset from "../../assets/generated/winter-tower/vfx/ward-v1.png";
 import windAsset from "../../assets/generated/winter-tower/vfx/wind-v1.png";
+import assassinExecutionVfx from "../../assets/generated/winter-tower/vfx/abilities/assassin-execution-vfx-v1.png";
+import assassinStormOfKnivesVfx from "../../assets/generated/winter-tower/vfx/abilities/assassin-storm-of-knives-vfx-v1.png";
+import witchBoneShieldIcon from "../../assets/generated/winter-tower/abilities/witch-bone-shield-v1.webp";
+import witchForbiddenRitualIcon from "../../assets/generated/winter-tower/abilities/witch-forbidden-ritual-v1.webp";
+import witchHellfireSpiritIcon from "../../assets/generated/winter-tower/abilities/witch-hellfire-spirit-v1.webp";
+import witchLimitedLifeSentenceIcon from "../../assets/generated/winter-tower/abilities/witch-limited-life-sentence-v1.webp";
+import witchMirrorImageIcon from "../../assets/generated/winter-tower/abilities/witch-mirror-image-v1.webp";
+import witchVoidMonsterIcon from "../../assets/generated/winter-tower/abilities/witch-void-monster-v1.webp";
 
 import statusAfflictions from "../../assets/generated/winter-tower/status/afflictions-v1.png";
 import statusAttackModifiers from "../../assets/generated/winter-tower/status/attack-modifiers-v1.png";
@@ -40,6 +48,11 @@ export const COMBAT_VFX_ASSETS = Object.freeze({
   slash: slashAsset,
   ward: wardAsset,
   wind: windAsset,
+});
+
+const DEDICATED_ABILITY_VFX_ASSETS = Object.freeze({
+  "assassin-execution": assassinExecutionVfx,
+  "assassin-storm-of-knives": assassinStormOfKnivesVfx,
 });
 
 export const STATUS_ICON_ASSETS = Object.freeze({
@@ -83,9 +96,16 @@ function visualProfile(variant) {
 }
 
 function withAsset(spec, signatureAsset = null) {
+  const dedicatedAsset = DEDICATED_ABILITY_VFX_ASSETS[spec.variant] || null;
   return Object.freeze({
     ...spec,
-    asset: COMBAT_VFX_ASSETS[spec.family] || COMBAT_VFX_ASSETS.impact,
+    // A declared ability owns its foreground effect. Family decals remain fallbacks for
+    // anonymous attacks and statuses, never the shared face of two authored abilities.
+    asset: dedicatedAsset
+      || signatureAsset
+      || COMBAT_VFX_ASSETS[spec.family]
+      || COMBAT_VFX_ASSETS.impact,
+    assetSource: dedicatedAsset ? "dedicated" : signatureAsset ? "ability" : "family",
     signatureAsset,
     profile: visualProfile(spec.variant),
   });
@@ -193,10 +213,22 @@ const SKILL_EFFECTS = Object.freeze({
   "assassin-execution": effect("gash", "assassin-execution", "execution"),
   "assassin-storm-of-knives": effect("gash", "assassin-storm-of-knives", "volley"),
   "witch-skull-throw": effect("arcane", "witch-skull-throw", "projectile"),
+  "witch-vampiric-touch": effect("gash", "witch-vampiric-touch", "siphon"),
   "witch-bone-shield": effect("ward", "witch-bone-shield", "fortress"),
   "witch-skeleton-summon": effect("arcane", "witch-skeleton-summon", "summon"),
   "witch-all-out-attack": effect("gash", "witch-all-out-attack", "barrage"),
   "witch-mirror-image": effect("evade", "witch-mirror-image", "afterimage"),
+  "witch-demons-sigil": effect("evade", "witch-demons-sigil", "sigil"),
+  "witch-battering-ram": effect("impact", "witch-battering-ram", "quake"),
+  "witch-void-monster": effect("arcane", "witch-void-monster", "summon"),
+  "witch-nullification": effect("arcane", "witch-nullification", "snap"),
+  "witch-reapers-scythe": effect("gash", "witch-reapers-scythe", "execution"),
+  "witch-proliferation": effect("arcane", "witch-proliferation", "summon"),
+  "witch-forbidden-ritual": effect("arcane", "witch-forbidden-ritual", "void"),
+  "witch-gate-underworld": effect("arcane", "witch-gate-underworld", "summon"),
+  "witch-hellfire-spirit": effect("fire", "witch-hellfire-spirit", "summon"),
+  "witch-bone-sphere": effect("impact", "witch-bone-sphere", "projectile"),
+  "witch-limited-life-sentence": effect("afflict", "witch-limited-life-sentence", "fate"),
   "mage-magic-arrow": effect("arcane", "mage-magic-arrow", "bolt"),
   "mage-barrier": effect("ward", "mage-barrier", "fortress"),
   "mage-flame-storm": effect("fire", "mage-flame-storm", "inferno"),
@@ -265,28 +297,46 @@ const STATUS_EFFECTS = Object.freeze({
   "bleed-atk": effect("gash", "status-bleed-atk", "bleed"),
   berserk: effect("fire", "status-berserk", "aura"),
   burn: effect("fire", "status-burn", "brand"),
+  "bone-shield": effect("ward", "status-bone-shield", "fortress"),
   charge: effect("lightning", "status-charge", "charge"),
   conceal: effect("evade", "status-conceal", "afterimage"),
+  composure: effect("ward", "status-composure", "aura"),
+  confuse: effect("afflict", "status-confuse", "snap"),
+  confusion: effect("afflict", "status-confusion", "snap"),
+  consecration: effect("ward", "status-consecration", "radiant"),
+  "counter-attack": effect("impact", "status-counter-attack", "counter"),
   cripple: effect("afflict", "status-cripple", "bind"),
+  "death-claw": effect("gash", "status-death-claw", "execution"),
   doom: effect("afflict", "status-doom", "void"),
   "doom-atk": effect("afflict", "status-doom-atk", "void"),
   evade: effect("evade", "status-evade", "afterimage"),
   eviscerate: effect("gash", "status-eviscerate", "execution"),
   focus: effect("arcane", "status-focus", "aura"),
+  fortified: effect("ward", "status-fortified", "fortress"),
   guard: effect("ward", "status-guard", "brace"),
   grow: effect("heal", "status-grow", "aura"),
   haste: effect("lightning", "status-haste", "rapid"),
   invincible: effect("ward", "status-invincible", "fortress"),
+  immortality: effect("arcane", "status-immortality", "ascend"),
+  "forbidden-ritual": effect("arcane", "status-forbidden-ritual", "void"),
+  "hellfire-spirit": effect("fire", "status-hellfire-spirit", "summon"),
   lethargy: effect("afflict", "status-lethargy", "bind"),
   "lethargy-atk": effect("afflict", "status-lethargy-atk", "bind"),
   lifesteal: effect("gash", "status-lifesteal", "siphon"),
+  injured: effect("gash", "status-injured", "break"),
   misfortune: effect("afflict", "status-misfortune", "fate"),
+  "mirror-image": effect("evade", "status-mirror-image", "afterimage"),
   overload: effect("lightning", "status-overload", "charge"),
+  parry: effect("ward", "status-parry", "counter"),
   paralyze: effect("lightning", "status-paralyze", "snap"),
   poison: effect("afflict", "status-poison", "smoke"),
   "poison-atk": effect("afflict", "status-poison-atk", "smoke"),
   priority: effect("arcane", "status-priority", "aura"),
+  predator: effect("gash", "status-predator", "siphon"),
+  persist: effect("ward", "status-persist", "unyielding"),
   protection: effect("ward", "status-protection", "brace"),
+  rage: effect("fire", "status-rage", "aura"),
+  restraint: effect("afflict", "status-restraint", "bind"),
   sharpen: effect("slash", "status-sharpen", "aura"),
   sleep: effect("afflict", "status-sleep", "smoke"),
   solidity: effect("ward", "status-solidity", "brace"),
@@ -301,9 +351,38 @@ const STATUS_EFFECTS = Object.freeze({
   initiative: effect("evade", "status-initiative", "rapid"),
   "initiative-atk": effect("evade", "status-initiative-atk", "rapid"),
   judgment: effect("lightning", "status-judgment", "radiant"),
+  "fatal-blade": effect("slash", "status-fatal-blade", "execution"),
+  "foul-ceremony": effect("arcane", "status-foul-ceremony", "void"),
   limp: effect("afflict", "status-limp", "bind"),
   skeleton: effect("arcane", "status-skeleton", "summon"),
+  "wind-blade": effect("wind", "status-wind-blade", "projectile"),
+  "limited-life-sentence": effect("afflict", "status-limited-life-sentence", "fate"),
+  "void-monster": effect("arcane", "status-void-monster", "summon"),
   vulnerable: effect("afflict", "status-vulnerable", "bind"),
+});
+
+const STATUS_SOURCE_SKILLS = Object.freeze({
+  "foul-ceremony": "automaton-emergency-fuel",
+  "forbidden-ritual": "witch-forbidden-ritual",
+  "hellfire-spirit": "witch-hellfire-spirit",
+  "limited-life-sentence": "witch-limited-life-sentence",
+  "void-monster": "witch-void-monster",
+});
+
+const STATUS_ICON_SHEETS_BY_FAMILY = Object.freeze({
+  afflict: statusDebilitation,
+  arcane: statusResources,
+  evade: statusTempo,
+  fire: statusOffense,
+  frost: statusResolve,
+  gash: statusAfflictions,
+  heal: statusSustain,
+  impact: statusControl,
+  lightning: statusResources,
+  pierce: statusAttackModifiers,
+  slash: statusSummonExecution,
+  ward: statusDefense,
+  wind: statusTempo,
 });
 
 function icon(asset, column, row) {
@@ -311,6 +390,25 @@ function icon(asset, column, row) {
     iconAsset: asset,
     iconPosition: `${column * 100}% ${row * 100}%`,
     iconSize: "200% 200%",
+  });
+}
+
+function fullIcon(asset) {
+  return Object.freeze({
+    iconAsset: asset,
+    iconPosition: "0% 0%",
+    iconSize: "100% 100%",
+  });
+}
+
+function fallbackStatusIcon(status, spec) {
+  const hash = visualHash(status);
+  const x = (10 + ((hash % 8191) / 8191) * 80).toFixed(3);
+  const y = (10 + (((hash >>> 13) % 8191) / 8191) * 80).toFixed(3);
+  return Object.freeze({
+    iconAsset: STATUS_ICON_SHEETS_BY_FAMILY[spec.family] || statusAfflictions,
+    iconPosition: `${x}% ${y}%`,
+    iconSize: "225% 225%",
   });
 }
 
@@ -358,6 +456,12 @@ const STATUS_ICONS = Object.freeze({
   skeleton: icon(statusSummonExecution, 0, 0),
   eviscerate: icon(statusSummonExecution, 1, 0),
   "initiative-atk": icon(statusSummonExecution, 0, 1),
+  "bone-shield": fullIcon(witchBoneShieldIcon),
+  "mirror-image": fullIcon(witchMirrorImageIcon),
+  "void-monster": fullIcon(witchVoidMonsterIcon),
+  "hellfire-spirit": fullIcon(witchHellfireSpiritIcon),
+  "limited-life-sentence": fullIcon(witchLimitedLifeSentenceIcon),
+  "forbidden-ritual": fullIcon(witchForbiddenRitualIcon),
 });
 
 function slug(value, fallback = "unknown") {
@@ -381,12 +485,15 @@ function inferredSkillEffect(skillId) {
   const definition = safeSkill(skillId);
   if (!definition) return null;
   const effects = definition.effects || [];
-  const statusEffect = effects.find((entry) => entry.type === "status" || entry.type === "scaled-status");
-  const damageEffect = effects.find((entry) => entry.type === "damage" || entry.type === "lost-health-damage");
+  const statusEffect = effects.find((entry) => (
+    ["modify-status", "scale-status", "scaled-status", "status", "status-from-status"].includes(entry.type)
+  ));
+  const statusType = statusEffect?.status || statusEffect?.statuses?.[0] || statusEffect?.factorStatus;
+  const damageEffect = effects.find((entry) => entry.type === "damage" || entry.type.startsWith("damage-"));
   const hasShield = effects.some((entry) => entry.type === "shield");
-  const hasHeal = effects.some((entry) => entry.type === "heal" || entry.type === "heal-lost-fraction" || entry.type === "reduce-statuses");
-  const statusVisual = statusEffect && STATUS_EFFECTS[statusEffect.status];
-  const identity = `${skillId} ${definition.name || ""} ${statusEffect?.status || ""}`;
+  const hasHeal = effects.some((entry) => entry.type.startsWith("heal") || entry.type === "reduce-statuses");
+  const statusVisual = statusType && STATUS_EFFECTS[statusType];
+  const identity = `${skillId} ${definition.name || ""} ${statusType || ""}`;
 
   let family = statusVisual?.family || familyFromText(identity);
   if (hasShield && !damageEffect) family = "ward";
@@ -442,7 +549,7 @@ export function combatVfxForIntent(intent) {
 
 export function combatVfxForStatus(status) {
   const spec = STATUS_EFFECTS[status] || effect("afflict", `status-${slug(status, "unknown")}`, "balanced");
-  const iconVisual = STATUS_ICONS[status] || STATUS_ICONS.doom;
+  const iconVisual = STATUS_ICONS[status] || fallbackStatusIcon(status, spec);
   return Object.freeze({ ...withAsset(spec), ...iconVisual });
 }
 
@@ -469,8 +576,19 @@ export function combatVfxForEvent(encounter, event) {
   }
 
   if (event.type === "tick-damage") {
-    const type = event.burn > 0 ? "burn" : event.doom > 0 ? "doom" : event.poison > 0 ? "poison" : event.bleed > 0 ? "bleed" : "misfortune";
-    return combatVfxForStatus(type);
+    const type = event.forbiddenRitual ? "forbidden-ritual"
+      : event.delayedDamage > 0 ? event.delayedStatuses?.[0] || "limited-life-sentence"
+        : event.hellfireSpirit > 0 ? "hellfire-spirit"
+          : event.voidMonster > 0 ? "void-monster"
+            : event.burn > 0 ? "burn"
+              : event.doom > 0 ? "doom"
+                : event.poison > 0 ? "poison"
+                  : event.bleed > 0 ? "bleed"
+                    : "misfortune";
+    const sourceSkillId = event.delayedSkillIds?.[0] || STATUS_SOURCE_SKILLS[type];
+    return sourceSkillId
+      ? withAsset(STATUS_EFFECTS[type], signatureForSkill(sourceSkillId))
+      : combatVfxForStatus(type);
   }
 
   const skillVariant = event.skillId && skillEffectFor(event.skillId);
@@ -492,8 +610,14 @@ export function combatVfxForEvent(encounter, event) {
       statusVariant.motion,
     ), signature);
   }
-  if (event.type === "skill-status-amplified") {
-    return withAsset(effect("afflict", `${slug(event.skillId, "skill")}-amplified`, "void"), signature);
+  if (["skill-status-amplified", "skill-status-scaled", "skill-status-modified"].includes(event.type)) {
+    const status = event.status || event.statuses?.[0];
+    const statusVariant = STATUS_EFFECTS[status];
+    return withAsset(effect(
+      statusVariant?.family || "afflict",
+      `${slug(event.skillId, "skill")}-${slug(status, "status")}-${slug(event.type)}`,
+      statusVariant?.motion || "void",
+    ), signature);
   }
 
   const formId = event.skillId === "strike" ? activeFormId(encounter, event) : null;

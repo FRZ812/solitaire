@@ -125,6 +125,29 @@ describe("opening a practice fight", () => {
       .toEqual(receipt.build.skills);
   });
 
+  it("starts every selected ability at its bounded practice rank and fingerprints the choice", () => {
+    const compiled = compileCharacterBootstrap({
+      archetypeId: "last-assassin",
+      origin: "archetype",
+    });
+    const receipt = compiled.receipt;
+    const skillRanks = [3, 2, 2, 2, 4];
+    const ranked = createPracticeSession(receipt, "training-yard", 0, { skillRanks });
+    const again = createPracticeSession(receipt, "training-yard", 0, { skillRanks });
+    const defaultRank = createPracticeSession(receipt, "training-yard", 0);
+
+    expect(ranked.ok).toBe(true);
+    expect(ranked.session.encounter.build.skills.map((entry) => entry.rank)).toEqual(skillRanks);
+    expect(ranked.seed).toBe(again.seed);
+    expect(ranked.genesisChecksum).toBe(again.genesisChecksum);
+    expect(ranked.seed).not.toBe(defaultRank.seed);
+    expect(draftHash(receipt, skillRanks)).not.toBe(draftHash(receipt));
+
+    expect(createPracticeSession(receipt, "training-yard", 0, {
+      skillRanks: [7, 1, 1, 1, 1],
+    })).toMatchObject({ ok: false, reason: "invalid-practice-skill-ranks" });
+  });
+
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {
     for (const scenario of PRACTICE_SCENARIOS) {
       const encounter = createPracticeSession(receiptFor("fighter"), scenario.id).session.encounter;

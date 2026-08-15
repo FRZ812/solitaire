@@ -31,9 +31,7 @@ function actor(overrides = {}) {
 const seed = () => createRng("tow-damage-test");
 
 describe("multi-hit resolution", () => {
-  it("applies Steelskin to each individual hit, spending a point per hit", () => {
-    // This is the whole reason an attack cannot be one damage number: a 3-hit swing
-    // meets a *different* Steelskin value each time.
+  it("applies permanent Steelskin to every individual hit", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk", side: "enemy" }),
       defender: actor({ id: "def", side: "player", hp: 100, maxHp: 100, statuses: statuses(["steelskin", 4]) }),
@@ -41,9 +39,9 @@ describe("multi-hit resolution", () => {
       rng: seed(),
     });
 
-    expect(result.hits.map((hit) => hit.damage)).toEqual([6, 7, 8]);
-    expect(result.defender.hp).toBe(100 - 21);
-    expect(statusCount(result.defender.statuses, "steelskin")).toBe(1);
+    expect(result.hits.map((hit) => hit.damage)).toEqual([6, 6, 6]);
+    expect(result.defender.hp).toBe(100 - 18);
+    expect(statusCount(result.defender.statuses, "steelskin")).toBe(4);
   });
 
   it("answers with Thorn once per hit received", () => {
@@ -100,6 +98,25 @@ describe("mitigation", () => {
     expect(result.defender.hp).toBe(85);
   });
 
+  it("spends one Burn for every landed hit even when Ward absorbs all damage", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 100,
+        maxHp: 100,
+        shield: 100,
+        statuses: statuses(["burn", 5]),
+      }),
+      attack: { hits: 3, damage: 10 },
+      rng: seed(),
+    });
+
+    expect(result.hits.every((hit) => hit.toHp === 0)).toBe(true);
+    expect(statusCount(result.defender.statuses, "burn")).toBe(2);
+  });
+
   it("records the exact mitigation and avoidance evidence used by combat feedback", () => {
     const guarded = resolveAttack({
       attacker: actor({ id: "atk" }),
@@ -152,6 +169,46 @@ describe("mitigation", () => {
     });
 
     expect(result.hits[0].damage).toBe(30);
+  });
+
+  it("applies the Witch's sourced Bone Shield reduction per landed hit", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 200,
+        maxHp: 200,
+        statuses: statuses(["bone-shield", 2]),
+      }),
+      attack: { hits: 2, damage: 100 },
+      rng: seed(),
+    });
+
+    expect(PROVISIONAL_DAMAGE_POLICY.boneShieldDamageReductionPercent).toBe(60);
+    expect(result.hits.map((hit) => hit.damage)).toEqual([40, 40]);
+    expect(result.hits.every((hit) => hit.mitigation.boneShield)).toBe(true);
+    expect(statusCount(result.defender.statuses, "bone-shield")).toBe(0);
+  });
+
+  it("adds exactly 33 Dodge while Mirror Image remains", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        dodgeRate: 67,
+        statuses: statuses(["mirror-image", 1]),
+      }),
+      attack: { hits: 1, damage: 100 },
+      rng: seed(),
+    });
+
+    expect(PROVISIONAL_DAMAGE_POLICY.mirrorImageDodgeBonus).toBe(33);
+    expect(result.hits[0]).toMatchObject({
+      dodged: true,
+      avoidance: { chance: 100, mirrorImage: true },
+    });
   });
 
   it("makes Vulnerable expose one landed hit to fifty percent more damage", () => {
@@ -243,7 +300,7 @@ describe("mitigation", () => {
     expect(statusCount(result.defender.statuses, "protection")).toBe(1);
   });
 
-  it("applies Berserk to one landed hit and removes it from either side on contact", () => {
+  it("clears attack-scoped Berserk only from the attacker after the full attack", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk", statuses: statuses(["berserk", 100]) }),
       defender: actor({
@@ -257,18 +314,11 @@ describe("mitigation", () => {
       rng: seed(),
     });
 
-    expect(result.hits.map((hit) => hit.damage)).toEqual([20, 10]);
-    expect(result.hits[0]).toMatchObject({
-      berserkBonus: 10,
-      berserkSpent: 100,
-      defenderBerserkSpent: 100,
-      statusChanges: {
-        attacker: [{ type: "berserk", before: 100, after: 0 }],
-        defender: [{ type: "berserk", before: 100, after: 0 }],
-      },
-    });
+    // resolveAttack receives an already-scaled attack amount; encounter stat scaling is
+    // where Berserk adds its Count to ATK. The kernel owns its AllAttack cleanup.
+    expect(result.hits.map((hit) => hit.damage)).toEqual([10, 10]);
     expect(statusCount(result.attacker.statuses, "berserk")).toBe(0);
-    expect(statusCount(result.defender.statuses, "berserk")).toBe(0);
+    expect(statusCount(result.defender.statuses, "berserk")).toBe(100);
   });
 });
 
@@ -282,7 +332,7 @@ describe("dodge and crit", () => {
         hp: 100,
         maxHp: 100,
         dodgeRate: 100,
-        statuses: statuses(["steelskin", 4]),
+        statuses: statuses(["steelskin", 4], ["burn", 3]),
       }),
       attack: { hits: 2, damage: 30 },
       rng: seed(),
@@ -291,6 +341,7 @@ describe("dodge and crit", () => {
     expect(result.hits.every((hit) => hit.dodged)).toBe(true);
     expect(result.defender.hp).toBe(100);
     expect(statusCount(result.defender.statuses, "steelskin")).toBe(4);
+    expect(statusCount(result.defender.statuses, "burn")).toBe(3);
     expect(PROVISIONAL_DAMAGE_POLICY.dodgeSpendsOnHitStatuses).toBe(false);
   });
 
@@ -320,10 +371,10 @@ describe("dodge and crit", () => {
       rng: seed(),
     });
 
-    expect(result.hits[0]).toMatchObject({ critical: true, damage: 40 });
+    expect(result.hits[0]).toMatchObject({ critical: true, damage: 32 });
   });
 
-  it("turns each 100 Charge packet into one charged critical hit", () => {
+  it("uses Charge as persistent turn-scoped critical chance", () => {
     const result = resolveAttack({
       attacker: actor({ id: "mage", side: "player", critRate: 0, statuses: statuses(["charge", 100]) }),
       defender: actor({ id: "def", side: "enemy", hp: 100, maxHp: 100 }),
@@ -333,10 +384,10 @@ describe("dodge and crit", () => {
 
     expect(result.hits.map((hit) => ({ critical: hit.critical, damage: hit.damage, chargeSpent: hit.chargeSpent })))
       .toEqual([
-        { critical: true, damage: 40, chargeSpent: 100 },
-        { critical: false, damage: 20, chargeSpent: 0 },
+        { critical: true, damage: 32, chargeSpent: 0 },
+        { critical: true, damage: 32, chargeSpent: 0 },
       ]);
-    expect(statusCount(result.attacker.statuses, "charge")).toBe(0);
+    expect(statusCount(result.attacker.statuses, "charge")).toBe(100);
   });
 });
 

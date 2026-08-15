@@ -1,39 +1,25 @@
-// Tower of Winter statuses are counts, not durations. A trait grants "12 Steelskin",
-// not "Steelskin for 3 turns", and the count is what both the effect magnitude and the
-// remaining lifetime are read from. Every rule here is sourced from
-// docs/design/TOW_EVIDENCE.md; anything the wiki leaves blank is marked `gap` rather
-// than filled in with a plausible number.
+// Tower of Winter statuses are counts, not generic durations. The shipped 1.4.16 status
+// table defines both what each Count does and which event reduces it (UnderAttack,
+// PerTurn, AllPerTurn, AllAttack, or Never). Keep those lifecycles here so every imported
+// character ability resolves through the same source rule.
 
-// How much a stack loses per decrement event. The wiki records *that* Steelskin decreases
-// when hit and *that* Solidity decreases at end of turn, but never by how much. One is the
-// provisional policy until a capture settles it — isolated here so a correction is a
-// one-line change rather than an archaeology exercise.
+// Every ordinary source decrement removes one Count. Full-removal events (AllPerTurn and
+// AllAttack) are represented separately on the status definition.
 export const PROVISIONAL_DECREMENT = Object.freeze({
   perHit: 1,
   perTurn: 1,
-  evidence: "gap",
+  evidence: "shipped-1.4.16",
 });
 
-// The wiki names Sleep, Paralyze and Stun but never records how long they last. Leaving
-// them in the `gap` default — every flag false, so the stack persists untouched — turns out
-// not to be the safe reading it is for other statuses, because a control status that never
-// expires is not a cost or a tactic, it is an instant decision:
-//
-//   Mortal Blow deals 210% ATK and paralyzes *the user*. Under a permanent Paralyze that is
-//   not a drawback, it is a suicide button — the Barbarian package could not win a single
-//   simulated fight, because its best attack disabled it for the rest of the fight.
-//   Sleep Grenade is the same button pointed the other way: one use and a foe never acts
-//   again.
-//
-// Both readings are absurd, and they are absurd in opposite directions, which is decent
-// evidence that neither is what the source means. So control decays like every other
-// non-permanent stack until a capture settles it. This is provisional and marked as such;
-// it is not a claim about the wiki.
+// Control activates when its holder tries to use a skill and has a PerTurn lifecycle in
+// the shipped table. The scheduler consumes one Count in the command window it nullifies;
+// this is the same holder-turn result without allowing a freshly applied control stack to
+// disappear before that holder receives a command.
 export const PROVISIONAL_CONTROL_LIFECYCLE = Object.freeze({
-  types: Object.freeze(["paralyze", "sleep", "stun"]),
+  types: Object.freeze(["paralyze", "sleep", "stun", "confuse"]),
   decreaseAtEndOfTurn: false,
   consumeWhenCommandNullified: true,
-  evidence: "gap",
+  evidence: "shipped-1.4.16",
 });
 
 /** Whether this status is one of the documented departures from inert-by-default. */
@@ -43,33 +29,54 @@ export function hasProvisionalControlLifecycle(type) {
 
 export const MAX_STATUS_COUNT = 1_000_000;
 
-function definition(id, { permanent = false, removeAtEndOfTurn = false, decreaseAtEndOfTurn = false, decreaseWhenHit = false, evidence = "observed" } = {}) {
+function definition(id, {
+  permanent = false,
+  removeAtEndOfTurn = false,
+  decreaseAtEndOfTurn = false,
+  decreaseWhenHit = false,
+  endOfTurnDamage = null,
+  evidence = "observed",
+} = {}) {
   return Object.freeze({
     id,
     permanent,
     removeAtEndOfTurn,
     decreaseAtEndOfTurn,
     decreaseWhenHit,
+    // Damage statuses resolve their payload and lifecycle atomically at the holder's own
+    // turn end. Keeping this separate from ordinary status decay prevents a freshly
+    // inflicted Doom from disappearing in the same hostile action window.
+    endOfTurnDamage,
     lifecycleEvidence: evidence,
   });
 }
 
-// `gap` entries have every flag false, which makes them persist untouched. That is the
-// safe reading: a status that silently expired would hide the missing evidence, whereas
-// one that lingers shows up the moment a fight is traced.
 const DEFINITIONS = Object.freeze({
   protection: definition("protection", { permanent: true, decreaseWhenHit: true }),
-  steelskin: definition("steelskin", { decreaseWhenHit: true }),
+  confuse: definition("confuse", { evidence: "shipped-1.4.16" }),
+  steelskin: definition("steelskin", { permanent: true }),
   evade: definition("evade", { decreaseAtEndOfTurn: true }),
   haste: definition("haste", { decreaseAtEndOfTurn: true }),
-  "doom-atk": definition("doom-atk", { removeAtEndOfTurn: true }),
-  burn: definition("burn", { decreaseWhenHit: true }),
+  "doom-atk": definition("doom-atk", { permanent: true }),
+  "counter-attack": definition("counter-attack", { removeAtEndOfTurn: true }),
+  burn: definition("burn", { permanent: true, decreaseWhenHit: true, endOfTurnDamage: "persist" }),
   tenacity: definition("tenacity", { permanent: true }),
+  injured: definition("injured", { permanent: true }),
+  fortified: definition("fortified", { decreaseAtEndOfTurn: true }),
+  rage: definition("rage", { permanent: true }),
+  consecration: definition("consecration", { permanent: true }),
+  confusion: definition("confusion", { decreaseAtEndOfTurn: true }),
+  composure: definition("composure", { decreaseAtEndOfTurn: true }),
   thorn: definition("thorn", { permanent: true }),
   misfortune: definition("misfortune", { removeAtEndOfTurn: true }),
   overload: definition("overload", { removeAtEndOfTurn: true }),
-  solidity: definition("solidity", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
+  solidity: definition("solidity", { decreaseWhenHit: true }),
   guard: definition("guard", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
+  // Witch of Eternity source mechanics. Bone Shield is a 60% direct-damage reduction
+  // charge; Mirror Image is a smaller dodge window that can expire either by contact or
+  // at the turn boundary.
+  "bone-shield": definition("bone-shield", { decreaseWhenHit: true }),
+  "mirror-image": definition("mirror-image", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
 
   // The English in-game trait text resolves several rows whose compact Namu lifecycle
   // cells are blank. "Permanent" here means for this encounter: actors themselves are
@@ -77,43 +84,55 @@ const DEFINITIONS = Object.freeze({
   unstoppable: definition("unstoppable", { decreaseAtEndOfTurn: true }),
   lifesteal: definition("lifesteal", { permanent: true }),
   strength: definition("strength", { permanent: true }),
-  poison: definition("poison", { decreaseAtEndOfTurn: true }),
+  poison: definition("poison", { endOfTurnDamage: "decrease" }),
   cripple: definition("cripple", { permanent: true }),
   charge: definition("charge", { removeAtEndOfTurn: true }),
   grow: definition("grow", { permanent: true }),
   "poison-atk": definition("poison-atk", { permanent: true }),
+  "death-claw": definition("death-claw", { permanent: true }),
+  "wind-blade": definition("wind-blade", { permanent: true }),
   weak: definition("weak", { decreaseWhenHit: true }),
   focus: definition("focus", { permanent: true }),
   sharpen: definition("sharpen", { permanent: true }),
   eviscerate: definition("eviscerate", { permanent: true }),
   priority: definition("priority", { decreaseAtEndOfTurn: true }),
-  doom: definition("doom", { removeAtEndOfTurn: true }),
+  doom: definition("doom", { endOfTurnDamage: "remove" }),
 
-  // Named by traits, fusions and skills but absent from the wiki's status table, so their
-  // effect is known while their lifecycle is not.
   conceal: definition("conceal", { decreaseAtEndOfTurn: true }),
   invincible: definition("invincible", { decreaseAtEndOfTurn: true }),
   // See PROVISIONAL_CONTROL_LIFECYCLE: a stack is consumed by the command window it
-  // actually nullifies. End-of-round decay erased freshly inflicted control before the
-  // affected side ever received (and automatically lost) its next command.
-  paralyze: definition("paralyze", { evidence: "gap" }),
+  // actually nullifies. Holder-turn decay alone would erase freshly inflicted control
+  // before the affected side received (and automatically lost) its next command.
+  paralyze: definition("paralyze", { evidence: "shipped-1.4.16" }),
   // Sleep loses one turn when it nullifies a command, but any landed hit wakes the target
   // outright. The hit resolver owns that full removal rather than a one-point decrement.
-  sleep: definition("sleep", { evidence: "gap" }),
-  stun: definition("stun", { evidence: "gap" }),
-  bleed: definition("bleed", { evidence: "gap" }),
+  sleep: definition("sleep", { evidence: "shipped-1.4.16" }),
+  stun: definition("stun", { evidence: "shipped-1.4.16" }),
+  bleed: definition("bleed", { permanent: true, endOfTurnDamage: "persist" }),
   "bleed-atk": definition("bleed-atk", { permanent: true }),
-  // Lethargy is deliberate attrition, not a one-round visual tag. It lasts for the
-  // encounter and stacks once per landed hit, allowing Valiancy + Whirlwind to suppress a
-  // foe's ATK all the way to zero. This is intentionally unlike a temporary ward.
-  lethargy: definition("lethargy", { permanent: true }),
+  // AllPerTurn clears the full Lethargy value at the holder's turn boundary.
+  lethargy: definition("lethargy", { removeAtEndOfTurn: true }),
   "lethargy-atk": definition("lethargy-atk", { permanent: true }),
   vulnerable: definition("vulnerable", { decreaseWhenHit: true }),
+  parry: definition("parry", { removeAtEndOfTurn: true }),
+  persist: definition("persist", { permanent: true }),
+  predator: definition("predator", { permanent: true }),
+  restraint: definition("restraint", { decreaseAtEndOfTurn: true }),
+  covert: definition("covert", { removeAtEndOfTurn: true }),
   skeleton: definition("skeleton", { decreaseWhenHit: true }),
+  // Summoned spirits contribute their Count as special damage at each combat boundary.
+  "void-monster": definition("void-monster", { permanent: true }),
+  "hellfire-spirit": definition("hellfire-spirit", { permanent: true }),
+  immortality: definition("immortality", { decreaseAtEndOfTurn: true }),
+  "fatal-blade": definition("fatal-blade", { permanent: true, endOfTurnDamage: "persist" }),
+  // These counts are visible countdowns. Their payloads live in encounter scheduled
+  // effects so upgraded damage stays exact without encoding hidden data in a status Count.
+  "limited-life-sentence": definition("limited-life-sentence", { decreaseAtEndOfTurn: true }),
+  "forbidden-ritual": definition("forbidden-ritual", { decreaseAtEndOfTurn: true }),
+  "foul-ceremony": definition("foul-ceremony", { decreaseAtEndOfTurn: true }),
   limp: definition("limp", { permanent: true }),
-  // Berserk is a one-contact state: the damage resolver removes the whole amount when its
-  // holder lands a hit or is struck. It cannot use the generic one-point hit decrement.
-  berserk: definition("berserk", { permanent: true }),
+  // Berserk adds its Count to ATK and clears after the holder's next attack or turn.
+  berserk: definition("berserk", { removeAtEndOfTurn: true }),
   initiative: definition("initiative", { permanent: true }),
   "initiative-atk": definition("initiative-atk", { permanent: true }),
   judgment: definition("judgment", { permanent: true }),
@@ -204,7 +223,7 @@ export function scaleStatus(stack, type, percent) {
   if (!Number.isFinite(percent) || percent < 0) throw new TypeError("invalid-status-percent");
   return normalize(stack)
     .map((entry) => (entry.type === type
-      ? { type, count: Math.floor((entry.count * percent) / 100) }
+      ? { type, count: Math.min(MAX_STATUS_COUNT, Math.floor((entry.count * percent) / 100)) }
       : entry))
     .filter((entry) => entry.count > 0);
 }
@@ -231,8 +250,8 @@ function decrementBy(stack, amount, applies) {
   return next;
 }
 
-// Called once per *individual hit*, not once per attack. Steelskin, Thorn, Burn and
-// DoomAtk all resolve per hit, so a two-hit swing spends two ticks of everything here.
+// Called once per *individual landed hit*. Burn, Protection, Solidity, Guard, Weak,
+// Vulnerable, Bone Shield, Skeleton and Mirror Image all use this source event.
 export function decrementOnHit(stack, amount = PROVISIONAL_DECREMENT.perHit) {
   if (!validCount(amount)) throw new TypeError("invalid-status-count");
   return decrementBy(stack, amount, (spec) => spec.decreaseWhenHit);
@@ -245,4 +264,24 @@ export function tickEndOfTurn(stack, amount = PROVISIONAL_DECREMENT.perTurn) {
     amount,
     (spec) => spec.removeAtEndOfTurn || spec.decreaseAtEndOfTurn,
   );
+}
+
+/**
+ * Applies the sourced lifecycle that follows damage at the holder's own turn end.
+ * Burn and Bleed remain, Poison loses one Count, and Doom is removed in full.
+ */
+export function tickEndOfTurnDamage(stack, amount = PROVISIONAL_DECREMENT.perTurn) {
+  if (!validCount(amount)) throw new TypeError("invalid-status-count");
+  const next = [];
+  for (const entry of normalize(stack)) {
+    const lifecycle = getStatusDefinition(entry.type).endOfTurnDamage;
+    if (lifecycle === "remove") continue;
+    if (lifecycle === "decrease") {
+      const remaining = entry.count - amount;
+      if (remaining > 0) next.push({ type: entry.type, count: remaining });
+      continue;
+    }
+    next.push(entry);
+  }
+  return next;
 }

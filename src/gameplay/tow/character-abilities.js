@@ -1,14 +1,16 @@
-// Dedicated five-action kits for the playable Tower of Winter roster.
+// Source-calibrated character abilities for the complete Tower of Winter roster.
 //
-// These definitions are additive to the legacy skill catalogue: old saves and replay
-// receipts keep their original ids and semantics. Each starting kit owns two protected
-// actions (Basic Attack and Defensive) plus three flexible archetype actions. Shared
-// General abilities can replace only those three flexible actions later in play.
+// Stable Solitaire ids remain unchanged so saves, authored VFX, and loadouts keep working.
+// Every player-facing mechanic is compiled directly from the shipped 1.4.16 table rows
+// in `character-ability-source-data.js`: 12 characters x 23 abilities.
 
 import {
-  CHARACTER_LIBRARY_SOURCE,
-  EXTRA_CHARACTER_ABILITY_SPECS,
-} from "./character-ability-library.js";
+  TOW_CHARACTER_ABILITY_SOURCE_ROWS,
+  TOW_CHARACTER_SOURCE_PAGE,
+  TOW_RELEASE_SOURCE_PAGE,
+  TOW_SOURCE_BUILD,
+  TOW_STATUS_SOURCE_ROWS,
+} from "./character-ability-source-data.js";
 
 export const CHARACTER_ABILITY_TYPES = Object.freeze([
   "basic-attack",
@@ -27,545 +29,463 @@ export const CHARACTER_ABILITY_TYPE_LABELS = Object.freeze({
 export const FIXED_CHARACTER_ABILITY_TYPES = Object.freeze(["basic-attack", "defensive"]);
 export const FLEXIBLE_CHARACTER_ABILITY_TYPES = Object.freeze(["archetype", "general"]);
 
-const WIKI_PAGE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91/%EC%BA%90%EB%A6%AD%ED%84%B0";
-const OFFICIAL_CHANGELOG = "https://apps.apple.com/sg/app/tower-of-winter/id6449329520";
+const RANKS_BY_SOURCE_GRADE = Object.freeze({
+  Common: 6,
+  Uncommon: 5,
+  Rare: 4,
+  Legendary: 2,
+  Mythic: 1,
+});
 
-const freezeTable = (values) => Object.freeze(values);
+const RARITY_BY_SOURCE_GRADE = Object.freeze({
+  Common: "common",
+  Uncommon: "uncommon",
+  Rare: "rare",
+  Legendary: "legendary",
+  Mythic: "mythical",
+});
 
-function damage(scale, percentByRank, extra = {}) {
-  return Object.freeze({
-    type: "damage",
-    target: "enemy",
-    scale,
-    percentByRank: freezeTable(percentByRank),
-    ...extra,
-  });
+// Internal status ids predate the source-table import. These aliases keep old encounter
+// receipts readable while pointing every source TableId at one canonical runtime rule.
+const STATUS_ID_ALIASES = Object.freeze({
+  1020021: "charge",
+  1020025: "counter-attack",
+  1020026: "rage",
+  1020027: "consecration",
+  1020028: "poison-atk",
+  1020029: "doom-atk",
+  1020030: "bleed-atk",
+  1020031: "lethargy-atk",
+  1020032: "confusion",
+  1020033: "composure",
+  1020042: "judgment",
+  1020044: "berserk",
+  1020052: "bone-shield",
+  1020053: "death-claw",
+  1020055: "mirror-image",
+  1020056: "void-monster",
+  1020057: "hellfire-spirit",
+  1020058: "limited-life-sentence",
+  1020060: "foul-ceremony",
+  1020062: "wind-blade",
+  1020064: "fatal-blade",
+});
+
+function slug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\./g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
-function shield(scale, percentByRank) {
-  return Object.freeze({
-    type: "shield",
-    target: "self",
-    scale,
-    percentByRank: freezeTable(percentByRank),
-  });
+function statusLabel(value) {
+  return String(value || "status")
+    .split("-")
+    .map((part) => (part === "atk" ? "Attack" : `${part.charAt(0).toUpperCase()}${part.slice(1)}`))
+    .join(" ");
 }
 
-function status(statusType, target, countByRank) {
-  return Object.freeze({
-    type: "status",
-    status: statusType,
-    target,
-    countByRank: freezeTable(countByRank),
-  });
+export const TOW_STATUS_ID_TO_TYPE = Object.freeze(Object.fromEntries(
+  TOW_STATUS_SOURCE_ROWS.map(([sourceId, englishName, koreanName]) => [
+    sourceId,
+    STATUS_ID_ALIASES[sourceId] || slug(englishName) || `source-status-${sourceId}-${slug(koreanName)}`,
+  ]),
+));
+
+const round = (value) => Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+
+function rankTable(base, increment, rankCount, multiplier = 1) {
+  return Object.freeze(Array.from(
+    { length: rankCount },
+    (_, index) => round((base + (increment * index)) * multiplier),
+  ));
 }
 
-function scaledStatus(statusType, target, scale, percentByRank) {
-  return Object.freeze({
-    type: "scaled-status",
-    status: statusType,
-    target,
-    scale,
-    percentByRank: freezeTable(percentByRank),
-  });
+function targetOf(sourceTarget) {
+  if (sourceTarget === "Ally") return "self";
+  if (sourceTarget === "Enemy") return "enemy";
+  if (sourceTarget === "All") return "all";
+  throw new TypeError(`unknown-source-target:${sourceTarget}`);
 }
 
-function heal(scale, percentByRank) {
-  return Object.freeze({
-    type: "heal",
-    target: "self",
-    scale,
-    percentByRank: freezeTable(percentByRank),
-  });
+function scaleOf(sourceFactor) {
+  if (sourceFactor === "Attack") return "attack";
+  if (sourceFactor === "Defense") return "defense";
+  if (sourceFactor === "MaxHp") return "max-hp";
+  if (sourceFactor === "Hp") return "current-hp";
+  return null;
 }
 
-function lostHealthDamage(percentByRank, source = "enemy") {
-  return Object.freeze({
-    type: source === "self" ? "damage-self-lost-hp" : "damage-enemy-lost-hp",
-    target: "enemy",
-    percentByRank: freezeTable(percentByRank),
-  });
-}
-
-const asRankTable = (value) => freezeTable(Array.isArray(value) ? [...value] : [value]);
-
-function catalogEffect(tuple) {
-  const [kind, ...args] = tuple;
-  if (kind === "damage") {
-    const [scale, power, hits = 1] = args;
-    return damage(scale, asRankTable(power), hits > 1 ? { hits } : {});
+function freezeEffect(effect) {
+  for (const key of ["percentByRank", "countByRank", "factorByRank", "statuses"]) {
+    if (Array.isArray(effect[key]) && !Object.isFrozen(effect[key])) Object.freeze(effect[key]);
   }
-  if (kind === "shield") return shield(args[0], asRankTable(args[1]));
-  if (kind === "heal") return heal(args[0], asRankTable(args[1]));
-  if (kind === "heal-lost") {
-    return Object.freeze({
+  return Object.freeze(effect);
+}
+
+function sourceDamage(effect, rankCount) {
+  const [, factorType, base, increment, , factorStatusId, sourceTarget] = effect;
+  const target = targetOf(sourceTarget);
+  const scale = scaleOf(factorType);
+  if (scale) {
+    return freezeEffect({
+      type: "damage",
+      target,
+      scale,
+      percentByRank: rankTable(base, increment, rankCount, 100),
+    });
+  }
+  const factorMap = {
+    LostHp: ["self", "lost-hp"],
+    TargetHp: ["enemy", "current-hp"],
+    TargetLostHp: ["enemy", "lost-hp"],
+    TargetMaxHp: ["enemy", "max-hp"],
+  };
+  if (factorMap[factorType]) {
+    const [factorOwner, factorScale] = factorMap[factorType];
+    return freezeEffect({
+      type: "damage",
+      target,
+      factorOwner,
+      factorScale,
+      percentByRank: rankTable(base, increment, rankCount, 100),
+    });
+  }
+  if (factorType === "StatusEffectStackCount" || factorType === "TargetStatusEffectStackCount") {
+    return freezeEffect({
+      type: "damage",
+      target,
+      factorOwner: factorType === "StatusEffectStackCount" ? "self" : "enemy",
+      factorStatus: TOW_STATUS_ID_TO_TYPE[factorStatusId],
+      factorByRank: rankTable(base, increment, rankCount),
+    });
+  }
+  throw new TypeError(`unknown-source-damage-factor:${factorType}`);
+}
+
+function sourceHeal(effect, rankCount) {
+  const [, factorType, base, increment, , , sourceTarget] = effect;
+  const target = targetOf(sourceTarget);
+  const scale = scaleOf(factorType);
+  if (scale) {
+    return freezeEffect({
+      type: "heal",
+      target,
+      scale,
+      percentByRank: rankTable(base, increment, rankCount, 100),
+    });
+  }
+  if (factorType === "LostHp") {
+    return freezeEffect({
       type: "heal-lost-fraction",
-      target: "self",
-      percentByRank: asRankTable(args[0]),
+      target,
+      percentByRank: rankTable(base, increment, rankCount, 100),
     });
   }
-  if (kind === "status") return status(args[0], args[1], asRankTable(args[2]));
-  if (kind === "scaled-status") {
-    return scaledStatus(args[0], args[1], args[2], asRankTable(args[3]));
-  }
-  if (kind === "lost-damage") return lostHealthDamage(asRankTable(args[1]), args[0]);
-  if (kind === "cleanse") {
-    return Object.freeze({
-      type: "reduce-statuses",
-      target: args[2] || "self",
-      statuses: freezeTable([...args[0]]),
-      toPercent: args[1],
-      percentByRank: asRankTable(100 - args[1]),
+  if (factorType === "None") {
+    return freezeEffect({
+      type: "heal-flat",
+      target,
+      countByRank: rankTable(base, increment, rankCount),
     });
   }
-  if (kind === "amplify") {
-    return Object.freeze({
-      type: "amplify-statuses",
-      target: "enemy",
-      statuses: freezeTable([...args[0]]),
-      percentByRank: asRankTable(args[1]),
-    });
-  }
-  if (kind === "consume-status") {
-    return Object.freeze({
-      type: "consume-status",
-      target: "self",
-      status: args[0],
-      countByRank: asRankTable(args[1]),
-    });
-  }
-  throw new TypeError(`unknown-character-catalog-effect:${kind}`);
+  throw new TypeError(`unknown-source-heal-factor:${factorType}`);
 }
 
-function catalogDescription(spec, effects) {
-  const parts = effects.map((effect) => {
-    const table = effect.percentByRank || effect.countByRank;
-    const value = table?.[0];
-    if (effect.type === "damage") {
-      return `${effect.hits || 1}${effect.hits > 1 ? " hits" : " hit"} at ${value}% ${effect.scale.toUpperCase()}`;
-    }
-    if (effect.type === "shield") return `${value}% ${effect.scale.toUpperCase()} ward`;
-    if (effect.type === "heal") return `restore ${value}% ${effect.scale.toUpperCase()} health`;
-    if (effect.type === "heal-lost-fraction") return `restore ${value}% of lost health`;
-    if (effect.type === "status") return `${value} ${effect.status} to ${effect.target}`;
-    if (effect.type === "scaled-status") return `${value}% ${effect.scale.toUpperCase()} ${effect.status}`;
-    if (effect.type === "damage-enemy-lost-hp") return `${value}% of enemy missing health`;
-    if (effect.type === "damage-self-lost-hp") return `${value}% of own missing health as damage`;
-    if (effect.type === "reduce-statuses") return `reduce ${effect.statuses.join(", ")} on ${effect.target}`;
-    if (effect.type === "amplify-statuses") return `amplify ${effect.statuses.join(", ")} to ${value}%`;
-    if (effect.type === "consume-status") return `spend ${value} ${effect.status}`;
-    return effect.type.replace(/-/g, " ");
+function sourceState(effect, rankCount) {
+  const [
+    , factorType, base, increment, statusId, factorStatusId, sourceTarget, stackDownDelay,
+  ] = effect;
+  const target = targetOf(sourceTarget);
+  const status = TOW_STATUS_ID_TO_TYPE[statusId];
+
+  // Source Shield is a transient absorb pool in the actor model, not a persistent status.
+  if (statusId === 1020008) {
+    return freezeEffect({
+      type: "shield",
+      target,
+      scale: scaleOf(factorType),
+      percentByRank: rankTable(base, increment, rankCount, 100),
+    });
+  }
+
+  // Terminal Sentence is a countdown whose source status deals 666 when removed.
+  if (statusId === 1020058) {
+    return freezeEffect({
+      type: "delayed-damage",
+      target,
+      countByRank: Object.freeze(Array(rankCount).fill(666)),
+      turnsByRank: rankTable(base, increment, rankCount),
+      status,
+    });
+  }
+
+  // Foul Ceremony is the source's four-turn death timer used by Life Gambling and
+  // Emergency Fuel. Its stack-out payload is the fixed 9999 damage stored in the status
+  // table, not an invented Doom stack.
+  if (statusId === 1020060) {
+    return freezeEffect({
+      type: "delayed-damage",
+      target,
+      countByRank: Object.freeze(Array(rankCount).fill(9999)),
+      turnsByRank: rankTable(base, increment, rankCount),
+      status,
+    });
+  }
+
+  const scale = scaleOf(factorType);
+  if (scale) {
+    return freezeEffect({
+      type: "scaled-status",
+      status,
+      target,
+      scale,
+      percentByRank: rankTable(base, increment, rankCount, 100),
+      stackDownDelay,
+    });
+  }
+  if (factorType === "TargetHp") {
+    return freezeEffect({
+      type: "scaled-status",
+      status,
+      target,
+      factorOwner: "enemy",
+      factorScale: "current-hp",
+      percentByRank: rankTable(base, increment, rankCount, 100),
+      stackDownDelay,
+    });
+  }
+  if (factorType === "None") {
+    const values = rankTable(base, increment, rankCount);
+    return freezeEffect({
+      type: values.some((value) => value < 0) ? "modify-status" : "status",
+      status,
+      target,
+      countByRank: values,
+      stackDownDelay,
+    });
+  }
+  if (factorType === "StatusEffectStackCount" || factorType === "TargetStatusEffectStackCount") {
+    return freezeEffect({
+      type: "status-from-status",
+      status,
+      target,
+      factorOwner: factorType === "StatusEffectStackCount" ? "self" : "enemy",
+      factorStatus: TOW_STATUS_ID_TO_TYPE[factorStatusId],
+      factorByRank: rankTable(base, increment, rankCount),
+      stackDownDelay,
+    });
+  }
+  throw new TypeError(`unknown-source-status-factor:${factorType}`);
+}
+
+function sourceMultiplier(effect, rankCount) {
+  const [, factorType, base, increment, statusId, , sourceTarget] = effect;
+  if (factorType !== "None") throw new TypeError(`unknown-source-multiplier-factor:${factorType}`);
+  return freezeEffect({
+    type: "scale-status",
+    statuses: Object.freeze([TOW_STATUS_ID_TO_TYPE[statusId]]),
+    target: targetOf(sourceTarget),
+    percentByRank: rankTable(base, increment, rankCount, 100),
   });
-  return `${spec.name}: ${parts.join("; ")}.`;
 }
 
-function skill(id, name, {
-  characterId,
-  abilityType,
-  rarity,
-  effects,
-  usesPerAct = null,
-  cooldown = 0,
-  consumesTurn = true,
-  description,
-  sourceName = name,
-  sourcePage = WIKI_PAGE,
-  fidelity = "direct",
-  sourceDetail,
-}) {
-  const rankCount = effects.reduce((highest, effect) => Math.max(
-    highest,
-    effect.percentByRank?.length || effect.countByRank?.length || 1,
-  ), 1);
+function sourceCharger(effect, rankCount) {
+  const [, factorType, base, increment, , , sourceTarget] = effect;
+  if (factorType !== "None") throw new TypeError(`unknown-source-charger-factor:${factorType}`);
+  return freezeEffect({
+    type: "restore-skill-uses",
+    target: targetOf(sourceTarget),
+    countByRank: rankTable(base, increment, rankCount),
+  });
+}
+
+function sameDamage(left, right) {
+  return left?.type === "damage"
+    && right?.type === "damage"
+    && JSON.stringify({ ...left, hits: 1 }) === JSON.stringify({ ...right, hits: 1 });
+}
+
+function mergeSourceEffects(effects) {
+  const merged = [];
+  for (const effect of effects) {
+    const previous = merged.at(-1);
+    if (sameDamage(previous, effect)) {
+      merged[merged.length - 1] = freezeEffect({ ...previous, hits: (previous.hits || 1) + 1 });
+      continue;
+    }
+    if (
+      previous?.type === "scale-status"
+      && effect.type === "scale-status"
+      && previous.target === effect.target
+      && JSON.stringify(previous.percentByRank) === JSON.stringify(effect.percentByRank)
+    ) {
+      merged[merged.length - 1] = freezeEffect({
+        ...previous,
+        statuses: Object.freeze([...previous.statuses, ...effect.statuses]),
+      });
+      continue;
+    }
+    merged.push(effect);
+  }
+  return Object.freeze(merged);
+}
+
+function compileEffects(sourceId, sourceEffects, rankCount) {
+  // Forbidden Ceremony grants 3333 Max HP for four turns and then deals the source status'
+  // 9999 expiration damage. In this combat kernel that terminal pair is represented as one
+  // scheduled, fatal temporary-Max-HP effect so it cannot silently leave the Max HP behind.
+  if (sourceId === 1030820) {
+    return Object.freeze([freezeEffect({
+      type: "temporary-max-hp",
+      target: "self",
+      countByRank: Object.freeze([3333]),
+      turns: 4,
+      fatal: true,
+      expirationDamage: 9999,
+    })]);
+  }
+
+  const compiled = sourceEffects.map((effect) => {
+    if (effect[0] === "Attack") return sourceDamage(effect, rankCount);
+    if (effect[0] === "Heal") return sourceHeal(effect, rankCount);
+    if (effect[0] === "StateEffect") return sourceState(effect, rankCount);
+    if (effect[0] === "StateMultiplier") return sourceMultiplier(effect, rankCount);
+    if (effect[0] === "SkillCharger") return sourceCharger(effect, rankCount);
+    throw new TypeError(`unknown-source-effect:${effect[0]}`);
+  });
+  return mergeSourceEffects(compiled);
+}
+
+export function characterAbilityEffectMagnitude(effect, rank = 1) {
+  const table = effect?.percentByRank || effect?.countByRank || effect?.factorByRank;
+  if (!Array.isArray(table) || table.length === 0) return null;
+  return table[Math.min(table.length - 1, Math.max(0, rank - 1))];
+}
+
+function factorLabel(effect) {
+  if (effect.scale) return ({
+    attack: "ATK",
+    defense: "DEF",
+    "max-hp": "MAX HP",
+    "current-hp": "current HP",
+  })[effect.scale] || effect.scale.replace(/-/g, " ").toUpperCase();
+  if (effect.factorStatus) {
+    const owner = effect.factorOwner === "enemy" ? "enemy " : "your ";
+    return `${owner}${statusLabel(effect.factorStatus)} stacks`;
+  }
+  if (effect.factorScale) {
+    const owner = effect.factorOwner === "enemy" ? "enemy " : "your ";
+    return `${owner}${effect.factorScale.replace(/-/g, " ")}`;
+  }
+  return "source value";
+}
+
+export function describeCharacterAbilityEffect(effect, rank = 1) {
+  const value = characterAbilityEffectMagnitude(effect, rank);
+  const target = effect.target === "self" ? "yourself" : effect.target === "all" ? "all combatants" : "the enemy";
+  if (effect.type === "damage") {
+    const hits = effect.hits || 1;
+    const unit = effect.factorByRank ? "×" : "%";
+    return `Deal ${hits > 1 ? `${hits} hits of ` : ""}${value}${unit} ${factorLabel(effect)} damage`;
+  }
+  if (effect.type === "damage-enemy-lost-hp") return `Deal ${value}% of enemy lost health as damage`;
+  if (effect.type === "damage-self-lost-hp") return `Deal ${value}% of your lost health as damage`;
+  if (effect.type === "damage-enemy-max-hp") return `Deal ${value}% of enemy maximum health as damage`;
+  if (effect.type === "shield") return `Gain Ward equal to ${value}% ${factorLabel(effect)}`;
+  if (effect.type === "heal") return `Restore ${value}% ${factorLabel(effect)} health`;
+  if (effect.type === "heal-flat") return `Restore ${value} health`;
+  if (effect.type === "heal-lost-fraction") return `Restore ${value}% of lost health`;
+  if (effect.type === "status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${value} ${statusLabel(effect.status)}${effect.target === "all" ? " on all combatants" : ""}`;
+  if (effect.type === "modify-status") return `Lose ${Math.abs(value)} ${statusLabel(effect.status)}`;
+  if (effect.type === "scaled-status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${statusLabel(effect.status)} equal to ${value}% ${factorLabel(effect)}`;
+  if (effect.type === "status-from-status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${statusLabel(effect.status)} equal to ${value}× ${factorLabel(effect)}`;
+  if (effect.type === "scale-status") {
+    const names = effect.statuses.map(statusLabel).join(", ");
+    const verb = value === 0 ? "Remove" : value < 100 ? "Reduce" : "Amplify";
+    return `${verb} ${names} on ${target}${value === 0 ? "" : ` to ${value}%`}`;
+  }
+  if (effect.type === "reduce-statuses") {
+    const names = effect.statuses.map(statusLabel).join(", ");
+    return effect.toPercent === 0
+      ? `Remove ${effect.clearShield ? "Ward, " : ""}${names} from ${target}`
+      : `Reduce ${names} on ${target} to ${effect.toPercent}%`;
+  }
+  if (effect.type === "amplify-statuses") {
+    const names = effect.statuses.map(statusLabel).join(", ");
+    return `Amplify ${names} on ${target} to ${value}%`;
+  }
+  if (effect.type === "consume-status") return `Spend ${value} ${statusLabel(effect.status)}`;
+  if (effect.type === "scaled-status-enemy-lost-hp") {
+    return `Inflict ${statusLabel(effect.status)} equal to ${value}% of enemy lost health`;
+  }
+  if (effect.type === "delayed-damage") {
+    const turns = effect.turnsByRank?.[Math.min(effect.turnsByRank.length - 1, Math.max(0, rank - 1))]
+      ?? effect.turns;
+    return `Deal ${value} damage after ${turns} turns`;
+  }
+  if (effect.type === "temporary-max-hp") return `Gain ${value} maximum health for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
+  if (effect.type === "restore-skill-uses") return `Restore ${value} uses to every other limited ability`;
+  return effect.type.replace(/-/g, " ");
+}
+
+function compileAbility(row) {
+  const [
+    sourceId,
+    id,
+    characterId,
+    name,
+    sourceName,
+    sourceGrade,
+    abilityType,
+    consumesTurn,
+    sourceUses,
+    usesIncrement,
+    cooldown,
+    sourceEffects,
+  ] = row;
+  const rankCount = RANKS_BY_SOURCE_GRADE[sourceGrade];
+  const effects = compileEffects(sourceId, sourceEffects, rankCount);
+  const usesPerAct = sourceUses === 0 ? null : sourceUses;
+  const usesPerActByRank = sourceUses > 0 && usesIncrement !== 0
+    ? rankTable(sourceUses, usesIncrement, rankCount)
+    : null;
+  const description = `${effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`;
   return Object.freeze({
     id,
-    name,
-    rarity,
+    name: name.trim(),
+    rarity: RARITY_BY_SOURCE_GRADE[sourceGrade],
     slot: "slotted",
     abilityType,
-    effects: Object.freeze(effects),
+    effects,
     replaces: null,
     consumesTurn,
     cooldown,
     usesPerAct,
-    usesPerActByRank: null,
+    usesPerActByRank,
     exclusiveTo: characterId,
     description,
     source: Object.freeze({
-      page: sourcePage,
+      page: TOW_CHARACTER_SOURCE_PAGE,
+      releasePage: TOW_RELEASE_SOURCE_PAGE,
+      build: TOW_SOURCE_BUILD,
+      sourceId,
       characterId,
       sourceName,
-      fidelity,
-      detail: sourceDetail || description,
+      fidelity: "direct",
+      detail: description,
     }),
-    note: fidelity === "adapted" ? "source-guided five-slot adaptation" : null,
+    note: null,
     rankCount,
   });
 }
 
-const definitions = [
-  skill("arctic-strike", "Strike", {
-    characterId: "arctic-knight", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100, 115, 130, 145, 160, 175])],
-    description: "A dependable weapon strike dealing 100% ATK damage.",
-  }),
-  skill("arctic-block", "Block", {
-    characterId: "arctic-knight", abilityType: "defensive", rarity: "common", usesPerAct: 30,
-    effects: [shield("defense", [250, 300, 350, 400, 450, 500])],
-    description: "Raise a shield worth 250% DEF.",
-  }),
-  skill("arctic-deliberate-blow", "Deliberate Blow", {
-    characterId: "arctic-knight", abilityType: "archetype", rarity: "rare", usesPerAct: 10,
-    effects: [damage("attack", [110, 135, 160, 185]), shield("defense", [110, 135, 160, 185])],
-    description: "Deal 110% ATK damage and gain a 110% DEF shield.",
-  }),
-  skill("arctic-incineration", "Incineration", {
-    characterId: "arctic-knight", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [110]), scaledStatus("burn", "enemy", "attack", [110]), status("paralyze", "self", [2])],
-    description: "Deal 110% ATK damage, inflict equal Burn, then suffer 2 Paralyze.",
-  }),
-  skill("arctic-mortal-blow", "Mortal Blow", {
-    characterId: "arctic-knight", abilityType: "archetype", rarity: "uncommon", usesPerAct: 3,
-    effects: [damage("attack", [210, 240, 270, 300, 330]), status("paralyze", "self", [1])],
-    description: "Commit to a 210% ATK blow, then remain Paralyzed until the next turn.",
-  }),
-
-  skill("demon-shoot", "Shoot", {
-    characterId: "demon-slayer", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100, 115, 130, 145, 160, 175])],
-    description: "Loose a precise shot for 100% ATK damage.",
-  }),
-  skill("demon-evasion", "Evasion", {
-    characterId: "demon-slayer", abilityType: "defensive", rarity: "rare", usesPerAct: 10,
-    effects: [status("evade", "self", [1]), shield("defense", [220])],
-    description: "Gain 1 Evade and a shield worth 220% DEF.",
-  }),
-  skill("demon-kick", "Kick", {
-    characterId: "demon-slayer", abilityType: "archetype", rarity: "rare", usesPerAct: 7,
-    effects: [damage("attack", [50]), status("stun", "enemy", [1])],
-    description: "Deal 50% ATK damage and Stun the enemy for one turn.",
-  }),
-  skill("demon-arrow-rain", "Arrow Rain", {
-    characterId: "demon-slayer", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [52], { hits: 4 }), scaledStatus("poison", "enemy", "attack", [80])],
-    description: "A four-hit barrage that rapidly builds Poison.", fidelity: "adapted",
-    sourceDetail: "The source guide identifies Arrow Rain as the multi-hit core of Venom builds; hit power is normalized for this combat kernel.",
-  }),
-  skill("demon-trackers-net", "Tracker's Net", {
-    characterId: "demon-slayer", abilityType: "archetype", rarity: "rare", usesPerAct: 5, cooldown: 4,
-    effects: [status("paralyze", "enemy", [2]), status("vulnerable", "enemy", [4])],
-    description: "Pin the quarry for 2 turns and expose it to the next volley.", fidelity: "adapted",
-    sourcePage: OFFICIAL_CHANGELOG,
-    sourceDetail: "The official changelog names Tracker's Net as a Demon Slayer skill; restraint and exposure are recreated with this kernel's control statuses.",
-  }),
-
-  skill("clocktower-fire", "Fire", {
-    characterId: "owner-of-clocktower", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100, 115, 130, 145, 160, 175])],
-    description: "Fire a clockwork weapon for 100% ATK damage.",
-  }),
-  skill("clocktower-suppressive-shot", "Suppressive Shot", {
-    characterId: "owner-of-clocktower", abilityType: "defensive", rarity: "common", usesPerAct: 24,
-    effects: [scaledStatus("lethargy", "enemy", "defense", [125])],
-    description: "Convert 125% DEF into Lethargy on the enemy.",
-  }),
-  skill("clocktower-missile-support", "Missile Support", {
-    characterId: "owner-of-clocktower", abilityType: "archetype", rarity: "legendary", usesPerAct: 2, consumesTurn: false,
-    effects: [damage("attack", [200])],
-    description: "Call remote missile support for 200% ATK damage without spending the main action.",
-  }),
-  skill("clocktower-redesign", "Redesign", {
-    characterId: "owner-of-clocktower", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
-    effects: [scaledStatus("tenacity", "self", "attack", [40]), scaledStatus("strength", "self", "defense", [40])],
-    description: "Reconfigure: gain Tenacity equal to 40% ATK and Strength equal to 40% DEF.",
-  }),
-  skill("clocktower-improvement", "Improvement", {
-    characterId: "owner-of-clocktower", abilityType: "archetype", rarity: "rare", usesPerAct: 4, cooldown: 7, consumesTurn: false,
-    effects: [status("strength", "self", [4, 6, 8, 10]), status("tenacity", "self", [4, 6, 8, 10])],
-    description: "Tune the mechanism without spending the main action, gaining 4 Strength and 4 Tenacity.",
-  }),
-
-  skill("north-king-cleave", "Cleave", {
-    characterId: "old-king-of-northland", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100, 115, 130, 145, 160, 175])],
-    description: "Sweep a poleaxe through the enemy for 100% ATK damage.",
-  }),
-  skill("north-king-vitality", "Vitality", {
-    characterId: "old-king-of-northland", abilityType: "defensive", rarity: "rare", usesPerAct: 12,
-    effects: [heal("defense", [185])],
-    description: "Recover health equal to 185% DEF.",
-  }),
-  skill("north-king-whirlwind", "Whirlwind", {
-    characterId: "old-king-of-northland", abilityType: "archetype", rarity: "epic", usesPerAct: 6,
-    effects: [damage("attack", [52], { hits: 3 }), scaledStatus("lethargy", "enemy", "attack", [45])],
-    description: "A three-hit axe storm that compounds the King's Lethargy pressure.", fidelity: "adapted",
-    sourceDetail: "The source explicitly recommends Whirlwind for Valiancy's per-hit scaling; per-hit power is normalized here.",
-  }),
-  skill("north-king-earthquake", "Earthquake", {
-    characterId: "old-king-of-northland", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [400]), scaledStatus("lethargy", "enemy", "defense", [400])],
-    description: "Shatter the ground for 400% ATK damage and Lethargy equal to 400% DEF.",
-  }),
-  skill("north-king-neutralizing-blow", "Shattering Blow", {
-    characterId: "old-king-of-northland", abilityType: "archetype", rarity: "rare", usesPerAct: 7,
-    effects: [damage("defense", [140]), scaledStatus("lethargy", "enemy", "defense", [140])],
-    description: "Meet a heavy attack with 140% DEF damage and equal Lethargy.", fidelity: "adapted",
-    sourceName: "파쇄격",
-    sourceDetail: "The source lists Shattering Blow for the Old King; its paired DEF damage and Lethargy are normalized here.",
-  }),
-
-  skill("sleepless-flame-strike", "Flame Strike", {
-    characterId: "sleepless-one", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100]), scaledStatus("burn", "enemy", "attack", [24])],
-    description: "Strike for 100% ATK and kindle Burn.", fidelity: "adapted",
-  }),
-  skill("sleepless-flame-curtain", "Flame Curtain", {
-    characterId: "sleepless-one", abilityType: "defensive", rarity: "rare", usesPerAct: 18,
-    effects: [shield("defense", [160]), scaledStatus("burn", "enemy", "attack", [35])],
-    description: "Raise a fiery ward and scorch the attacker.", fidelity: "adapted",
-  }),
-  skill("sleepless-entangling-roots", "Entangling Roots", {
-    characterId: "sleepless-one", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 4,
-    effects: [status("paralyze", "enemy", [2]), scaledStatus("poison", "enemy", "attack", [100])],
-    description: "Bind the enemy for 2 turns and seed a heavy Poison.", fidelity: "adapted",
-  }),
-  skill("sleepless-high-speed-flight", "High-Speed Flight", {
-    characterId: "sleepless-one", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
-    effects: [status("priority", "self", [4])],
-    description: "Take to the air and gain 4 Priority.",
-  }),
-  skill("sleepless-fire-essence", "Fire Essence", {
-    characterId: "sleepless-one", abilityType: "archetype", rarity: "epic", usesPerAct: 4, cooldown: 6, consumesTurn: false,
-    effects: [status("strength", "self", [6]), status("overload", "self", [20])],
-    description: "Awaken the stored ember for 6 Strength and 20 Overload without spending the main action.", fidelity: "adapted",
-    sourcePage: OFFICIAL_CHANGELOG,
-    sourceDetail: "The official changelog names Fire Essence as a Sleepless One skill; its stored-fire power is recreated as a swift Strength and Overload setup.",
-  }),
-
-  skill("assassin-flurry", "Flurry", {
-    characterId: "last-assassin", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [55], { hits: 2 })],
-    description: "The Assassin's two-hit basic attack.",
-  }),
-  skill("assassin-deflect", "Deflect", {
-    characterId: "last-assassin", abilityType: "defensive", rarity: "uncommon", usesPerAct: 25,
-    effects: [shield("defense", [175])],
-    description: "Raise armor equal to 175% DEF, strongest into repeated hits.",
-  }),
-  skill("assassin-flash-bomb", "Flash Bomb", {
-    characterId: "last-assassin", abilityType: "archetype", rarity: "legendary", usesPerAct: 2, consumesTurn: false,
-    effects: [status("paralyze", "enemy", [2, 2])],
-    description: "Paralyze the target for 2 turns without spending the main action.",
-  }),
-  skill("assassin-execution", "Execution", {
-    characterId: "last-assassin", abilityType: "archetype", rarity: "mythical", usesPerAct: 2,
-    effects: [
-      damage("attack", [240, 360]),
-      Object.freeze({
-        type: "reduce-statuses",
-        target: "enemy",
-        statuses: freezeTable(["burn", "poison", "bleed", "weak", "lethargy", "vulnerable", "cripple"]),
-        toPercent: 0,
-        percentByRank: freezeTable([100, 100]),
-      }),
-    ],
-    description: "Deal 240% ATK damage, then consume the enemy's negative statuses.",
-  }),
-  skill("assassin-storm-of-knives", "Storm of Knives", {
-    characterId: "last-assassin", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
-    effects: [damage("attack", [42], { hits: 4 }), scaledStatus("bleed", "enemy", "attack", [60])],
-    description: "Cut four times in one sequence, then leave Bleed equal to 60% ATK.", fidelity: "adapted",
-    sourcePage: OFFICIAL_CHANGELOG,
-    sourceDetail: "The official changelog names Storm of Knife as a Last Assassin skill; its rapid sequence is normalized to four hits plus Bleed.",
-  }),
-
-  skill("witch-skull-throw", "Skull Throw", {
-    characterId: "witch-of-eternity", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100])],
-    description: "Hurl a hexed skull for 100% ATK damage.", fidelity: "adapted",
-  }),
-  skill("witch-bone-shield", "Bone Shield", {
-    characterId: "witch-of-eternity", abilityType: "defensive", rarity: "uncommon", usesPerAct: 24,
-    effects: [shield("defense", [150]), status("skeleton", "self", [4])],
-    description: "Build a bone ward and preserve 4 Skeletons for the army.", fidelity: "adapted",
-  }),
-  skill("witch-skeleton-summon", "Skeleton Summon", {
-    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "epic", usesPerAct: 6, consumesTurn: false,
-    effects: [status("skeleton", "self", [12])],
-    description: "Raise 12 Skeletons without spending the main action.", fidelity: "adapted",
-  }),
-  skill("witch-all-out-attack", "All-Out Attack", {
-    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [280]), status("doom", "enemy", [100])],
-    description: "Send the entire host forward in one ruinous assault.", fidelity: "adapted",
-    sourceDetail: "The source describes an army-spending burst; this kernel recreation packages that payoff as damage plus Doom.",
-  }),
-  skill("witch-mirror-image", "Mirror Image", {
-    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "rare", usesPerAct: 4, cooldown: 6, consumesTurn: false,
-    effects: [status("evade", "self", [1]), status("skeleton", "self", [6])],
-    description: "Leave a grave-lit double behind: gain 1 Evade and preserve 6 Skeletons.", fidelity: "adapted",
-    sourceDetail: "The source documents a temporary duplicate that increases dodge and disappears when struck; one Evade recreates that single-hit image in this kernel.",
-  }),
-
-  skill("mage-magic-arrow", "Magic Arrow", {
-    characterId: "tenacious-mage", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100])],
-    description: "Launch a compact spell for 100% ATK damage.", fidelity: "adapted",
-  }),
-  skill("mage-barrier", "Barrier", {
-    characterId: "tenacious-mage", abilityType: "defensive", rarity: "common", usesPerAct: 20,
-    effects: [shield("defense", [200]), status("protection", "self", [4])],
-    description: "Conjure armor worth 200% DEF and gain 4 Protection.",
-  }),
-  skill("mage-flame-storm", "Flame Storm", {
-    characterId: "tenacious-mage", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
-    effects: [damage("attack", [45], { hits: 3 }), scaledStatus("burn", "enemy", "attack", [90])],
-    description: "Three waves of flame followed by a deep Burn.", fidelity: "adapted",
-  }),
-  skill("mage-amplification", "Amplification", {
-    characterId: "tenacious-mage", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
-    effects: [scaledStatus("strength", "self", "attack", [50])],
-    description: "Gain Strength equal to 50% of current ATK without spending the main action.",
-  }),
-  skill("mage-god-slaying-spear", "God-Slaying Spear", {
-    characterId: "tenacious-mage", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [360]), status("paralyze", "self", [1])],
-    description: "Cast a 360% ATK spear through the target, then suffer 1 Paralyze from the strain.", fidelity: "adapted",
-    sourceDetail: "The source names God-Slaying Spear as a red capstone; its coefficient and recoil are normalized for the encounter kernel.",
-  }),
-
-  skill("priestess-crush", "Crush", {
-    characterId: "exiled-priestess", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100]), status("judgment", "self", [20])],
-    description: "Smite for 100% ATK and gather Judgment for the sentence.", fidelity: "adapted",
-  }),
-  skill("priestess-holy-shield", "Holy Shield", {
-    characterId: "exiled-priestess", abilityType: "defensive", rarity: "rare", usesPerAct: 18,
-    effects: [shield("max-hp", [25]), status("guard", "self", [2])],
-    description: "Pay the strain of faith to raise a fixed ward worth 25% maximum health.", fidelity: "adapted",
-  }),
-  skill("priestess-wrath-of-heaven", "Wrath of Heaven", {
-    characterId: "exiled-priestess", abilityType: "archetype", rarity: "legendary", usesPerAct: 4,
-    effects: [lostHealthDamage([100], "self")],
-    description: "Deal damage equal to your own missing health.",
-  }),
-  skill("priestess-doom", "Doom", {
-    characterId: "exiled-priestess", abilityType: "archetype", rarity: "mythical", usesPerAct: 3,
-    effects: [Object.freeze({ type: "amplify-statuses", target: "enemy", statuses: freezeTable(["burn", "poison", "bleed"]), percentByRank: freezeTable([160]) })],
-    description: "Multiply the enemy's Burn, Poison, and Bleed stacks to 160%.",
-  }),
-  skill("priestess-immediate-judgment", "Immediate Judgment", {
-    characterId: "exiled-priestess", abilityType: "archetype", rarity: "mythical", usesPerAct: 2,
-    effects: [damage("defense", [260]), status("doom", "enemy", [80])],
-    description: "Pass sentence immediately for 260% DEF damage and 80 Doom.", fidelity: "adapted",
-    sourceDetail: "The source names Immediate Judgment as a Judgment-consuming finisher; its verdict is normalized as DEF damage plus Doom.",
-  }),
-
-  skill("blade-slash", "Slash", {
-    characterId: "wandering-blade", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100]), status("initiative", "self", [25])],
-    description: "Slash for 100% ATK and build 25 Initiative.", fidelity: "adapted",
-  }),
-  skill("blade-barrier", "Blade Barrier", {
-    characterId: "wandering-blade", abilityType: "defensive", rarity: "rare", usesPerAct: 20,
-    effects: [shield("defense", [210]), status("guard", "self", [2])],
-    description: "Turn the sword into a 210% DEF ward with 2 Guard.", fidelity: "adapted",
-  }),
-  skill("blade-chi-liberation", "Chi Liberation", {
-    characterId: "wandering-blade", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 4, consumesTurn: false,
-    effects: [status("priority", "self", [2]), status("strength", "self", [5])],
-    description: "Release stored breath for 2 Priority and 5 Strength, then recover for 4 turns.", fidelity: "adapted",
-  }),
-  skill("blade-one-flash", "One Flash", {
-    characterId: "wandering-blade", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [320]), status("priority", "self", [1])],
-    description: "Cross the field in one decisive cut, then retain 1 Priority.", fidelity: "adapted",
-  }),
-  skill("blade-katana-dance", "Katana Dance", {
-    characterId: "wandering-blade", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
-    effects: [damage("attack", [65], { hits: 3 }), status("initiative", "self", [40])],
-    description: "Trace three 65% ATK cuts and carry 40 Initiative into the next exchange.", fidelity: "adapted",
-    sourcePage: OFFICIAL_CHANGELOG,
-    sourceDetail: "The official changelog names Katana Dance as a Wandering Blade skill; its tempo identity is normalized to three hits and Initiative.",
-  }),
-
-  skill("vampire-claw", "Claw", {
-    characterId: "desolate-vampire", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100])],
-    description: "Rake the target for 100% ATK; Bloodsuck converts damage into life.", fidelity: "adapted",
-  }),
-  skill("vampire-blood-thirst", "Blood Thirst", {
-    characterId: "desolate-vampire", abilityType: "defensive", rarity: "rare", usesPerAct: 12,
-    effects: [heal("attack", [90]), heal("defense", [90])],
-    description: "Recover health from both martial power and resilience.", fidelity: "adapted",
-    sourceDetail: "The source documents a healing action scaling from both ATK and DEF; each contribution is normalized to 90% here.",
-  }),
-  skill("vampire-heart-destroyer", "Heart Destroyer", {
-    characterId: "desolate-vampire", abilityType: "archetype", rarity: "legendary", usesPerAct: 5,
-    effects: [damage("attack", [240]), scaledStatus("bleed", "enemy", "attack", [100])],
-    description: "A major blood strike that leaves a deep Bleed.", fidelity: "adapted",
-  }),
-  skill("vampire-rampage", "Rampage", {
-    characterId: "desolate-vampire", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [status("lifesteal", "self", [24]), damage("attack", [48], { hits: 4 })],
-    description: "Gain 24% Lifesteal and tear through the enemy four times.", fidelity: "adapted",
-  }),
-  skill("vampire-bloodflow-absorption", "Bloodflow Absorption", {
-    characterId: "desolate-vampire", abilityType: "archetype", rarity: "legendary", usesPerAct: 4,
-    effects: [damage("attack", [120]), heal("attack", [80])],
-    description: "Draw blood through the wound: deal 120% ATK damage and restore 80% ATK health.", fidelity: "adapted",
-    sourceDetail: "The source names Bloodflow Absorption as a blood-control sustain skill; damage and recovery are normalized here.",
-  }),
-
-  skill("automaton-bombardment", "Bombardment", {
-    characterId: "forsaken-automaton", abilityType: "basic-attack", rarity: "common",
-    effects: [damage("attack", [100])],
-    description: "Discharge the arm cannon for 100% ATK damage.", fidelity: "adapted",
-  }),
-  skill("automaton-repair", "Repair", {
-    characterId: "forsaken-automaton", abilityType: "defensive", rarity: "uncommon", usesPerAct: 18,
-    effects: [Object.freeze({ type: "heal-lost-fraction", target: "self", percentByRank: freezeTable([25]) }), shield("defense", [100])],
-    description: "Recover 25% of missing health and restore a 100% DEF casing.", fidelity: "adapted",
-  }),
-  skill("automaton-emergency-cooling", "Emergency Cooling", {
-    characterId: "forsaken-automaton", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 4, consumesTurn: false,
-    effects: [Object.freeze({ type: "reduce-statuses", target: "self", statuses: freezeTable(["limp"]), toPercent: 25, percentByRank: freezeTable([75]) }), status("solidity", "self", [2])],
-    description: "Vent heat, remove 75% of Limp, and gain 2 Solidity.", fidelity: "adapted",
-  }),
-  skill("automaton-fate-manipulator", "Fate Manipulator", {
-    characterId: "forsaken-automaton", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
-    effects: [status("priority", "self", [3]), status("overload", "self", [50]), status("limp", "self", [12])],
-    description: "Force the next sequence: gain 3 Priority and 50 Overload, but take 12 Limp.", fidelity: "adapted",
-  }),
-  skill("automaton-final-counter", "Final Counter", {
-    characterId: "forsaken-automaton", abilityType: "archetype", rarity: "legendary", usesPerAct: 3,
-    effects: [shield("defense", [180]), damage("defense", [180])],
-    description: "Brace the chassis for a 180% DEF ward and answer with 180% DEF damage.", fidelity: "adapted",
-    sourcePage: OFFICIAL_CHANGELOG,
-    sourceDetail: "The official changelog names Final Counter as a Forsaken Automaton skill; its reactive exchange is normalized as equal ward and damage.",
-  }),
-];
-
-const libraryDefinitions = EXTRA_CHARACTER_ABILITY_SPECS.map((spec) => {
-  const effects = spec.effects.map(catalogEffect);
-  return skill(spec.id, spec.name, {
-    characterId: spec.characterId,
-    abilityType: spec.abilityType,
-    rarity: spec.rarity,
-    effects,
-    usesPerAct: spec.usesPerAct,
-    cooldown: spec.cooldown,
-    consumesTurn: spec.consumesTurn,
-    description: spec.description || catalogDescription(spec, effects),
-    sourceName: spec.sourceName,
-    sourcePage: CHARACTER_LIBRARY_SOURCE,
-    fidelity: "adapted",
-    sourceDetail: `Listed for ${spec.characterId} in the source catalogue; recreated as ${catalogDescription(spec, effects)}`,
-  });
-});
+const definitions = TOW_CHARACTER_ABILITY_SOURCE_ROWS.map(compileAbility);
 
 export const CHARACTER_ABILITIES = Object.freeze(Object.fromEntries(
-  [...definitions, ...libraryDefinitions].map((definition) => [definition.id, definition]),
+  definitions.map((definition) => [definition.id, definition]),
 ));
 
 export function getCharacterAbility(id) {
@@ -579,7 +499,5 @@ export function characterAbilityIds() {
 }
 
 export function characterAbilitiesFor(characterId) {
-  return Object.values(CHARACTER_ABILITIES).filter(
-    (definition) => definition.exclusiveTo === characterId,
-  );
+  return definitions.filter((definition) => definition.exclusiveTo === characterId);
 }

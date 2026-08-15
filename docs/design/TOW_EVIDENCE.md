@@ -16,6 +16,7 @@ number — it is either captured or the feature waits.
 - `namu:general-abilities` — <https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91#s-11.1>
 - `namu:traits` — <https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91/%ED%8A%B9%EC%84%B1>
 - `community:english-status-capture` — <https://docs.google.com/spreadsheets/d/13_DI2wHUsqMVt0BsJAyhXIixzUIvTikRNMBBtzgERhw/edit?usp=sharing>
+- `community:status-effects-guide` — <https://gall.dcinside.com/mgallery/board/view/?id=tow&no=9531>
 
 Confidence tags: `observed` (stated outright by a source), `derived` (follows from two or
 more observed facts), `gap` (not established — must not be guessed).
@@ -148,6 +149,12 @@ linked from the community preservation document. That capture resolves the persi
 end-of-turn, and per-hit rows recorded below; bespoke contact rules such as Sleep and
 Berserk remain explicit because they remove the whole stack rather than one Count.
 
+The four damage-status payloads were rechecked 2026-08-15 against the preserved Korean
+effects guide. Burn, Poison, Bleed, and Special Damage (represented as Doom in this port)
+all deal their current Count at the holder's turn end. Burn loses one per landed attack
+hit, Poison loses one after each tick, Bleed does not decay, and Doom removes its full stack
+after its one tick.
+
 > **Reading a blank row.** A status with no flags is *undocumented on the wiki*, not
 > "has no lifecycle". Treat blanks as `gap` — several are almost certainly
 > battle-persistent stats (Lifesteal, Strength, Focus, Sharpen), but that is inference,
@@ -160,8 +167,9 @@ Two entries are worth calling out because they shape the engine:
 - **Solidity and Guard both decrease at end of turn *and* when hit**, so a percentage
   reduction is spent by whichever comes first.
 
-Lifecycle key: **Perm** = permanent · **EoT-rm** = removed at end of turn ·
-**EoT−** = decreases at end of turn · **Hit−** = decreases when hit.
+Lifecycle key: **Perm** = permanent · **EoT-dmg** = deal Count damage at holder turn end ·
+**EoT-rm** = removed at end of turn · **EoT−** = decreases at end of turn ·
+**Hit−** = decreases when hit.
 
 | Status | Source trait | Effect | Lifecycle |
 |---|---|---|---|
@@ -170,14 +178,14 @@ Lifecycle key: **Perm** = permanent · **EoT-rm** = removed at end of turn ·
 | Evade | Agility | +60% dodge rate for 1 turn | **EoT−** |
 | Haste | Swift | Gains an additional action during battle (trait/status activations are not added) | **EoT−** |
 | DoomAtk | Destructor | Each individual attack inflicts Count Doom on the enemy; multiple hits in a round stack. Doom bypasses defences but takes effect **after the enemy acts** | **EoT-rm** |
-| Burn | Ignition | Deal fixed damage equal to Count | **Hit−** |
+| Burn | Ignition | Deal fixed damage equal to Count at holder turn end | **EoT-dmg + Perm + Hit−** |
 | Unstoppable | Fortitude | Ignores action-nullifying debuffs (`wiki:skills`) | **EoT−** |
 | Tenacity | Fortitude | Increases DEF by Count; gained every 4 turns | **Perm** |
 | Thorn | Detection, Reflection | Damages the attacker when hit, once per hit | **Perm** |
 | Lifesteal | Bloodsuck | Recover HP in proportion to damage dealt | **Perm** |
 | Strength | Fury, Rage | Raises attack | **Perm** |
 | Misfortune | Luck | Deal Count damage at the beginning of the enemy turn | **EoT-rm** |
-| Poison | Decay | Fixed boundary damage | **EoT−** |
+| Poison | Decay | Deal fixed damage equal to Count at holder turn end | **EoT-dmg + EoT−** |
 | Cripple | Overwhelm | Reduces ATK for the encounter | **Perm** |
 | Charge | Charge | Empowers the next landed hit | **EoT-rm** |
 | Grow | Adaptation, Survival | Accumulating combat growth | **Perm** |
@@ -190,12 +198,12 @@ Lifecycle key: **Perm** = permanent · **EoT-rm** = removed at end of turn ·
 | Sharpen | Accuracy | Raises offensive accuracy | **Perm** |
 | Eviscerate | Assassin | Inflicts Vulnerable per landed hit | **Perm** |
 | Priority | Quickness, Gale | Act before the enemy; cancels against enemy Priority | **EoT−**, and spent per extra action |
-| Doom | — | Fixed Count damage, **ignores all defences** | **EoT-rm** |
+| Doom | — | Fixed Count damage at the holder's next turn end, **ignores all defences** | **EoT-dmg + EoT-rm** |
 | Invincible | Intangible | Takes no damage from attacks | **EoT−** (7-turn grant observed) |
 | Conceal | Rogue | +80% dodge | **EoT−** |
 | Sleep | Sleep Grenade | Nullifies actions; loses one per skipped command, but **any landed hit removes all Sleep** | bespoke (`observed`) |
 | Paralyze | Rapid Cooling, Mortal Blow | Nullifies actions | `gap` |
-| Bleed | Slaughter, Rupture | Damage over time | `gap` |
+| Bleed | Slaughter, Rupture | Deal fixed damage equal to Count at every holder turn end | **EoT-dmg + Perm** |
 | Lethargy | Shouting, Valiancy | Reduces ATK; repeated landed hits stack it and can reduce ATK to zero | **Perm** (`adapted`, user-confirmed target behaviour) |
 | Vulnerable | Breakdown | +50% damage to the next landed hit | **Hit−** |
 | Skeleton | Necromancy | `gap` | `gap` |
@@ -353,8 +361,8 @@ zealots, Act 3 is zealot-dominant, Act 4 introduces Ancients.
 
 ## Release-blocking gaps
 
-1. **Per-status effect magnitudes** for the 13 statuses whose Effect cell is blank on the
-   wiki (Poison, Cripple, Charge, Grow, PoisonAtk, Weak, Focus, Sharpen, Eviscerate,
+1. **Per-status effect magnitudes** for the 12 statuses whose Effect cell is blank on the
+   wiki (Cripple, Charge, Grow, PoisonAtk, Weak, Focus, Sharpen, Eviscerate,
    Lifesteal, Strength, Unstoppable, Priority). The lifecycle matrix itself is captured.
 2. **Turn order and intent visibility.** Whether the player sees the enemy's next attack
    before committing is unestablished, and it decides whether the game is about reading

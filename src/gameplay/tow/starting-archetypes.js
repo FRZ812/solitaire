@@ -154,7 +154,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     tagline: "A crown can be taken. A king's weight cannot.",
     playstyle: "Every repeated hit compounds Valiancy. Whirlwind erodes the foe, Vitality erases attrition, and Earthquake ends the argument with overwhelming scale.",
     attention: "Medium", attributes: { body: 5, reflex: 2, vigor: 4, mind: 2, wit: 3, presence: 5 },
-    baseStats: { maxHp: 160, attack: 14, defense: 13, critRate: 6, dodgeRate: 4 },
+    baseStats: { maxHp: 180, attack: 13, defense: 13, critRate: 6, dodgeRate: 4 },
     gear: ["battle-axe", "chain-shirt", "traveling-cloak", "marching-boots"], color: "#b66e4a",
     portrait: { scale: 1.07, x: "49%" },
     character: authoredCharacter({
@@ -185,10 +185,10 @@ export const STARTING_ARCHETYPES = Object.freeze([
     }),
   }),
   archetype({
-    id: "last-assassin", name: "Crumble Executioner", role: "Multi-hit finisher", professionId: "rogue", traitId: "combo",
+    id: "last-assassin", name: "Crumble Executioner", role: "Multi-hit finisher", professionId: "rogue", traitId: "assassin",
     skills: ["assassin-flurry", "assassin-deflect", "assassin-flash-bomb", "assassin-execution", "assassin-storm-of-knives"],
     tagline: "One opening is enough. Two blades make certain.",
-    playstyle: "Flurry steadily exposes a target. Deflect answers multi-hit intent, Flash Bomb creates a safe opening, and Execution converts that opening into a heavy strike that clears the enemy's accumulated wounds.",
+    playstyle: "Chain Slash turns Assassin's Eviscerate into permanent Limp. Parrying answers multi-hit intent, Flashbang steals a command, and Behead converts the opening into a heavy strike that clears the enemy's Limp.",
     attention: "High", attributes: { body: 3, reflex: 5, vigor: 3, mind: 2, wit: 5, presence: 2 },
     baseStats: { maxHp: 160, attack: 14, defense: 11, critRate: 12, dodgeRate: 5 },
     gear: ["twin-daggers", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#8b78a8",
@@ -206,9 +206,9 @@ export const STARTING_ARCHETYPES = Object.freeze([
     id: "witch-of-eternity", name: "Bone Sovereign", role: "Army and burst", professionId: "warlock", traitId: "necromancy",
     skills: ["witch-attack", "witch-bone-shield", "witch-skeleton-summon", "witch-all-out-attack", "witch-mirror-image"],
     tagline: "Nothing is gone while the bones still answer.",
-    playstyle: "Accumulate Skeletons passively and actively, preserve the host behind Bone Shield, then commit the entire army to one overwhelming attack.",
+    playstyle: "Accumulate Skeletons passively and actively, weather pressure with Bone Shield, then direct five rapid attacks through the opening.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 4, presence: 4 },
-    baseStats: { maxHp: 150, attack: 10, defense: 15, critRate: 12, dodgeRate: 5 },
+    baseStats: { maxHp: 150, attack: 10, defense: 16, critRate: 12, dodgeRate: 5 },
     gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#8f769e",
     portrait: { scale: 1.06, x: "51%" },
     character: authoredCharacter({
@@ -226,7 +226,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     tagline: "A failed theorem is only a weapon whose conditions are not yet met.",
     playstyle: "Barrier buys time for Charge to mature. Flame Storm supplies attrition; Amplification converts the current ATK line into a turn of explosive scaling.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 5, presence: 2 },
-    baseStats: { maxHp: 150, attack: 15, defense: 12, critRate: 6, dodgeRate: 5 },
+    baseStats: { maxHp: 160, attack: 15, defense: 12, critRate: 6, dodgeRate: 5 },
     gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#b95e58",
     portrait: { scale: 1.04, x: "49%" },
     character: authoredCharacter({
@@ -239,12 +239,12 @@ export const STARTING_ARCHETYPES = Object.freeze([
     }),
   }),
   archetype({
-    id: "exiled-priestess", name: "Judgment Martyr", role: "Missing-health verdict", professionId: "cleric", traitId: "judgment",
+    id: "exiled-priestess", name: "Justice Martyr", role: "Missing-health verdict", professionId: "cleric", traitId: "judgment",
     skills: ["priestess-crush", "priestess-block", "priestess-wrath-of-heaven", "priestess-doom", "priestess-immediate-judgment"],
     tagline: "If heaven will not answer, I will deliver the verdict myself.",
     playstyle: "Judgment builds naturally. Block keeps the Priestess alive at a dangerous health line, Wrath weaponizes what is missing, and Doom magnifies every lingering wound.",
     attention: "High", attributes: { body: 4, reflex: 2, vigor: 4, mind: 3, wit: 2, presence: 5 },
-    baseStats: { maxHp: 144, attack: 11, defense: 16, critRate: 6, dodgeRate: 4 },
+    baseStats: { maxHp: 170, attack: 11, defense: 16, critRate: 6, dodgeRate: 4 },
     gear: ["war-hammer", "chain-shirt", "round-shield", "traveling-cloak"], color: "#d2b05e",
     portrait: { scale: 1.08, x: "50%" },
     character: authoredCharacter({
@@ -342,12 +342,29 @@ export function isArchetypePracticeLoadout(archetypeId, skillIds) {
     && skills.slice(2).every(legalFlexibleAbility);
 }
 
+export function isArchetypePracticeSkillRanks(archetypeId, skillIds, skillRanks) {
+  if (!isArchetypePracticeLoadout(archetypeId, skillIds)) return false;
+  return Array.isArray(skillRanks)
+    && skillRanks.length === SKILL_SLOTS
+    && skillRanks.every((rank, index) => {
+      const definition = getSkill(skillIds[index]);
+      return Number.isSafeInteger(rank) && rank >= 1 && rank <= definition.rankCount;
+    });
+}
+
 export function normalizeArchetypeDraft(input = {}) {
   const selected = getStartingArchetype(input.archetypeId) || STARTING_ARCHETYPES[0];
   const normalized = { archetypeId: selected.id, preview: input.preview === true };
-  if (isArchetypePracticeLoadout(selected.id, input.testSkillIds)
-    && input.testSkillIds.some((id, index) => id !== selected.build.skills[index])) {
+  const hasPracticeLoadout = isArchetypePracticeLoadout(selected.id, input.testSkillIds);
+  const practiceSkillIds = hasPracticeLoadout ? input.testSkillIds : selected.build.skills;
+  if (hasPracticeLoadout
+    && practiceSkillIds.some((id, index) => id !== selected.build.skills[index])) {
     normalized.testSkillIds = [...input.testSkillIds];
+  }
+  if ((input.testSkillIds == null || hasPracticeLoadout)
+    && isArchetypePracticeSkillRanks(selected.id, practiceSkillIds, input.testSkillRanks)
+    && input.testSkillRanks.some((rank) => rank !== 1)) {
+    normalized.testSkillRanks = [...input.testSkillRanks];
   }
   return normalized;
 }
@@ -362,6 +379,12 @@ export function practiceBuildForArchetypeDraft(draft) {
     skills: [...(normalized.testSkillIds || selected.build.skills)],
     runes: [...selected.build.runes],
   };
+}
+
+/** Optional practice-only rank overrides; omitted when every selected ability is Rank 1. */
+export function practiceSkillRanksForArchetypeDraft(draft) {
+  const normalized = normalizeArchetypeDraft(draft);
+  return normalized.testSkillRanks ? [...normalized.testSkillRanks] : null;
 }
 
 export function archetypeItemRows(archetypeId) {

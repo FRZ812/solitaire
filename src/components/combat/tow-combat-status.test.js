@@ -19,6 +19,19 @@ describe("combat status presentation", () => {
       .toBe("Removed at the end of the turn.");
   });
 
+  it("states every sourced damage-over-time rule without placeholder copy", () => {
+    expect(towStatusPresentation({ type: "burn", count: 5 })).toMatchObject({
+      effect: expect.stringContaining("holder's turn end"),
+      lifecycle: expect.stringContaining("every landed attack hit"),
+    });
+    expect(towStatusPresentation({ type: "poison", count: 3 }).lifecycle)
+      .toBe("Deals its current Count, then loses 1 stack at each holder turn end.");
+    expect(towStatusPresentation({ type: "bleed", count: 4 }).lifecycle)
+      .toContain("Persists unchanged between turns");
+    expect(towStatusPresentation({ type: "doom", count: 20 }).lifecycle)
+      .toContain("entire stack is removed");
+  });
+
   it("states exact control, Priority, and Vulnerable strategy rules", () => {
     expect(towStatusPresentation({ type: "stun", count: 1 })).toMatchObject({
       effect: expect.stringContaining("forfeits one command window per stack"),
@@ -46,8 +59,8 @@ describe("combat status presentation", () => {
       expect(detail.effect.length, type).toBeGreaterThan(20);
       expect(detail.lifecycle.length, type).toBeGreaterThan(10);
       expect(detail.visual.asset, type).toMatch(/\.png$/);
-      expect(detail.visual.iconAsset, type).toMatch(/\.png$/);
-      expect(detail.visual.iconPosition, type).toMatch(/^(?:0|100)% (?:0|100)%$/);
+      expect(detail.visual.iconAsset, type).toMatch(/\.(?:png|webp)$/);
+      expect(detail.visual.iconPosition, type).toMatch(/^\d+(?:\.\d+)?% \d+(?:\.\d+)?%$/);
       expect(detail.visual.asset, type).not.toContain("svg");
       icons.push(`${detail.visual.iconAsset}#${detail.visual.iconPosition}`);
     }

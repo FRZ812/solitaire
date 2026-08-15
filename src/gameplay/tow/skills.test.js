@@ -40,6 +40,7 @@ describe("the catalogue", () => {
     for (const id of generalAbilityIds()) {
       expect(getSkill(id)).toMatchObject({ abilityType: "general", exclusiveTo: null });
       expect(getSkill(id).source.page).toContain("#s-11.1");
+      expect(getSkill(id).note).toBeNull();
     }
   });
 
@@ -379,12 +380,13 @@ describe("every catalogue effect reaches the resolver", () => {
   });
 
   it("carries a rank table wherever the resolver reads a magnitude", () => {
-    const scaled = ["damage", "shield", "status", "scaled-status", "heal-lost-fraction", "scaled-status-enemy-lost-hp"];
     const missing = [];
     for (const skillId of skillIds()) {
       getSkill(skillId).effects.forEach((effect, index) => {
-        if (!scaled.includes(effect.type)) return;
-        if (!effect.percentByRank && !effect.countByRank) missing.push(`${skillId}[${index}]`);
+        if (effect.type === "reduce-statuses") return;
+        if (!effect.percentByRank && !effect.countByRank && !effect.factorByRank) {
+          missing.push(`${skillId}[${index}]`);
+        }
       });
     }
     expect(missing).toEqual([]);

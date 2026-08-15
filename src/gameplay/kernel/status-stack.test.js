@@ -11,6 +11,7 @@ import {
   statusCount,
   statusTypes,
   tickEndOfTurn,
+  tickEndOfTurnDamage,
 } from "./status-stack.js";
 
 describe("status definitions", () => {
@@ -22,11 +23,11 @@ describe("status definitions", () => {
       removeAtEndOfTurn: false,
     });
     expect(getStatusDefinition("steelskin")).toMatchObject({
-      permanent: false,
-      decreaseWhenHit: true,
+      permanent: true,
+      decreaseWhenHit: false,
     });
     expect(getStatusDefinition("solidity")).toMatchObject({
-      decreaseAtEndOfTurn: true,
+      decreaseAtEndOfTurn: false,
       decreaseWhenHit: true,
     });
     expect(getStatusDefinition("guard")).toMatchObject({
@@ -34,23 +35,41 @@ describe("status definitions", () => {
       decreaseWhenHit: true,
     });
     expect(getStatusDefinition("overload")).toMatchObject({ removeAtEndOfTurn: true });
-    expect(getStatusDefinition("doom-atk")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("doom-atk")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("thorn")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("tenacity")).toMatchObject({ permanent: true });
-    expect(getStatusDefinition("lethargy")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("lethargy")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("vulnerable")).toMatchObject({ decreaseWhenHit: true });
-    expect(getStatusDefinition("poison")).toMatchObject({ decreaseAtEndOfTurn: true });
-    expect(getStatusDefinition("doom")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("burn")).toMatchObject({
+      permanent: true,
+      decreaseWhenHit: true,
+      endOfTurnDamage: "persist",
+    });
+    expect(getStatusDefinition("poison")).toMatchObject({ endOfTurnDamage: "decrease" });
+    expect(getStatusDefinition("bleed")).toMatchObject({
+      permanent: true,
+      endOfTurnDamage: "persist",
+    });
+    expect(getStatusDefinition("doom")).toMatchObject({ endOfTurnDamage: "remove" });
     expect(getStatusDefinition("charge")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("initiative")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("priority")).toMatchObject({ decreaseAtEndOfTurn: true });
-    expect(getStatusDefinition("berserk")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("berserk")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("bone-shield")).toMatchObject({ decreaseWhenHit: true });
+    expect(getStatusDefinition("mirror-image")).toMatchObject({
+      decreaseWhenHit: true,
+      decreaseAtEndOfTurn: true,
+    });
+    expect(getStatusDefinition("void-monster")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("hellfire-spirit")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("limited-life-sentence")).toMatchObject({ decreaseAtEndOfTurn: true });
+    expect(getStatusDefinition("forbidden-ritual")).toMatchObject({ decreaseAtEndOfTurn: true });
   });
 
-  it("marks undocumented lifecycles as a gap instead of inventing one", () => {
-    for (const type of ["bleed", "paralyze", "stun"]) {
+  it("records shipped control lifecycles without applying duplicate boundary decay", () => {
+    for (const type of ["paralyze", "stun"]) {
       const spec = getStatusDefinition(type);
-      expect(spec.lifecycleEvidence).toBe("gap");
+      expect(spec.lifecycleEvidence).toBe("shipped-1.4.16");
       expect(spec.permanent).toBe(false);
       expect(spec.removeAtEndOfTurn).toBe(false);
       expect(spec.decreaseAtEndOfTurn).toBe(false);
@@ -71,6 +90,9 @@ describe("status definitions", () => {
       "unstoppable", "tenacity", "thorn", "lifesteal", "strength", "misfortune",
       "poison", "cripple", "charge", "grow", "overload", "poison-atk", "weak",
       "focus", "solidity", "guard", "sharpen", "eviscerate", "priority", "doom",
+      "bone-shield", "mirror-image", "void-monster", "hellfire-spirit",
+      "limited-life-sentence", "forbidden-ritual", "counter-attack", "parry",
+      "persist", "predator", "restraint", "fatal-blade", "injured", "fortified",
     ]));
   });
 });
@@ -139,7 +161,7 @@ describe("decrementing on hit", () => {
     stack = applyStatus(stack, "evade", 1);
 
     const after = decrementOnHit(stack);
-    expect(statusCount(after, "steelskin")).toBe(3);
+    expect(statusCount(after, "steelskin")).toBe(4);
     expect(statusCount(after, "burn")).toBe(79);
     expect(statusCount(after, "protection")).toBe(20);
     // Thorn is permanent and Evade only decays at end of turn.
@@ -148,15 +170,24 @@ describe("decrementing on hit", () => {
   });
 
   it("spends once per individual hit, so a multi-hit attack costs more", () => {
-    // Steelskin is applied to each individual hit, so a 3-hit attack ticks it three times.
-    const stack = applyStatus(createStatusStack(), "steelskin", 4);
+    // Protection is spent per individual hit while persistent Steelskin is not.
+    const stack = applyStatus(createStatusStack(), "protection", 4);
     let after = stack;
     for (let hit = 0; hit < 3; hit += 1) after = decrementOnHit(after);
-    expect(statusCount(after, "steelskin")).toBe(1);
+    expect(statusCount(after, "protection")).toBe(1);
+  });
+
+  it("spends Bone Shield and Mirror Image only on landed contact", () => {
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "bone-shield", 2);
+    stack = applyStatus(stack, "mirror-image", 1);
+    const after = decrementOnHit(stack);
+    expect(statusCount(after, "bone-shield")).toBe(1);
+    expect(statusCount(after, "mirror-image")).toBe(0);
   });
 
   it("drops a status that reaches zero rather than leaving an empty stack", () => {
-    const stack = applyStatus(createStatusStack(), "steelskin", 1);
+    const stack = applyStatus(createStatusStack(), "burn", 1);
     const after = decrementOnHit(stack);
     expect(after).toEqual([]);
     expect(hasStatus(after, "steelskin")).toBe(false);
@@ -174,13 +205,11 @@ describe("ticking at end of turn", () => {
     // Overload is temporary attack power, "lost at end of turn" — all of it, not one point.
     let stack = applyStatus(createStatusStack(), "overload", 48);
     stack = applyStatus(stack, "doom-atk", 25);
-    stack = applyStatus(stack, "doom", 40);
     stack = applyStatus(stack, "charge", 100);
     stack = applyStatus(stack, "misfortune", 180);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "overload")).toBe(false);
-    expect(hasStatus(after, "doom-atk")).toBe(false);
-    expect(hasStatus(after, "doom")).toBe(false);
+    expect(statusCount(after, "doom-atk")).toBe(25);
     expect(hasStatus(after, "charge")).toBe(false);
     expect(hasStatus(after, "misfortune")).toBe(false);
   });
@@ -188,15 +217,28 @@ describe("ticking at end of turn", () => {
   it("decrements decrease-at-end-of-turn statuses", () => {
     let stack = applyStatus(createStatusStack(), "evade", 1);
     stack = applyStatus(stack, "haste", 2);
-    stack = applyStatus(stack, "poison", 10);
     stack = applyStatus(stack, "solidity", 10);
     stack = applyStatus(stack, "priority", 3);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "evade")).toBe(false);
     expect(statusCount(after, "haste")).toBe(1);
-    expect(statusCount(after, "poison")).toBe(9);
-    expect(statusCount(after, "solidity")).toBe(9);
+    expect(statusCount(after, "solidity")).toBe(10);
     expect(statusCount(after, "priority")).toBe(2);
+  });
+
+  it("ticks Witch countdowns and leaves summoned spirits in place", () => {
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "limited-life-sentence", 13);
+    stack = applyStatus(stack, "forbidden-ritual", 4);
+    stack = applyStatus(stack, "mirror-image", 1);
+    stack = applyStatus(stack, "void-monster", 12);
+    stack = applyStatus(stack, "hellfire-spirit", 20);
+    const after = tickEndOfTurn(stack);
+    expect(statusCount(after, "limited-life-sentence")).toBe(12);
+    expect(statusCount(after, "forbidden-ritual")).toBe(3);
+    expect(statusCount(after, "mirror-image")).toBe(0);
+    expect(statusCount(after, "void-monster")).toBe(12);
+    expect(statusCount(after, "hellfire-spirit")).toBe(20);
   });
 
   it("leaves permanent and hit-only statuses untouched", () => {
@@ -208,7 +250,7 @@ describe("ticking at end of turn", () => {
     expect(tickEndOfTurn(stack)).toEqual(stack);
   });
 
-  it("leaves gap-lifecycle statuses in place so the missing evidence stays visible", () => {
+  it("leaves sourced persistent Bleed in place", () => {
     const stack = applyStatus(createStatusStack(), "bleed", 10);
     expect(tickEndOfTurn(stack)).toEqual(stack);
     expect(decrementOnHit(stack)).toEqual(stack);
@@ -221,6 +263,34 @@ describe("ticking at end of turn", () => {
     stack = decrementOnHit(stack);
     stack = tickEndOfTurn(stack);
     expect(statusCount(stack, "guard")).toBe(7);
+  });
+});
+
+describe("damage-status lifecycle at the holder's turn end", () => {
+  it("keeps Burn and Bleed, decreases Poison by one, and removes all Doom", () => {
+    let stack = applyStatus(createStatusStack(), "burn", 5);
+    stack = applyStatus(stack, "poison", 3);
+    stack = applyStatus(stack, "bleed", 4);
+    stack = applyStatus(stack, "doom", 40);
+    stack = applyStatus(stack, "thorn", 2);
+
+    const after = tickEndOfTurnDamage(stack);
+    expect(statusCount(after, "burn")).toBe(5);
+    expect(statusCount(after, "poison")).toBe(2);
+    expect(statusCount(after, "bleed")).toBe(4);
+    expect(statusCount(after, "doom")).toBe(0);
+    expect(statusCount(after, "thorn")).toBe(2);
+  });
+
+  it("drops Poison only after its Count-1 tick has resolved", () => {
+    const stack = applyStatus(createStatusStack(), "poison", 1);
+    expect(tickEndOfTurnDamage(stack)).toEqual([]);
+  });
+
+  it("does not let the generic round decay consume Poison or Doom early", () => {
+    let stack = applyStatus(createStatusStack(), "poison", 3);
+    stack = applyStatus(stack, "doom", 20);
+    expect(tickEndOfTurn(stack)).toEqual(stack);
   });
 });
 

@@ -6,9 +6,11 @@ import {
   priorityAdvantageFor,
   retreatOdds,
 } from "../../gameplay/tow/encounter.js";
-import { CHARACTER_ABILITY_TYPE_LABELS } from "../../gameplay/tow/character-abilities.js";
 import {
-  effectMagnitude,
+  CHARACTER_ABILITY_TYPE_LABELS,
+  describeCharacterAbilityEffect,
+} from "../../gameplay/tow/character-abilities.js";
+import {
   getSkill,
   skillLegality,
   usesPerAct,
@@ -102,29 +104,8 @@ function AbilityArt({ src, className = "" }) {
   );
 }
 
-function effectDetail(definition, effect, effectIndex, rank) {
-  const ranked = Array.isArray(effect.percentByRank) || Array.isArray(effect.countByRank);
-  const amount = ranked ? effectMagnitude(definition.id, effectIndex, rank) : null;
-  if (effect.type === "damage") return `${amount}% ${effect.scale} damage${effect.hits > 1 ? ` × ${effect.hits} hits` : ""}`;
-  if (effect.type === "damage-enemy-lost-hp") return `${amount}% of enemy missing health as damage`;
-  if (effect.type === "damage-self-lost-hp") return `${amount}% of own missing health as damage`;
-  if (effect.type === "shield") return `${amount}% ${effect.scale} ward`;
-  if (effect.type === "heal") return `Restore ${amount}% ${effect.scale} health`;
-  if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
-  if (effect.type === "scaled-status") {
-    return `${amount}% ${effect.scale} ${effect.status.replace(/-/g, " ")}`;
-  }
-  if (effect.type === "status") return `${amount} ${effect.status.replace(/-/g, " ")}`;
-  if (effect.type === "reduce-statuses") {
-    return `Reduce ${effect.statuses.join(", ")} to ${effect.toPercent}%`;
-  }
-  if (effect.type === "amplify-statuses") {
-    return `Raise ${effect.statuses.join(", ")} to ${amount}%`;
-  }
-  if (effect.type === "scaled-status-enemy-lost-hp") {
-    return `${amount}% of enemy lost health as ${effect.status.replace(/-/g, " ")}`;
-  }
-  return effect.type.replace(/-/g, " ");
+function effectDetail(_definition, effect, _effectIndex, rank) {
+  return describeCharacterAbilityEffect(effect, rank);
 }
 
 export function towSkillDetail(definition, skillState, weaponPresentation = null) {
@@ -439,7 +420,7 @@ function StatusDetails({ actor, status, source, enemy = false, onDismiss }) {
   return (
     <aside
       id={statusPanelId(actor.id, status.type)}
-      className={`tow-combat__status-details${enemy ? " tow-combat__status-details--enemy" : ""}`}
+      className={`tow-combat__status-details${enemy ? " tow-combat__status-details--enemy tow-combat__status-details--intent-safe" : ""}`}
       data-tone={detail.tone}
       data-testid="tow-status-details"
       role="dialog"
@@ -681,6 +662,7 @@ function CombatEffects({ cues }) {
             data-action-index={cue.actionIndex ?? 0}
             data-effect-lane={lane}
             data-vfx-profile={profile.key || undefined}
+            data-vfx-source={cue.visual?.assetSource || "family"}
             style={{
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,
               "--tow-effect-x": `${laneX}px`,

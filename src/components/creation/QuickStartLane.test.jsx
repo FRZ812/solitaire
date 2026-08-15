@@ -166,26 +166,19 @@ describe("the simple grid-to-preview flow", () => {
     expect(details).toBeTruthy();
     expect(details.textContent).toContain("Starting equipment");
     expect(details.textContent).toContain("Starting fusions");
-    expect(details.textContent).toContain("Starting abilities");
+    expect(details.textContent).toContain("Select loadout");
     expect(details.textContent).toContain("Source identity");
     expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(5);
     expect(details.textContent).not.toContain("Possible refinement");
-    expect(details.querySelectorAll(".starting-abilities .starting-ability__art img")).toHaveLength(
-      STARTING_ARCHETYPES[6].build.skills.length,
-    );
-    expect(details.textContent).toContain("Character ability library");
-    expect(details.textContent).toContain("Passive traits");
-    expect(details.textContent).toContain("no shared abilities equipped");
-    expect(details.querySelectorAll(".character-exclusive-library .starting-ability")).toHaveLength(18);
-    expect(details.querySelectorAll('.character-exclusive-library [data-ability-type="basic-attack"]')).toHaveLength(2);
-    expect(details.querySelectorAll('.character-exclusive-library [data-ability-type="defensive"]')).toHaveLength(2);
-    expect(details.querySelectorAll('.character-exclusive-library [data-ability-type="archetype"]')).toHaveLength(14);
-    const generalLibrary = details.querySelector('[aria-label="General abilities available later"]');
-    expect(generalLibrary.querySelectorAll(".starting-ability")).toHaveLength(18);
-    expect(generalLibrary.querySelectorAll('[data-ability-type="general"]')).toHaveLength(18);
+    expect(details.textContent).toContain("Passive trait");
+    expect(details.textContent).not.toContain("Starting abilities");
+    expect(details.textContent).not.toContain("Character ability library");
+    expect(details.textContent).not.toContain("General ability library");
+    expect(details.querySelector(".starting-abilities")).toBeNull();
+    expect(details.querySelector(".character-exclusive-library")).toBeNull();
     expect(details.querySelector('[data-trait-id="necromancy"]')?.textContent)
       .toContain("Skeletons each turn");
-    const loadoutEditor = details.querySelector('[aria-label="Practice loadout"]');
+    const loadoutEditor = details.querySelector('[aria-label="Selectable loadout"]');
     expect(loadoutEditor.querySelectorAll(".ability-swap-picker__trigger")).toHaveLength(5);
     expect(loadoutEditor.querySelector("select")).toBeNull();
 
@@ -217,11 +210,32 @@ describe("the simple grid-to-preview flow", () => {
     expect(picker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
   });
 
+  it("describes the Last Assassin loadout from its real damage and status effects", async () => {
+    const mounted = await render(<ControlledStart />);
+    await click(mounted.querySelectorAll(".character-choice-card")[5]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+
+    const details = mounted.querySelector(".character-details");
+    const editor = details.querySelector('[aria-label="Selectable loadout"]');
+    const summaries = [...editor.querySelectorAll(".ability-swap-picker__trigger-summary")]
+      .map((entry) => entry.textContent);
+
+    expect(details.querySelectorAll(".character-details__test-loadout")).toHaveLength(1);
+    expect(details.querySelector(".character-details__split")).toBeNull();
+    expect(summaries).toEqual([
+      "Deal 2 hits of 50% ATK damage",
+      "Gain Parry equal to 185% DEF",
+      "Inflict 2 Stun · 6-turn cooldown",
+      "Deal 240% ATK damage · Remove Limp on the enemy",
+      "Deal 4 hits of 35% ATK damage · 9-turn cooldown",
+    ]);
+  });
+
   it("supports roving keyboard selection in the custom ability picker", async () => {
     const mounted = await render(<ControlledStart />);
     await click(mounted.querySelectorAll(".character-choice-card")[6]);
     await click(mounted.querySelector(".character-preview__details-button"));
-    const editor = mounted.querySelector('[aria-label="Practice loadout"]');
+    const editor = mounted.querySelector('[aria-label="Selectable loadout"]');
     const trigger = editor.querySelectorAll(".ability-swap-picker__trigger")[2];
 
     await click(trigger);
@@ -234,6 +248,9 @@ describe("the simple grid-to-preview flow", () => {
     const nextName = next.querySelector(".ability-swap-picker__option-title strong").textContent;
     await keydown(next, "Enter");
 
+    panel = document.querySelector(".ability-swap-picker__panel");
+    expect(panel.querySelector('[role="option"][aria-selected="true"]')).toBe(next);
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
     expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(trigger.textContent).toContain(nextName);
@@ -243,6 +260,54 @@ describe("the simple grid-to-preview flow", () => {
     await keydown(panel.querySelector('[role="option"].is-active'), "Escape");
     expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("chooses a bounded source rank with live values before equipping an ability", async () => {
+    const asked = [];
+    const mounted = await render(
+      <ControlledStart onPractice={(draft) => asked.push(draft)} />,
+    );
+    const selected = STARTING_ARCHETYPES[5];
+    await click(mounted.querySelectorAll(".character-choice-card")[5]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+
+    const trigger = mounted.querySelectorAll(".ability-swap-picker__trigger")[0];
+    await click(trigger);
+    let panel = document.querySelector(".ability-swap-picker__panel");
+    const decrease = panel.querySelector('[data-action="decrease-rank"]');
+    const increase = panel.querySelector('[data-action="increase-rank"]');
+    expect(decrease.disabled).toBe(true);
+    expect(increase.disabled).toBe(false);
+    expect(panel.querySelector(".ability-swap-picker__rank-stepper output").textContent)
+      .toContain("Rank 1of 6");
+
+    await click(increase);
+    await click(panel.querySelector('[data-action="increase-rank"]'));
+    panel = document.querySelector(".ability-swap-picker__panel");
+    expect(panel.querySelector(".ability-swap-picker__rank-stepper output").textContent)
+      .toContain("Rank 3of 6");
+    expect(panel.querySelector('[role="option"][aria-selected="true"] .ability-swap-picker__option-summary').textContent)
+      .toContain("2 hits of 64% ATK damage");
+
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
+    expect(trigger.textContent).toContain("Rank 3");
+    expect(trigger.querySelector(".ability-swap-picker__trigger-summary").textContent)
+      .toContain("2 hits of 64% ATK damage");
+
+    await click(mounted.querySelectorAll(".ability-swap-picker__trigger")[2]);
+    panel = document.querySelector(".ability-swap-picker__panel");
+    await click(panel.querySelector('[role="option"][data-skill-id="assassin-shadow-strike"]'));
+    expect(panel.querySelector(".ability-swap-picker__rank-copy").textContent).toContain("Fixed at Rank 1");
+    expect(panel.querySelector('[data-action="decrease-rank"]').disabled).toBe(true);
+    expect(panel.querySelector('[data-action="increase-rank"]').disabled).toBe(true);
+    await keydown(panel.querySelector('[role="option"][aria-selected="true"]'), "Escape");
+
+    await click(mounted.querySelector(".character-details__practice > button"));
+    expect(asked).toEqual([{
+      archetypeId: selected.id,
+      preview: true,
+      testSkillRanks: [3, 1, 1, 1, 1],
+    }]);
   });
 
   it("starts the selected authored character without asking for a name or face", async () => {
@@ -322,7 +387,7 @@ describe("every advertised character reaches the production fight", () => {
     await click(mounted.querySelectorAll(".character-choice-card")[5]);
     await click(mounted.querySelector(".character-preview__details-button"));
 
-    const editor = mounted.querySelector('[aria-label="Practice loadout"]');
+    const editor = mounted.querySelector('[aria-label="Selectable loadout"]');
     let triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
     expect(triggers).toHaveLength(5);
     expect(editor.querySelector("select")).toBeNull();
@@ -335,6 +400,7 @@ describe("every advertised character reaches the production fight", () => {
       .find((option) => option.dataset.skillId !== selected.build.skills[0]);
     const replacementBasic = replacementBasicOption.dataset.skillId;
     await click(replacementBasicOption);
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
 
     triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
     await click(triggers[2]);
@@ -346,6 +412,7 @@ describe("every advertised character reaches the production fight", () => {
     options = panel.querySelectorAll('[role="option"]');
     expect(options).toHaveLength(18);
     await click(panel.querySelector('[role="option"][data-skill-id="penetration"]'));
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
 
     triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
     expect(triggers[2].textContent).toContain("Penetration");
@@ -358,7 +425,7 @@ describe("every advertised character reaches the production fight", () => {
     await keydown(duplicate, "Escape");
     expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
     expect(mounted.querySelector(".practice-loadout-editor__note").textContent)
-      .toContain("Modified test kit");
+      .toContain("Practice loadout modified");
 
     const expectedTestSkills = [
       replacementBasic,
