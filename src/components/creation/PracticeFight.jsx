@@ -27,7 +27,7 @@ export function PracticeFight({
   receipt,
   scenarioId,
   skillRarities = null,
-  combatItemId = null,
+  keepsakeId = null,
   onExit,
 }) {
   const archetype = getStartingArchetype(receipt?.archetypeId);
@@ -35,15 +35,15 @@ export function PracticeFight({
   const weaponPresentation = weaponPresentationFromItemIds(archetype?.gear || []);
   const [attemptIndex, setAttemptIndex] = useState(0);
   const [practice, setPractice] = useState(
-    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities, combatItemId }),
+    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities, keepsakeId }),
   );
   const [feedback, setFeedback] = useState(null);
 
   const start = useCallback((index) => {
     setFeedback(null);
     setAttemptIndex(index);
-    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRarities, combatItemId }));
-  }, [receipt, scenarioId, skillRarities, combatItemId]);
+    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRarities, keepsakeId }));
+  }, [receipt, scenarioId, skillRarities, keepsakeId]);
 
   const dispatch = useCallback((input) => {
     setPractice((current) => {

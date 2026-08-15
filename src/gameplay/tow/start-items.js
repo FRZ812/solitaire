@@ -6,6 +6,10 @@
 // trait or fusion as well; no second copy is written into the durable build.
 
 import { itemTemplate } from "../../data/catalog.js";
+import {
+  PERMANENT_STARTING_KEEPSAKES,
+  permanentItemIdForKeepsake,
+} from "./keepsakes.js";
 import { getSkill } from "./skills.js";
 import { getFusion, getTrait, TRAIT_CAPACITY, TRAIT_RANK_CAP } from "./traits.js";
 import { weaponAttackSnapshotFromItemIds } from "./weapon-techniques.js";
@@ -206,6 +210,13 @@ const START_ITEM_GRANTS = Object.freeze(Object.fromEntries([
     stats: { attack: 12, defense: 12, maxHp: 24, critRate: 5 },
     passive: "The kept sun makes its bearer more in every measurable way.",
   }),
+  ...PERMANENT_STARTING_KEEPSAKES.map((keepsake) => grant(keepsake.itemId, {
+    stats: keepsake.stats,
+    traits: keepsake.traits,
+    skills: keepsake.skills,
+    fusions: keepsake.fusions,
+    passive: `Permanent keepsake — ${keepsake.effect}.`,
+  })),
 ].map((entry) => [entry.itemId, entry])));
 
 export function getTowStartItemGrant(itemId) {
@@ -222,6 +233,18 @@ export function wornItemIds(character, codex = {}) {
   const id = character?.id || "wanderer";
   const record = codex?.characters?.[id] || codex?.characters?.wanderer || {};
   return Array.isArray(record.worn) ? record.worn.filter((itemId) => typeof itemId === "string") : [];
+}
+
+/** Worn gear plus the one permanent profile keepsake, which owns a dedicated slot. */
+export function activeTowItemIds(character, codex = {}) {
+  const id = character?.id || "wanderer";
+  const record = codex?.characters?.[id] || codex?.characters?.wanderer || {};
+  const keepsakeId = character?.profile?.keepsakeId || record?.profile?.keepsakeId || null;
+  const permanentItemId = permanentItemIdForKeepsake(keepsakeId);
+  return [...new Set([
+    ...wornItemIds(character, codex),
+    ...(permanentItemId ? [permanentItemId] : []),
+  ])];
 }
 
 export function towItemActorBonuses(itemIds = []) {

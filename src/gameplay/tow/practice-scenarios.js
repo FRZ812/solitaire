@@ -27,7 +27,11 @@ import { gameplayChecksum } from "../kernel/replay.js";
 import { isCharacterBootstrapReceipt } from "./character-bootstrap.js";
 import { buildCombatChronicle } from "./chronicle.js";
 import { sealTowTerminalReceipt } from "./outcomes.js";
-import { isStartingCombatItem } from "./combat-items.js";
+import {
+  combatItemIdForKeepsake,
+  isStartingKeepsake,
+  permanentItemIdForKeepsake,
+} from "./keepsakes.js";
 import { verifyTowSession } from "./replay.js";
 import { TOW_RULESET_ID, createTowSession } from "./session.js";
 import { getSkill, skillRankForRarity, skillRarityChoices } from "./skills.js";
@@ -136,13 +140,14 @@ function withPracticeSkillRarities(build, sourceSkillIds, skillRarities) {
   };
 }
 
-export function draftHash(receipt, skillRarities = null, combatItemId = null) {
+export function draftHash(receipt, skillRarities = null, keepsakeId = null) {
   if (!isCharacterBootstrapReceipt(receipt)) return null;
   const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
   if (rarities === false) return null;
-  if (combatItemId !== null && !isStartingCombatItem(combatItemId)) return null;
+  if (keepsakeId !== null && !isStartingKeepsake(keepsakeId)) return null;
   const archetype = getStartingArchetype(receipt.archetypeId);
-  const itemIds = archetype?.gear || [];
+  const permanentItemId = permanentItemIdForKeepsake(keepsakeId);
+  const itemIds = [...(archetype?.gear || []), ...(permanentItemId ? [permanentItemId] : [])];
   const build = withPracticeSkillRarities(
     effectiveTowBuild(receipt.build, itemIds),
     receipt.build.skills,
@@ -153,7 +158,7 @@ export function draftHash(receipt, skillRarities = null, combatItemId = null) {
     professionId: receipt.professionId,
     build,
     itemIds,
-    combatItemId,
+    keepsakeId,
   });
 }
 
@@ -193,9 +198,13 @@ export function derivePracticeSeed({
  * The source roster brings an authored stat chassis. Practice must exercise that exact
  * chassis or the selector would advertise one character and test a different one.
  */
-export function practiceActor(receipt) {
+export function practiceActor(receipt, keepsakeId = null) {
   const archetype = getStartingArchetype(receipt?.archetypeId);
-  const bonus = towItemActorBonuses(archetype?.gear || []);
+  const permanentItemId = permanentItemIdForKeepsake(keepsakeId);
+  const bonus = towItemActorBonuses([
+    ...(archetype?.gear || []),
+    ...(permanentItemId ? [permanentItemId] : []),
+  ]);
   const base = archetype?.baseStats || {
     maxHp: 96,
     resolveMax: 8,
@@ -234,7 +243,7 @@ export function createPracticeSession(
   receipt,
   scenarioId = DEFAULT_PRACTICE_SCENARIO_ID,
   attemptIndex = 0,
-  { skillRarities = null, combatItemId = null } = {},
+  { skillRarities = null, keepsakeId = null, combatItemId = null } = {},
 ) {
   if (!isCharacterBootstrapReceipt(receipt)) return rejected("invalid-bootstrap-receipt");
   const scenario = getPracticeScenario(scenarioId);
@@ -242,13 +251,18 @@ export function createPracticeSession(
 
   const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
   if (rarities === false) return rejected("invalid-practice-skill-rarities");
-  if (combatItemId !== null && !isStartingCombatItem(combatItemId)) {
-    return rejected("invalid-practice-combat-item");
+  // `combatItemId` is retained as a compatibility alias for older callers and replay tests.
+  const selectedKeepsakeId = keepsakeId ?? combatItemId;
+  if (selectedKeepsakeId !== null && !isStartingKeepsake(selectedKeepsakeId)) {
+    return rejected("invalid-practice-keepsake");
   }
-  const hash = draftHash(receipt, rarities, combatItemId);
+  const hash = draftHash(receipt, rarities, selectedKeepsakeId);
   const archetype = getStartingArchetype(receipt.archetypeId);
+  const permanentItemId = permanentItemIdForKeepsake(selectedKeepsakeId);
+  const itemIds = [...(archetype?.gear || []), ...(permanentItemId ? [permanentItemId] : [])];
+  const selectedCombatItemId = combatItemIdForKeepsake(selectedKeepsakeId);
   const effectiveBuild = withPracticeSkillRarities(
-    effectiveTowBuild(receipt.build, archetype?.gear || []),
+    effectiveTowBuild(receipt.build, itemIds),
     receipt.build.skills,
     rarities,
   );
@@ -265,13 +279,13 @@ export function createPracticeSession(
     sessionId: `practice:${scenario.id}:${hash}:${attemptIndex}`,
     rootSeed: seed,
     mode: "practice",
-    player: practiceActor(receipt),
+    player: practiceActor(receipt, selectedKeepsakeId),
     enemies: scenario.enemies.map((enemy) => cloneJsonData(enemy)),
     // Practice owns a disposable full Resolve snapshot rather than campaign resources.
     build: {
       ...effectiveBuild,
       skills: effectiveBuild.skills,
-      combatItems: combatItemId ? [{ id: combatItemId, quantity: 1 }] : [],
+      combatItems: selectedCombatItemId ? [{ id: selectedCombatItemId, quantity: 1 }] : [],
     },
     context: {
       source: { kind: "practice", note: scenario.name },

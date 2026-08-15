@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY } from "./engine/campaign-resume.js";
+import { DEFAULT_STARTING_KEEPSAKE_ID, STARTING_KEEPSAKES } from "./gameplay/tow/keepsakes.js";
 import { STARTING_ARCHETYPES } from "./gameplay/tow/starting-archetypes.js";
 import { Solitaire } from "./App.jsx";
 
@@ -180,6 +181,7 @@ describe("one new-campaign start", () => {
       name: STARTING_ARCHETYPES[3].character.name,
       combatArchetypeId: STARTING_ARCHETYPES[3].id,
       progressionModel: "tow-archetype",
+      towBaseStats: STARTING_ARCHETYPES[3].baseStats,
       portraitKey: STARTING_ARCHETYPES[3].character.portraitKey,
     });
     expect(harness.serverState.mechanics.bootstrapOrigin).toBe("archetype");
@@ -247,9 +249,11 @@ describe("practice is reversible and writes nothing", () => {
     expect(restored.querySelectorAll(".character-preview__carousel [role=radio]")[6].getAttribute("aria-checked"))
       .toBe("true");
     expect(restored.querySelector("input")).toBeNull();
-    const keepsake = restored.querySelector(".character-preview__keepsake select");
-    expect(keepsake.querySelectorAll("option")).toHaveLength(4);
-    expect(keepsake.value).toBe("crimson-vial");
+    const keepsake = restored.querySelector(".character-preview__keepsake .keepsake-picker__trigger");
+    expect(STARTING_KEEPSAKES).toHaveLength(10);
+    expect(keepsake.getAttribute("aria-label")).toContain(
+      STARTING_KEEPSAKES.find((entry) => entry.id === DEFAULT_STARTING_KEEPSAKE_ID).name,
+    );
     expect(JSON.stringify(harness.serverState)).toBe(before);
   }, 30_000);
 });

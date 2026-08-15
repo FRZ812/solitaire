@@ -133,11 +133,41 @@ describe("compact combat HUD", () => {
     };
     const onUseItem = vi.fn();
     const mounted = await renderView({ encounter, onUseItem });
-    const item = mounted.querySelector(".tow-combat__item");
+    const trigger = mounted.querySelector(".tow-combat__satchel-trigger");
+    expect(trigger.getAttribute("aria-label")).toContain("1 consumable carried");
+    expect(mounted.querySelector(".tow-combat__satchel-panel")).toBeNull();
+    await act(async () => trigger.click());
+    const item = mounted.querySelector(".tow-combat__satchel-item");
     expect(item.textContent).toContain("Fire Pot");
     expect(item.textContent).toContain("150% ATK");
+    expect(item.querySelector(".tow-combat__satchel-art img")?.getAttribute("src"))
+      .toMatch(/fire-pot-v1\.webp$/);
     await act(async () => item.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(onUseItem).toHaveBeenCalledWith("fire-pot", "foe-0", "wanderer");
+    expect(mounted.querySelector(".tow-combat__satchel-panel")).toBeNull();
+  });
+
+  it("keeps a growing consumable inventory behind one compact bag trigger", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const encounter = {
+      ...base,
+      build: {
+        ...base.build,
+        combatItems: [
+          { id: "crimson-vial", quantity: 2 },
+          { id: "lucid-tonic", quantity: 1 },
+          { id: "warding-ash", quantity: 3 },
+          { id: "fire-pot", quantity: 1 },
+        ],
+      },
+    };
+    const mounted = await renderView({ encounter, onUseItem: vi.fn() });
+    expect(mounted.querySelectorAll(".tow-combat__satchel-trigger")).toHaveLength(1);
+    expect(mounted.querySelector(".tow-combat__satchel-trigger").textContent).toBe("7");
+    await act(async () => mounted.querySelector(".tow-combat__satchel-trigger").click());
+    expect(mounted.querySelectorAll(".tow-combat__satchel-item")).toHaveLength(4);
+    expect(mounted.querySelector(".tow-combat__satchel-panel header").textContent)
+      .toContain("4 kinds · 7 total");
   });
 
   it("moves the incoming attack to one compact icon above the enemy", async () => {
@@ -537,12 +567,16 @@ describe("compact combat HUD", () => {
     }
   });
 
-  it("puts current and maximum health inside each health bar", async () => {
+  it("separates compact HP and RP tracks from their aligned numeric readouts", async () => {
     const mounted = await renderView();
-    const bars = [...mounted.querySelectorAll(".tow-combat__bar")];
-    expect(bars.length).toBeGreaterThanOrEqual(2);
-    expect(bars.every((bar) => /\d+\s*\/\s*\d+/.test(bar.querySelector(".tow-combat__bar-value")?.textContent)))
+    const resources = [...mounted.querySelectorAll(".tow-combat__resource")];
+    expect(resources.length).toBeGreaterThanOrEqual(4);
+    expect(resources.every((resource) => /\d+\s*\/\s*\d+/.test(resource.querySelector(".tow-combat__bar-value")?.textContent)))
       .toBe(true);
+    expect(mounted.querySelector(".tow-combat__resource--health .tow-combat__resource-label").textContent)
+      .toBe("HP");
+    expect(mounted.querySelector(".tow-combat__resource--resolve .tow-combat__resource-label").textContent)
+      .toBe("RP");
     expect(mounted.querySelector(".tow-combat__hp")).toBeNull();
   });
 

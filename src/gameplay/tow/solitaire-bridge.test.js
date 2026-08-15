@@ -95,6 +95,21 @@ describe("characters cross the bridge", () => {
     expect(actor.maxHp).toBe(170);
     expect(actor.stats).toEqual({ attack: 12, defense: 13, critRate: 9, dodgeRate: 4 });
   });
+
+  it("applies the permanent profile keepsake without requiring an equipment slot", () => {
+    const { character, codex } = world();
+    const sourceCharacter = {
+      ...character,
+      name: "Arctic Knight",
+      progressionModel: "tow-archetype",
+      towBaseStats: { maxHp: 170, attack: 12, defense: 13, critRate: 9, dodgeRate: 4 },
+      profile: { keepsakeId: "red-wolf-token" },
+      vitality: character.vitalityMax,
+    };
+    const actor = towPlayerFromCharacter(sourceCharacter, codex);
+    expect(actor.maxHp).toBe(170);
+    expect(actor.stats).toEqual({ attack: 15, defense: 13, critRate: 12, dodgeRate: 4 });
+  });
 });
 
 describe("bestiary enemies cross the bridge", () => {

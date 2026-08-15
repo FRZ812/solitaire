@@ -14,7 +14,7 @@ import {
 } from "./practice-scenarios.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { startingPackageIds } from "./starting-packages.js";
-import { getSkill } from "./skills.js";
+import { getSkill, skillLegality } from "./skills.js";
 
 // The six the plan names as the field-ready Quick Start cohort, by the profession each maps
 // to. Every one has to complete practice without a blocked capability.
@@ -139,6 +139,12 @@ describe("opening a practice fight", () => {
 
     expect(promoted.ok).toBe(true);
     expect(promoted.session.encounter.build.skills.map((entry) => entry.rank)).toEqual([3, 2, 2, 2, 4]);
+    expect(promoted.session.encounter.build.skills.every((entry) => (
+      skillLegality(entry, { turnAvailable: true, resolveAvailable: 99 }).ok
+    ))).toBe(true);
+    expect(promoted.session.encounter.build.skills.every((entry) => (
+      Number.isInteger(entry.cooldownRemaining) && entry.cooldownRemaining === 0
+    ))).toBe(true);
     expect(promoted.seed).toBe(again.seed);
     expect(promoted.genesisChecksum).toBe(again.genesisChecksum);
     expect(promoted.seed).not.toBe(baseRarity.seed);
@@ -188,7 +194,23 @@ describe("opening a practice fight", () => {
     ]);
     expect(practice.seed).not.toBe(createPracticeSession(receipt, "training-yard", 0).seed);
     expect(createPracticeSession(receipt, "training-yard", 0, { combatItemId: "bedroll" }))
-      .toMatchObject({ ok: false, reason: "invalid-practice-combat-item" });
+      .toMatchObject({ ok: false, reason: "invalid-practice-keepsake" });
+  });
+
+  it("applies a permanent keepsake to practice without creating a consumable", () => {
+    const receipt = receiptFor("fighter");
+    const base = createPracticeSession(receipt, "training-yard", 0);
+    const withRelic = createPracticeSession(receipt, "training-yard", 0, {
+      keepsakeId: "red-wolf-token",
+    });
+
+    expect(withRelic.ok).toBe(true);
+    expect(withRelic.session.encounter.actors.wanderer.stats.attack)
+      .toBe(base.session.encounter.actors.wanderer.stats.attack + 3);
+    expect(withRelic.session.encounter.actors.wanderer.stats.critRate)
+      .toBe(base.session.encounter.actors.wanderer.stats.critRate + 3);
+    expect(withRelic.session.encounter.build.combatItems).toEqual([]);
+    expect(withRelic.seed).not.toBe(base.seed);
   });
 
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {

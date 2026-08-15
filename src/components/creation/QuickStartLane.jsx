@@ -25,10 +25,12 @@ import {
   skillRarityChoices,
 } from "../../gameplay/tow/skills.js";
 import {
-  STARTING_COMBAT_ITEMS,
-  describeCombatItemEffect,
-  getCombatItem,
-} from "../../gameplay/tow/combat-items.js";
+  KEEPSAKE_FAMILIES,
+  STARTING_KEEPSAKES,
+  getStartingKeepsake,
+  isKeepsakeUnlocked,
+  startingKeepsakesForFamily,
+} from "../../gameplay/tow/keepsakes.js";
 import {
   describeTraitAtRank,
   getFusion,
@@ -37,6 +39,7 @@ import {
 } from "../../gameplay/tow/traits.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "../combat/tow-combat-ability-art.js";
+import { resolveTowKeepsakeArt } from "../combat/tow-keepsake-art.js";
 import { trapModalFocus, useModalFocus } from "../exploration/modalFocus.js";
 import {
   STARTING_ARCHETYPES,
@@ -445,6 +448,273 @@ function AbilitySwapPicker({
   );
 }
 
+const KEEPSAKE_GROUPS = Object.freeze([
+  Object.freeze({
+    id: "relic",
+    label: KEEPSAKE_FAMILIES.relic,
+    description: "A permanent effect that travels with this character.",
+  }),
+  Object.freeze({
+    id: "supply",
+    label: KEEPSAKE_FAMILIES.supply,
+    description: "A one-use answer carried into the opening fight.",
+  }),
+]);
+
+function KeepsakePicker({
+  value,
+  accent,
+  unlockedAchievementIds = [],
+  compact = false,
+  onChange,
+}) {
+  const listboxId = useId();
+  const headingId = useId();
+  const triggerRef = useRef(null);
+  const panelRef = useRef(null);
+  const optionRefs = useRef([]);
+  const selected = getStartingKeepsake(value) || STARTING_KEEPSAKES[0];
+  const [open, setOpen] = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState(selected.family);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [inspectedId, setInspectedId] = useState(selected.id);
+  const activeGroup = KEEPSAKE_GROUPS.find((group) => group.id === activeGroupId)
+    || KEEPSAKE_GROUPS[0];
+  const options = startingKeepsakesForFamily(activeGroup.id);
+  const inspected = getStartingKeepsake(inspectedId) || selected;
+  const inspectedUnlocked = isKeepsakeUnlocked(inspected, unlockedAchievementIds);
+  const unchanged = inspected.id === selected.id;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const preferred = options.findIndex((item) => item.id === inspected.id);
+    const nextIndex = Math.max(0, preferred);
+    setActiveIndex(nextIndex);
+    const frame = globalThis.requestAnimationFrame?.(() => optionRefs.current[nextIndex]?.focus());
+    return () => globalThis.cancelAnimationFrame?.(frame);
+  }, [activeGroupId, inspected.id, open]);
+
+  const openPicker = () => {
+    setActiveGroupId(selected.family);
+    setInspectedId(selected.id);
+    setOpen(true);
+  };
+
+  const closePicker = ({ restoreFocus = true } = {}) => {
+    setOpen(false);
+    if (restoreFocus) globalThis.requestAnimationFrame?.(() => triggerRef.current?.focus());
+  };
+
+  const switchGroup = (groupId) => {
+    const first = startingKeepsakesForFamily(groupId)[0];
+    setActiveGroupId(groupId);
+    if (first) setInspectedId(first.id);
+  };
+
+  const focusOption = (index) => {
+    setActiveIndex(index);
+    globalThis.requestAnimationFrame?.(() => optionRefs.current[index]?.focus());
+  };
+
+  const moveActive = (direction) => {
+    if (!options.length) return;
+    focusOption((activeIndex + direction + options.length) % options.length);
+  };
+
+  const confirm = () => {
+    if (!inspectedUnlocked || unchanged) return;
+    onChange?.(inspected.id);
+    closePicker();
+  };
+
+  const onPanelKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closePicker();
+      return;
+    }
+    if (event.key === "Tab") {
+      trapModalFocus(event, panelRef.current);
+      return;
+    }
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp")
+      && event.target?.getAttribute?.("role") === "option") {
+      event.preventDefault();
+      moveActive(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if ((event.key === "Home" || event.key === "End")
+      && event.target?.getAttribute?.("role") === "option") {
+      event.preventDefault();
+      focusOption(event.key === "Home" ? 0 : options.length - 1);
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ")
+      && event.target?.getAttribute?.("role") === "option") {
+      event.preventDefault();
+      setInspectedId(options[activeIndex].id);
+    }
+  };
+
+  return (
+    <div className={`keepsake-picker${compact ? " is-compact" : ""}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="ability-swap-picker__trigger keepsake-picker__trigger"
+        role="combobox"
+        aria-label={`Starting keepsake, ${selected.name}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? `${listboxId}-panel` : undefined}
+        data-rarity={selected.rarity}
+        onClick={openPicker}
+      >
+        <span className="ability-swap-picker__trigger-art keepsake-picker__trigger-art">
+          <img src={resolveTowKeepsakeArt(selected)} alt="" />
+        </span>
+        <span className="ability-swap-picker__trigger-copy keepsake-picker__trigger-copy">
+          <span className="ability-swap-picker__trigger-title">
+            <strong>{selected.name}</strong>
+            <small>{titleCase(selected.rarity)}</small>
+          </span>
+          <span className="ability-swap-picker__trigger-summary">{selected.effect}</span>
+          <span className="ability-swap-picker__trigger-uses">
+            {selected.permanent ? "Permanent keepsake" : "One-use supply"}
+          </span>
+        </span>
+        <span className="ability-swap-picker__change" aria-hidden="true">
+          <small>Change</small>
+          <svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" /></svg>
+        </span>
+      </button>
+
+      {open && typeof document !== "undefined" ? createPortal((
+        <div
+          className="ability-swap-picker__overlay keepsake-picker__overlay"
+          data-modal-escape-boundary
+          style={{ "--character-accent": accent }}
+          onKeyDown={onPanelKeyDown}
+        >
+          <div className="ability-swap-picker__backdrop" aria-hidden="true" onPointerDown={() => closePicker()} />
+          <section
+            ref={panelRef}
+            id={`${listboxId}-panel`}
+            className="ability-swap-picker__panel keepsake-picker__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={headingId}
+          >
+            <header className="ability-swap-picker__header">
+              <div>
+                <span>Before the road north</span>
+                <h3 id={headingId}>Choose a keepsake</h3>
+                <p>Take one permanent relic or one emergency supply. Achievement relics remain visible until earned.</p>
+              </div>
+              <button type="button" aria-label="Close keepsake selector" onClick={() => closePicker()}>
+                <Icon name="x" size={17} strokeWidth={1.7} />
+              </button>
+            </header>
+
+            <div className="ability-swap-picker__tabs" role="tablist" aria-label="Keepsake family">
+              {KEEPSAKE_GROUPS.map((group) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={group.id === activeGroup.id}
+                  className={group.id === activeGroup.id ? "is-active" : ""}
+                  data-group-id={group.id}
+                  key={group.id}
+                  onClick={() => switchGroup(group.id)}
+                >
+                  <span>{group.label}</span>
+                  <small>{startingKeepsakesForFamily(group.id).length}</small>
+                </button>
+              ))}
+            </div>
+
+            <div
+              className="ability-swap-picker__list keepsake-picker__list"
+              id={listboxId}
+              role="listbox"
+              aria-label={activeGroup.label}
+            >
+              {options.map((item, index) => {
+                const unlocked = isKeepsakeUnlocked(item, unlockedAchievementIds);
+                const current = item.id === selected.id;
+                const inspecting = item.id === inspected.id;
+                return (
+                  <button
+                    ref={(node) => { optionRefs.current[index] = node; }}
+                    type="button"
+                    role="option"
+                    aria-selected={current}
+                    tabIndex={index === activeIndex ? 0 : -1}
+                    className={`keepsake-picker__option${index === activeIndex ? " is-active" : ""}${inspecting ? " is-inspected" : ""}${current ? " is-selected" : ""}${unlocked ? "" : " is-locked"}`}
+                    data-rarity={item.rarity}
+                    data-keepsake-id={item.id}
+                    key={item.id}
+                    onFocus={() => setActiveIndex(index)}
+                    onPointerEnter={() => setActiveIndex(index)}
+                    onClick={() => {
+                      setActiveIndex(index);
+                      setInspectedId(item.id);
+                    }}
+                  >
+                    <span className="ability-swap-picker__option-art">
+                      <img src={resolveTowKeepsakeArt(item)} alt="" />
+                    </span>
+                    <span className="ability-swap-picker__option-copy">
+                      <span className="ability-swap-picker__option-title">
+                        <strong>{item.name}</strong>
+                        <small>{titleCase(item.rarity)}</small>
+                      </span>
+                      <span className="ability-swap-picker__option-summary">{item.description}</span>
+                      <span className="ability-swap-picker__option-meta">{item.effect}</span>
+                    </span>
+                    <span className="ability-swap-picker__availability">
+                      {current ? "Chosen" : !unlocked ? "Locked" : inspecting ? "Inspecting" : "Available"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="keepsake-picker__selection-bar" data-rarity={inspected.rarity}>
+              <span className="keepsake-picker__selection-copy">
+                <small>{inspected.permanent ? "Permanent relic" : "Emergency supply"}</small>
+                <strong>{inspected.name}</strong>
+                <span>{inspected.effect}</span>
+              </span>
+              {inspected.unlock ? (
+                <span className="keepsake-picker__unlock">
+                  <Icon name="shield" size={14} strokeWidth={1.6} />
+                  <span><strong>{inspected.unlock.name}</strong><small>{inspected.unlock.requirement}</small></span>
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="ability-swap-picker__confirm keepsake-picker__confirm"
+                data-action="confirm-keepsake"
+                disabled={unchanged || !inspectedUnlocked}
+                onClick={confirm}
+              >
+                {!inspectedUnlocked ? "Achievement locked" : unchanged ? "Current keepsake" : "Take this keepsake"}
+              </button>
+            </div>
+
+            <footer>
+              <span><i aria-hidden="true" /> One starting keepsake</span>
+              <small>{activeGroup.description}</small>
+            </footer>
+          </section>
+        </div>
+      ), document.body) : null}
+    </div>
+  );
+}
+
 function SelectLoadoutEditor({ selected, skillIds, skillRarities, onSkillChange, onReset }) {
   const exclusiveAbilities = useMemo(() => characterAbilitiesFor(selected.id), [selected.id]);
   const basicOptions = useMemo(
@@ -646,6 +916,7 @@ function CharacterDetails({
   onResetTestSkills,
   keepsakeId,
   onKeepsakeChange,
+  unlockedAchievementIds,
   scenarioId,
   onScenarioChange,
   onPractice,
@@ -763,23 +1034,14 @@ function CharacterDetails({
           <section className="character-details__keepsakes">
             <div className="character-details__section-heading">
               <span className="character-details__label">Starting keepsake</span>
-              <small>Choose one · consumed in combat</small>
+              <small>Permanent relic or one-use supply</small>
             </div>
-            <div className="character-details__keepsake-grid" role="radiogroup" aria-label="Starting keepsake">
-              {STARTING_COMBAT_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={item.id === keepsakeId}
-                  className={item.id === keepsakeId ? "is-selected" : ""}
-                  onClick={() => onKeepsakeChange(item.id)}
-                >
-                  <strong>{item.name}</strong>
-                  <span>{describeCombatItemEffect(item)}</span>
-                </button>
-              ))}
-            </div>
+            <KeepsakePicker
+              value={keepsakeId}
+              accent={selected.color}
+              unlockedAchievementIds={unlockedAchievementIds}
+              onChange={onKeepsakeChange}
+            />
           </section>
 
           <section>
@@ -812,6 +1074,7 @@ export function QuickStartLane({
   onQuit,
   busy = false,
   error = null,
+  unlockedAchievementIds = [],
 }) {
   const normalized = normalizeArchetypeDraft(draft);
   const selected = getStartingArchetype(normalized.archetypeId) || STARTING_ARCHETYPES[0];
@@ -996,18 +1259,15 @@ export function QuickStartLane({
                   );
                 })}
               </div>
-              <label className="character-preview__keepsake">
-                <span>Starting keepsake</span>
-                <select
+              <div className="character-preview__keepsake">
+                <KeepsakePicker
                   value={normalized.keepsakeId}
-                  onChange={(event) => change({ keepsakeId: event.target.value })}
-                >
-                  {STARTING_COMBAT_ITEMS.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-                <small>{describeCombatItemEffect(getCombatItem(normalized.keepsakeId))}</small>
-              </label>
+                  accent={selected.color}
+                  unlockedAchievementIds={unlockedAchievementIds}
+                  compact
+                  onChange={(keepsakeId) => change({ keepsakeId })}
+                />
+              </div>
             </div>
 
             {error ? <p className="character-preview__alert" role="alert">{error}</p> : null}
@@ -1089,6 +1349,7 @@ export function QuickStartLane({
           onResetTestSkills={() => change({ testSkillIds: null, testSkillRarities: null })}
           keepsakeId={normalized.keepsakeId}
           onKeepsakeChange={(keepsakeId) => change({ keepsakeId })}
+          unlockedAchievementIds={unlockedAchievementIds}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
           onPractice={() => onPractice?.(normalized, scenarioId)}
