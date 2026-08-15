@@ -46,6 +46,11 @@ has only Legendary and Mythical states, while Common reaches Legendary after fou
 promotions and Mythical after five. The interface always shows the resulting rarity name,
 never an `x/y` rank counter. Damage, status, and use-count text update live before confirm.
 
+General abilities use the same promotion ladder from their authored rarity through
+Mythical. Where the current source capture supplies only one mechanical value, later
+rarities retain that final sourced magnitude and use count. The runtime records the higher
+rarity, but does not interpolate or invent unsupported combat scaling.
+
 The selected rarities are part of the deterministic practice seed and starting encounter
 state only. They do not change the authored journey loadout or durable build schema.
 

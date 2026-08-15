@@ -7,8 +7,9 @@
 // the basic attack or defence rather than taking a slot, which is what makes Strike and
 // Block slots rather than cards.
 //
-// Rank values are quoted verbatim from the wiki rather than interpolated: unlike traits,
-// every skill lists its per-rank magnitudes outright.
+// Rank values are quoted verbatim from the wiki rather than interpolated. Character
+// abilities list every promoted value outright; a General ability whose capture contains
+// one fixed value keeps that value as its rarity rises instead of inventing new scaling.
 
 import {
   FLEXIBLE_CHARACTER_ABILITY_TYPES,
@@ -94,8 +95,16 @@ function skill(id, name, {
   source = null,
   note = null,
 }) {
-  const rankCount = usesPerActByRank?.length
+  const sourcedRankCount = usesPerActByRank?.length
     ?? effects.reduce((most, effect) => Math.max(most, (effect.percentByRank || effect.countByRank || []).length), 1);
+  const rarityStart = SKILL_RARITY_PROGRESSION.indexOf(rarity);
+  // General rewards can be promoted all the way to Mythical even when the captured
+  // mechanic has only one value row. Effect and use tables deliberately hold their final
+  // sourced value at those later rarities; progression must never synthesize combat math.
+  const promotedRankCount = abilityType === "general" && rarityStart >= 0
+    ? SKILL_RARITY_PROGRESSION.length - rarityStart
+    : sourcedRankCount;
+  const rankCount = Math.max(sourcedRankCount, promotedRankCount);
   return Object.freeze({
     id,
     name,
@@ -537,7 +546,7 @@ function skillDefinition(skillOrId) {
   return definition;
 }
 
-/** Player-facing rarity states unlocked by this ability's sourced upgrade rows. */
+/** Player-facing rarity states this ability can occupy. */
 export function skillRarityChoices(skillOrId) {
   const definition = skillDefinition(skillOrId);
   const start = SKILL_RARITY_PROGRESSION.indexOf(definition.rarity);
@@ -548,13 +557,13 @@ export function skillRarityChoices(skillOrId) {
   return choices;
 }
 
-/** Translate the engine's compact rank index into the rarity promoted to at that row. */
+/** Translate the engine's compact rank index into its promoted rarity. */
 export function skillRarityAtRank(skillOrId, rank = 1) {
   const definition = skillDefinition(skillOrId);
   return skillRarityChoices(definition)[rankIndex(definition, rank)];
 }
 
-/** Translate a player-selected rarity back to the sourced row used by combat math. */
+/** Translate a player-selected rarity into the compact runtime row. */
 export function skillRankForRarity(skillOrId, rarity) {
   const definition = skillDefinition(skillOrId);
   const index = skillRarityChoices(definition).indexOf(rarity);
@@ -574,7 +583,9 @@ export function usesPerAct(skillId, rank = 1) {
   const definition = getSkill(skillId);
   if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
   const index = rankIndex(definition, rank);
-  if (definition.usesPerActByRank) return definition.usesPerActByRank[index];
+  if (definition.usesPerActByRank) {
+    return definition.usesPerActByRank[Math.min(index, definition.usesPerActByRank.length - 1)];
+  }
   return definition.usesPerAct;
 }
 

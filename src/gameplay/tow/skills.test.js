@@ -59,6 +59,25 @@ describe("the catalogue", () => {
     expect(() => skillRankForRarity("assassin-execution", "rare")).toThrow(/invalid-skill-rarity/);
   });
 
+  it("promotes every General ability from its authored rarity through Mythical", () => {
+    expect(skillRarityChoices("penetration")).toEqual([
+      "uncommon", "rare", "epic", "legendary", "mythical",
+    ]);
+    expect(skillRankForRarity("penetration", "mythical")).toBe(5);
+    expect(createSkillState("penetration", 5)).toMatchObject({
+      rank: 5,
+      usesRemaining: 7,
+    });
+    // The source capture has one fixed mechanic row, so promotion changes rarity without
+    // manufacturing an unsupported damage value or use-count curve.
+    expect(effectMagnitude("penetration", 0, 5)).toBe(180);
+
+    expect(skillRarityChoices("judge-of-fate")).toEqual(["legendary", "mythical"]);
+    expect(skillRankForRarity("judge-of-fate", "mythical")).toBe(2);
+    expect(generalAbilityIds().every((id) => skillRarityChoices(id).at(-1) === "mythical"))
+      .toBe(true);
+  });
+
   it("transcribes per-rank magnitudes verbatim rather than interpolating", () => {
     // Strike: "(100/115/130/145/160/175)% of attack power".
     expect([1, 2, 3, 4, 5, 6].map((rank) => effectMagnitude("strike", 0, rank)))
@@ -240,12 +259,13 @@ describe("acquiring skills", () => {
     expect(effectMagnitude("thirst-for-blood", 0, 2)).toBe(20);
   });
 
-  it("refills a skill the wiki records at a single rank without inventing one", () => {
-    // Sleep Grenade has no documented rank progression, so acquiring it again refills
-    // rather than inventing a rank 2 magnitude.
+  it("promotes a General ability while holding its last sourced mechanic value", () => {
+    // Sleep Grenade can advance from Rare to Epic, but its captured duration remains 3.
     const spent = [{ ...createSkillState("sleep-grenade"), usesRemaining: 1, cooldownRemaining: 4 }];
     const result = acquireSkill(spent, "sleep-grenade");
-    expect(result.loadout[0]).toMatchObject({ rank: 1, usesRemaining: 4, cooldownRemaining: 0 });
+    expect(result.loadout[0]).toMatchObject({ rank: 2, usesRemaining: 4, cooldownRemaining: 0 });
+    expect(skillRarityAtRank("sleep-grenade", 2)).toBe("epic");
+    expect(effectMagnitude("sleep-grenade", 0, 2)).toBe(3);
   });
 
   it("stops upgrading at the top rank", () => {

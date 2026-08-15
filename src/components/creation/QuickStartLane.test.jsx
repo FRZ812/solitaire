@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstrap.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
+import { getSkill } from "../../gameplay/tow/skills.js";
 import {
   STARTING_ARCHETYPES,
   TOWER_ROSTER_SIZE,
@@ -322,6 +323,55 @@ describe("the simple grid-to-preview flow", () => {
       archetypeId: selected.id,
       preview: true,
       testSkillRarities: ["legendary", "common", "legendary", "legendary", "rare"],
+    }]);
+  });
+
+  it("promotes a General ability from its authored rarity through Mythical", async () => {
+    const asked = [];
+    const mounted = await render(
+      <ControlledStart onPractice={(draft) => asked.push(draft)} />,
+    );
+    const selected = STARTING_ARCHETYPES[5];
+    await click(mounted.querySelectorAll(".character-choice-card")[5]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+
+    const trigger = mounted.querySelectorAll(".ability-swap-picker__trigger")[2];
+    await click(trigger);
+    let panel = document.querySelector(".ability-swap-picker__panel");
+    await click(panel.querySelector('[role="tab"][data-group-id="general"]'));
+    await click(panel.querySelector('[role="option"][data-skill-id="penetration"]'));
+    panel = document.querySelector(".ability-swap-picker__panel");
+
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Uncommon");
+    expect(panel.querySelector('[data-action="lower-rarity"]').disabled).toBe(true);
+    expect(panel.querySelector('[data-action="promote-rarity"]').disabled).toBe(false);
+
+    for (let promotion = 0; promotion < 4; promotion += 1) {
+      await click(panel.querySelector('[data-action="promote-rarity"]'));
+      panel = document.querySelector(".ability-swap-picker__panel");
+    }
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Mythical");
+    expect(panel.querySelector('[role="option"][aria-selected="true"] .ability-swap-picker__option-summary').textContent)
+      .toContain("180% ATK");
+    expect(panel.querySelector('[data-action="promote-rarity"]').disabled).toBe(true);
+
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
+    expect(trigger.textContent).toContain("Penetration");
+    expect(trigger.textContent).toContain("Mythical");
+    expect(trigger.textContent).not.toMatch(/Rank|\d\s*\/\s*\d/);
+
+    const expectedSkillIds = [...selected.build.skills];
+    expectedSkillIds[2] = "penetration";
+    const expectedRarities = expectedSkillIds.map((id) => getSkill(id).rarity);
+    expectedRarities[2] = "mythical";
+    await click(mounted.querySelector(".character-details__practice > button"));
+    expect(asked).toEqual([{
+      archetypeId: selected.id,
+      preview: true,
+      testSkillIds: expectedSkillIds,
+      testSkillRarities: expectedRarities,
     }]);
   });
 
