@@ -4,103 +4,179 @@ import { statusTypes } from "../../gameplay/kernel/status-stack.js";
 import { resolveTowAbilityArt } from "./tow-combat-ability-art.js";
 import {
   COMBAT_VFX_ASSETS,
+  COMBAT_VFX_PLANNED_SKILL_REGISTRY,
+  COMBAT_VFX_SKILL_REGISTRY,
   combatVfxForEvent,
+  combatVfxForHit,
   combatVfxForIntent,
   combatVfxForStatus,
   combatVfxVariantForForm,
   combatVfxVariantForSkill,
 } from "./tow-combat-vfx.js";
+import { canvasSupportsChoreography } from "./TowCombatVfxCanvas.jsx";
 
-describe("authored combat VFX", () => {
-  it("has a transparent dedicated asset for every visual family", () => {
+const ARCHETYPE_PREFIXES = Object.freeze([
+  "arctic-",
+  "assassin-",
+  "automaton-",
+  "blade-",
+  "clocktower-",
+  "demon-",
+  "mage-",
+  "north-king-",
+  "priestess-",
+  "sleepless-",
+  "vampire-",
+  "witch-",
+]);
+
+function expectCanvasVisual(visual) {
+  expect(visual).toMatchObject({
+    asset: null,
+    assetSource: "canvas",
+    authored: true,
+    choreography: expect.any(String),
+    palette: {
+      primary: expect.any(String),
+      secondary: expect.any(String),
+      shadow: expect.any(String),
+    },
+    profile: {
+      key: expect.stringMatching(/^vfx-/),
+      seed: expect.any(Number),
+    },
+    signatureKey: expect.any(String),
+  });
+  expect(canvasSupportsChoreography(visual.choreography), visual.variant).toBe(true);
+}
+
+describe("authored procedural combat VFX", () => {
+  it("keeps the raster family manifest only for backwards-compatible UI consumers", () => {
     expect(Object.keys(COMBAT_VFX_ASSETS).sort()).toEqual([
       "afflict", "arcane", "evade", "fire", "frost", "gash", "heal", "impact",
       "lightning", "pierce", "slash", "ward", "wind",
     ]);
     expect(Object.values(COMBAT_VFX_ASSETS).every((asset) => asset.endsWith(".png"))).toBe(true);
-    expect(Object.values(COMBAT_VFX_ASSETS).every((asset) => !asset.includes("svg"))).toBe(true);
     expect(new Set(Object.values(COMBAT_VFX_ASSETS)).size).toBe(13);
   });
 
-  it("keeps full-bleed ability-card art out of character-anchored foreground VFX", () => {
-    const visuals = skillIds().map((skillId) => combatVfxVariantForSkill(skillId));
-    expect(visuals.filter((visual) => !visual)).toEqual([]);
-    expect(visuals.every((visual) => visual.asset.endsWith(".png"))).toBe(true);
-    expect(visuals.every((visual) => ["family", "dedicated"].includes(visual.assetSource))).toBe(true);
-    expect(visuals.every((visual) => !Object.hasOwn(visual, "signatureAsset"))).toBe(true);
+  it("exhaustively maps the 276 archetype abilities and every current combat skill", () => {
+    const ids = skillIds();
+    const archetypeIds = ids.filter((id) => (
+      id !== "blade-of-curse"
+      && ARCHETYPE_PREFIXES.some((prefix) => id.startsWith(prefix))
+    ));
+    expect(archetypeIds).toHaveLength(276);
+    expect(Object.keys(COMBAT_VFX_SKILL_REGISTRY)).toEqual(ids);
+
+    const visuals = ids.map((skillId) => combatVfxVariantForSkill(skillId));
+    visuals.forEach(expectCanvasVisual);
+    expect(new Set(visuals.map((visual) => visual.signatureKey)).size).toBe(visuals.length);
 
     const slash = combatVfxVariantForSkill("blade-slash");
-    expect(slash).toMatchObject({ asset: COMBAT_VFX_ASSETS.slash, assetSource: "family" });
+    expect(slash.asset).toBeNull();
     expect(slash.asset).not.toBe(resolveTowAbilityArt(getSkill("blade-slash")));
   });
 
-  it("separates the Last Assassin execution impact from the multi-hit knife storm", () => {
+  it("authors the forward-compatible ability aliases named by the implementation plan", () => {
+    const visuals = Object.values(COMBAT_VFX_PLANNED_SKILL_REGISTRY);
+    expect(visuals).toHaveLength(141);
+    visuals.forEach(expectCanvasVisual);
+    expect(combatVfxVariantForSkill("mage-chain-lightning").choreography).toBe("lightning-fork");
+    expect(combatVfxVariantForSkill("automaton-orbital-laser").choreography).toBe("orbital-pillar");
+    expect(combatVfxVariantForSkill("blade-thousand-cuts").choreography).toBe("strike-combo");
+  });
+
+  it("separates the Last Assassin execution line from every knife-storm contact", () => {
     const execution = combatVfxVariantForSkill("assassin-execution");
     const storm = combatVfxVariantForSkill("assassin-storm-of-knives");
-    expect(execution.asset).toContain("assassin-execution-vfx-v1.png");
-    expect(storm.asset).toContain("assassin-storm-of-knives-vfx-v1.png");
-    expect(execution.asset).not.toBe(storm.asset);
-    expect(execution.motion).toBe("execution");
-    expect(storm.motion).toBe("volley");
+    expectCanvasVisual(execution);
+    expectCanvasVisual(storm);
+    expect(execution).toMatchObject({ choreography: "execution-line", motion: "execution" });
+    expect(storm).toMatchObject({ choreography: "knife-combo", motion: "volley" });
+    expect(execution.signatureKey).not.toBe(storm.signatureKey);
+
+    const hits = Array.from({ length: 4 }, (_, index) => combatVfxForHit(storm, index, 4));
+    expect(hits.map((visual) => visual.choreography)).toEqual([
+      "knife-left", "knife-right", "knife-thrust", "knife-cross",
+    ]);
+    expect(new Set(hits.map((visual) => visual.signatureKey)).size).toBe(4);
   });
 
-  it("renders persistent damage with transparent effect families instead of source-skill cards", () => {
-    const tickCases = [
-      [{ voidMonster: 12 }, "arcane"],
-      [{ hellfireSpirit: 20 }, "fire"],
-      [{ delayedDamage: 666 }, "afflict"],
-      [{ forbiddenRitual: true }, "arcane"],
-    ];
-    for (const [detail, family] of tickCases) {
-      const visual = combatVfxForEvent({}, { type: "tick-damage", ...detail });
-      expect(visual).toMatchObject({ family, asset: COMBAT_VFX_ASSETS[family], assetSource: "family" });
-      expect(visual.asset).not.toContain("abilities/");
-    }
-  });
+  it("gives the Desolate Vampire semantic motion and keeps Thorn out of the claw family", () => {
+    expect(combatVfxVariantForSkill("vampire-claw").choreography).toBe("claw-trails");
+    expect(combatVfxVariantForSkill("vampire-blood-spear").choreography).toBe("blood-lance");
+    expect(combatVfxVariantForSkill("vampire-heart-destroyer").choreography).toBe("heart-pierce");
+    expect(combatVfxVariantForSkill("vampire-blood-whirlwind").choreography).toBe("blood-maelstrom");
 
-  it("gives Whirlwind wind-pressure VFX without floating its square ability card", () => {
-    const whirlwind = combatVfxVariantForSkill("north-king-whirlwind");
-    expect(whirlwind).toMatchObject({
-      family: "wind",
-      variant: "north-king-whirlwind",
-      motion: "cyclone",
+    const rampage = combatVfxVariantForSkill("vampire-rampage");
+    expect(Array.from({ length: 4 }, (_, index) => combatVfxForHit(rampage, index, 4).choreography))
+      .toEqual(["blood-sweep-left", "blood-sweep-right", "blood-lance", "blood-backflow"]);
+
+    const thorn = combatVfxForStatus("thorn");
+    expect(thorn).toMatchObject({
+      family: "nature",
+      choreography: "thorn-growth",
+      palette: { primary: "#7bd88f", secondary: "#3a8043", shadow: "#183e1c" },
     });
-    expect(whirlwind.asset).toBe(COMBAT_VFX_ASSETS.wind);
-    expect(whirlwind.asset).not.toBe(COMBAT_VFX_ASSETS.slash);
-    expect(whirlwind).not.toHaveProperty("signatureAsset");
+    expect(thorn.family).not.toBe("gash");
+    expect(thorn.choreography).not.toContain("claw");
   });
 
-  it("gives every active status an icon-ready transparent effect", () => {
-    for (const status of statusTypes()) {
-      expect(combatVfxForStatus(status), status).toMatchObject({
-        asset: expect.stringMatching(/\.png$/),
-        iconAsset: expect.stringMatching(/\.(?:png|webp)$/),
-        iconPosition: expect.stringMatching(/^\d+(?:\.\d+)?% \d+(?:\.\d+)?%$/),
-        family: expect.any(String),
-        variant: `status-${status}`,
+  it("renders persistent damage as procedural status choreography", () => {
+    const tickCases = [
+      [{ voidMonster: 12 }, "void", "void-tendrils"],
+      [{ hellfireSpirit: 20 }, "fire", "hellfire-rise"],
+      [{ delayedDamage: 666 }, "void", "fate-clock"],
+      [{ forbiddenRitual: true }, "void", "forbidden-glyph"],
+    ];
+    for (const [detail, family, choreography] of tickCases) {
+      expect(combatVfxForEvent({}, { type: "tick-damage", ...detail })).toMatchObject({
+        family,
+        choreography,
+        asset: null,
+        assetSource: "canvas",
       });
     }
-    const icons = statusTypes().map((status) => {
-      const visual = combatVfxForStatus(status);
-      return `${visual.iconAsset}#${visual.iconPosition}`;
+  });
+
+  it("gives every active status canvas choreography while retaining icon metadata", () => {
+    const types = statusTypes();
+    const visuals = types.map((status) => combatVfxForStatus(status));
+    for (const [index, visual] of visuals.entries()) {
+      expectCanvasVisual(visual);
+      expect(visual.variant).toBe(`status-${types[index]}`);
+      expect(visual.iconAsset).toMatch(/\.(?:png|webp)$/);
+      expect(visual.iconPosition).toMatch(/^\d+(?:\.\d+)?% \d+(?:\.\d+)?%$/);
+    }
+    expect(new Set(visuals.map((visual) => visual.signatureKey)).size).toBe(visuals.length);
+    expect(new Set(visuals.map((visual) => `${visual.iconAsset}#${visual.iconPosition}`)).size)
+      .toBe(visuals.length);
+    expect(combatVfxForStatus("bleed").choreography).toBe("blood-drip");
+    expect(combatVfxForStatus("bleed-atk").choreography).toBe("wound-rip");
+    expect(combatVfxForStatus("stun").choreography).toBe("impact-stagger");
+  });
+
+  it("gives every weapon form an authored, canvas-native lineage", () => {
+    const forms = [
+      ["measured-cut", "slash", "single-sweep"],
+      ["threefold-cut", "gash", "strike-combo"],
+      ["pinning-arrow", "pierce", "binding-lines"],
+      ["cinder-mark", "fire", "ember-sweep"],
+      ["forked-bolt", "lightning", "lightning-fork"],
+    ];
+    for (const [formId, family, choreography] of forms) {
+      const visual = combatVfxVariantForForm(formId);
+      expectCanvasVisual(visual);
+      expect(visual).toMatchObject({ family, choreography });
+    }
+  });
+
+  it("keeps full ability art on declared enemy intent, not on the battlefield effect", () => {
+    expect(combatVfxForIntent({ attackId: "foe-jab", name: "Jab", hits: 1 })).toMatchObject({
+      family: "pierce",
+      assetSource: "intent-art",
     });
-    expect(new Set(icons).size).toBe(icons.length);
-  });
-
-  it("keeps weapon forms visually distinct within and across attack families", () => {
-    expect(combatVfxVariantForForm("measured-cut")).toMatchObject({ family: "slash", variant: "measured-cut", motion: "measured" });
-    expect(combatVfxVariantForForm("threefold-cut")).toMatchObject({ family: "gash", variant: "threefold-cut", motion: "flurry" });
-    expect(combatVfxVariantForForm("pinning-arrow")).toMatchObject({ family: "pierce", variant: "pinning-arrow", motion: "pin" });
-    expect(combatVfxVariantForForm("cinder-mark")).toMatchObject({ family: "fire", variant: "cinder-mark", motion: "brand" });
-    expect(combatVfxVariantForForm("forked-bolt")).toMatchObject({ family: "lightning", variant: "forked-bolt", motion: "fork" });
-    expect(combatVfxVariantForForm("measured-cut").asset).toBe(COMBAT_VFX_ASSETS.slash);
-    expect(combatVfxVariantForForm("threefold-cut").asset).toBe(COMBAT_VFX_ASSETS.gash);
-    expect(combatVfxVariantForForm("pinning-arrow").asset).toBe(COMBAT_VFX_ASSETS.pierce);
-  });
-
-  it("derives enemy intent and attack art from the declared move", () => {
-    expect(combatVfxForIntent({ attackId: "foe-jab", name: "Jab", hits: 1 })).toMatchObject({ family: "pierce" });
-    expect(combatVfxForIntent({ attackId: "heavy-smash", name: "Heavy Smash", hits: 1 })).toMatchObject({ family: "impact" });
     const dance = combatVfxForIntent({
       attackId: "enemy-blade-katana-dance",
       skillId: "blade-katana-dance",
@@ -109,23 +185,25 @@ describe("authored combat VFX", () => {
     });
     expect(dance.asset).toBe(resolveTowAbilityArt(getSkill("blade-katana-dance")));
     expect(dance.asset).toContain("blade-katana-dance-v1.webp");
-    expect(dance.asset).not.toContain("svg");
-    expect(combatVfxForEvent({
+
+    const attack = combatVfxForEvent({
       enemyAttacks: { foe: [{ id: "storm-flurry", name: "Storm Flurry", hits: 3 }] },
     }, {
       type: "enemy-attack", enemyId: "foe", attackId: "storm-flurry", hits: [{}, {}, {}],
-    })).toMatchObject({ family: "lightning", variant: "enemy-storm-flurry", motion: "multi" });
+    });
+    expect(attack).toMatchObject({ asset: null, assetSource: "canvas", motion: "multi" });
+    expect(canvasSupportsChoreography(attack.choreography)).toBe(true);
   });
 
   it("gives hybrid abilities distinct impact, ward, and status phases", () => {
     expect(combatVfxForEvent({}, {
       type: "skill-damage", skillId: "sleepless-flame-curtain",
-    })).toMatchObject({ family: "fire", variant: "sleepless-flame-curtain" });
+    })).toMatchObject({ family: "fire", choreography: "curtain-rise" });
     expect(combatVfxForEvent({}, {
       type: "skill-shield", skillId: "sleepless-flame-curtain",
-    })).toMatchObject({ family: "ward", variant: "sleepless-flame-curtain-ward" });
+    })).toMatchObject({ family: "ward", choreography: "ward-arc" });
     expect(combatVfxForEvent({}, {
       type: "skill-status", skillId: "sleepless-flame-curtain", status: "burn",
-    })).toMatchObject({ family: "fire", variant: "sleepless-flame-curtain-burn" });
+    })).toMatchObject({ family: "fire", choreography: "flame-rise" });
   });
 });

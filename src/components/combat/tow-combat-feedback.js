@@ -2,7 +2,7 @@ import { statusCount } from "../../gameplay/kernel/status-stack.js";
 import { PROVISIONAL_DAMAGE_POLICY } from "../../gameplay/kernel/tow-damage.js";
 import { getCombatItem } from "../../gameplay/tow/combat-items.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
-import { COMBAT_VFX_ASSETS, combatVfxForEvent, combatVfxForStatus } from "./tow-combat-vfx.js";
+import { combatVfxForEvent, combatVfxForHit, combatVfxForStatus } from "./tow-combat-vfx.js";
 
 const DEFENCE_LABELS = Object.freeze({
   invincible: "Invincible",
@@ -380,12 +380,6 @@ function cueIdentity(event, suffix) {
   return `${event.sequence}-${suffix}`;
 }
 
-function outcomeAsset(kind) {
-  if (kind === "evade") return COMBAT_VFX_ASSETS.evade;
-  if (kind === "ward" || kind === "block") return COMBAT_VFX_ASSETS.ward;
-  return null;
-}
-
 function hitCue(encounter, event, hit, index, hitCount, visual) {
   const enemyAttack = event.type === "enemy-attack";
   const attackerId = enemyAttack ? event.enemyId : event.actorId;
@@ -444,7 +438,7 @@ function hitCue(encounter, event, hit, index, hitCount, visual) {
     skillId: event.skillId || null,
     attackId: event.attackId || null,
     visual,
-    outcomeAsset: outcomeAsset(kind),
+    outcomeAsset: null,
   };
 }
 
@@ -493,14 +487,28 @@ export function combatCuesForEvent(encounter, event) {
       ? encounter?.enemyAttacks?.[event.enemyId]?.find((entry) => entry.id === event.attackId)
       : null;
     const hits = resolvedHits(event.hits, event.type === "enemy-attack" ? enemyDefinition?.damage : event.amount);
-    return hits.map((hit, index) => hitCue(encounter, event, hit, index, hits.length, visual));
+    return hits.map((hit, index) => hitCue(
+      encounter,
+      event,
+      hit,
+      index,
+      hits.length,
+      combatVfxForHit(visual, index, hits.length),
+    ));
   }
 
   if (event.type === "combat-item-used") {
     if (event.effect === "damage-attack-percent") {
       const visual = combatVfxForEvent(encounter, event);
       const hits = resolvedHits(event.hits, event.amount);
-      return hits.map((hit, index) => hitCue(encounter, event, hit, index, hits.length, visual));
+      return hits.map((hit, index) => hitCue(
+        encounter,
+        event,
+        hit,
+        index,
+        hits.length,
+        combatVfxForHit(visual, index, hits.length),
+      ));
     }
     if (event.effect === "heal-max-percent") {
       return [simpleCue(encounter, event, {

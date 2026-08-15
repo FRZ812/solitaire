@@ -317,10 +317,17 @@ describe("compact combat HUD", () => {
     expect(effects.map((effect) => effect.dataset.effectLane)).toEqual(["0", "1"]);
     expect(effects.map((effect) => effect.style.getPropertyValue("--tow-effect-delay")))
       .toEqual(["0ms", "155ms"]);
-    expect(effects.every((effect) => effect.dataset.vfxSource === "family")).toBe(true);
-    expect(effects.every((effect) => effect.querySelector(".tow-combat__effect-asset")
-      .getAttribute("src").endsWith(".png"))).toBe(true);
+    expect(effects.every((effect) => effect.dataset.vfxSource === "canvas")).toBe(true);
+    expect(effects.map((effect) => effect.dataset.vfxChoreography)).toEqual([
+      "combo-left",
+      "combo-right",
+    ]);
+    expect(new Set(effects.map((effect) => effect.dataset.vfxSignature)).size).toBe(2);
+    expect(effects.every((effect) => !effect.querySelector(".tow-combat__effect-asset"))).toBe(true);
     expect(effects.every((effect) => !effect.querySelector(".tow-combat__effect-signature"))).toBe(true);
+    expect(container.querySelector("[data-testid='tow-combat-vfx-canvas']")).toMatchObject({
+      dataset: expect.objectContaining({ renderer: "canvas-2d", cueCount: "2" }),
+    });
   });
 
   it("drains health once per resolved hit instead of collapsing the total", async () => {
