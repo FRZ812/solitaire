@@ -4,7 +4,7 @@ import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
 import { characterAbilitiesFor } from "./character-abilities.js";
-import { STARTING_COMBAT_ITEMS } from "./combat-items.js";
+import { DEFAULT_STARTING_KEEPSAKE_ID, STARTING_KEEPSAKES } from "./keepsakes.js";
 import { generalAbilityIds, getSkill, skillRarityAtRank } from "./skills.js";
 import { practiceActor } from "./practice-scenarios.js";
 import {
@@ -200,10 +200,15 @@ describe("one atomic source-character start", () => {
       archetypeId: "last-assassin",
       keepsakeId: "lucid-tonic",
     });
-    expect(setup.items.filter((item) => STARTING_COMBAT_ITEMS.some(({ id }) => id === item.itemId)))
+    expect(setup.items.filter((item) => STARTING_KEEPSAKES.some(({ itemId }) => itemId === item.itemId)))
       .toEqual([{ itemId: "lucid-tonic", quantity: 1, worn: false }]);
+    expect(characterSetupForArchetype({
+      archetypeId: "last-assassin",
+      keepsakeId: "red-wolf-token",
+    }).items.filter((item) => STARTING_KEEPSAKES.some(({ itemId }) => itemId === item.itemId)))
+      .toEqual([{ itemId: "red-wolf-token", quantity: 1, worn: false }]);
     expect(normalizeArchetypeDraft({ keepsakeId: "bedroll" }).keepsakeId)
-      .toBe(STARTING_COMBAT_ITEMS[0].id);
+      .toBe(DEFAULT_STARTING_KEEPSAKE_ID);
   });
 
   it("locks all twelve entries to complete identities and five-action source kits", () => {

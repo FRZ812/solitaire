@@ -37,6 +37,7 @@ import {
   createSkillState,
   effectMagnitude,
   getSkill,
+  isSkillState,
   resolveCost,
   restoreUses,
   skillLegality,
@@ -517,7 +518,14 @@ function normalizeBuild(build, { resolveEconomy = false } = {}) {
     if (!Number.isSafeInteger(rank) || rank < 1 || rank > 7) throw new TypeError("invalid-trait-rank");
   }
   const skills = (build?.skills || []).map((entry) => {
-    const state = typeof entry === "string" ? createSkillState(entry) : { ...entry };
+    // A durable build may specify only `{ id, rank }`. Hydrate that authored rank through
+    // the canonical constructor before encounter validation; copying the partial object used
+    // to omit cooldownRemaining and made every promoted practice action invalid on arrival.
+    const state = typeof entry === "string"
+      ? createSkillState(entry)
+      : isSkillState(entry)
+        ? { ...entry }
+        : createSkillState(entry?.id, entry?.rank ?? 1);
     // A current actor spends from one Resolve pool. Legacy actors omit that pool and retain
     // their captured charge counters so an already-recorded exchange still replays exactly.
     return resolveEconomy ? { ...state, usesRemaining: UNLIMITED_USES } : state;

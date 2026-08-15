@@ -53,6 +53,7 @@ describe("item icon taxonomy", () => {
     ["marching-boots", "feet", 1, 3],
     ["traveling-cloak", "back-or-cloak", 2, 3],
     ["iron-ring", "trinket", 3, 3],
+    ["threadbare-war-ribbon", "trinket", 3, 3],
   ])("maps equipment %s to %s", (itemId, key, column, row) => {
     expect(itemIconTaxonomy(undefined, itemId)).toMatchObject({
       atlas: "equipment",

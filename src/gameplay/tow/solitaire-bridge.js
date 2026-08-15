@@ -12,7 +12,7 @@ import { resolvePoolForMind } from "../../engine/attributes.js";
 import { createStatusStack } from "../kernel/status-stack.js";
 import { admitTowEncounter } from "./admission.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
-import { towItemActorBonuses, wornItemIds } from "./start-items.js";
+import { activeTowItemIds, towItemActorBonuses } from "./start-items.js";
 
 export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
   // Tower of Winter actors have one attack number; Solitaire weapons have a damage band.
@@ -186,7 +186,7 @@ function resolveSnapshot(character, fallbackMind = 0) {
  */
 export function towPlayerFromCharacter(character, codex = {}, { id = "player" } = {}) {
   const stats = deriveCombatStats(character, codex);
-  const itemBonus = towItemActorBonuses(wornItemIds(character, codex));
+  const itemBonus = towItemActorBonuses(activeTowItemIds(character, codex));
   const sourceBase = character.progressionModel === "tow-archetype" && character.towBaseStats;
   if (sourceBase
     && Number.isFinite(sourceBase.maxHp)
