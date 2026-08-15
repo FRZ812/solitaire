@@ -546,7 +546,7 @@ export function effectMagnitude(skillId, effectIndex, rank = 1) {
   const effect = definition.effects[effectIndex];
   if (!effect) throw new TypeError("unknown-skill-effect");
   const index = rankIndex(definition, rank);
-  const table = effect.percentByRank || effect.countByRank;
+  const table = effect.percentByRank || effect.countByRank || effect.factorByRank;
   // A short table means the value does not scale past its last listed rank.
   return table[Math.min(index, table.length - 1)];
 }

@@ -155,7 +155,9 @@ const TRAITS = Object.freeze(Object.fromEntries([
     }),
     exclusiveTo: "last-assassin",
   }),
-  trait("judgment", "Judgment", {
+  // Stable id retained for existing saves; the shipped character table names this innate
+  // trait Justice. Its granted status is Judgment.
+  trait("judgment", "Justice", {
     effect: span("judgment", 1, 17, {
       values: Object.freeze([1, 2, 5, 6, 10, 12, 17]),
     }),
@@ -293,7 +295,7 @@ export function describeTraitAtRank(traitId, rank) {
     return `Rank ${rank}: both this character and every enemy gain ${value} Limp each turn, making both sides progressively more vulnerable.`;
   }
   if (traitId === "judgment") {
-    return `Rank ${rank}: gain ${value} Judgment each turn; the next damaging attack consumes it as defence-ignoring special damage.`;
+    return `Rank ${rank}: gain ${value} Judgment each turn; the next attack applies that much Doom per landed hit, then consumes it.`;
   }
   if (traitId === "necromancy") {
     return `Rank ${rank}: summon ${value} Skeletons each turn. Skeletons add attack and are lost when this character is hit.`;

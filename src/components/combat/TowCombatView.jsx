@@ -6,9 +6,11 @@ import {
   priorityAdvantageFor,
   retreatOdds,
 } from "../../gameplay/tow/encounter.js";
-import { CHARACTER_ABILITY_TYPE_LABELS } from "../../gameplay/tow/character-abilities.js";
 import {
-  effectMagnitude,
+  CHARACTER_ABILITY_TYPE_LABELS,
+  describeCharacterAbilityEffect,
+} from "../../gameplay/tow/character-abilities.js";
+import {
   getSkill,
   skillLegality,
   usesPerAct,
@@ -102,35 +104,8 @@ function AbilityArt({ src, className = "" }) {
   );
 }
 
-function effectDetail(definition, effect, effectIndex, rank) {
-  const ranked = Array.isArray(effect.percentByRank) || Array.isArray(effect.countByRank);
-  const amount = ranked ? effectMagnitude(definition.id, effectIndex, rank) : null;
-  if (effect.type === "damage") return `${amount}% ${effect.scale} damage${effect.hits > 1 ? ` × ${effect.hits} hits` : ""}`;
-  if (effect.type === "damage-enemy-lost-hp") return `${amount}% of enemy missing health as damage`;
-  if (effect.type === "damage-self-lost-hp") return `${amount}% of own missing health as damage`;
-  if (effect.type === "damage-enemy-max-hp") return `${amount}% of enemy maximum health as damage`;
-  if (effect.type === "delayed-damage") return `${amount} special damage after ${effect.turns} turns`;
-  if (effect.type === "temporary-max-hp") {
-    return `Gain ${amount} maximum health for ${effect.turns} turns${effect.fatal ? ", then die" : ""}`;
-  }
-  if (effect.type === "shield") return `${amount}% ${effect.scale} ward`;
-  if (effect.type === "heal") return `Restore ${amount}% ${effect.scale} health`;
-  if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
-  if (effect.type === "scaled-status") {
-    return `${amount}% ${effect.scale} ${effect.status.replace(/-/g, " ")}`;
-  }
-  if (effect.type === "status") return `${amount} ${effect.status.replace(/-/g, " ")}`;
-  if (effect.type === "reduce-statuses") {
-    const ward = effect.clearShield ? "ward, " : "";
-    return `${effect.toPercent === 0 ? "Remove" : "Reduce"} ${ward}${effect.statuses.join(", ")}${effect.toPercent === 0 ? "" : ` to ${effect.toPercent}%`}`;
-  }
-  if (effect.type === "amplify-statuses") {
-    return `Raise ${effect.target === "self" ? "own " : "enemy "}${effect.statuses.join(", ")} to ${amount}%`;
-  }
-  if (effect.type === "scaled-status-enemy-lost-hp") {
-    return `${amount}% of enemy lost health as ${effect.status.replace(/-/g, " ")}`;
-  }
-  return effect.type.replace(/-/g, " ");
+function effectDetail(_definition, effect, _effectIndex, rank) {
+  return describeCharacterAbilityEffect(effect, rank);
 }
 
 export function towSkillDetail(definition, skillState, weaponPresentation = null) {

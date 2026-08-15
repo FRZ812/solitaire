@@ -300,29 +300,43 @@ const STATUS_EFFECTS = Object.freeze({
   "bone-shield": effect("ward", "status-bone-shield", "fortress"),
   charge: effect("lightning", "status-charge", "charge"),
   conceal: effect("evade", "status-conceal", "afterimage"),
+  composure: effect("ward", "status-composure", "aura"),
+  confuse: effect("afflict", "status-confuse", "snap"),
+  confusion: effect("afflict", "status-confusion", "snap"),
+  consecration: effect("ward", "status-consecration", "radiant"),
+  "counter-attack": effect("impact", "status-counter-attack", "counter"),
   cripple: effect("afflict", "status-cripple", "bind"),
+  "death-claw": effect("gash", "status-death-claw", "execution"),
   doom: effect("afflict", "status-doom", "void"),
   "doom-atk": effect("afflict", "status-doom-atk", "void"),
   evade: effect("evade", "status-evade", "afterimage"),
   eviscerate: effect("gash", "status-eviscerate", "execution"),
   focus: effect("arcane", "status-focus", "aura"),
+  fortified: effect("ward", "status-fortified", "fortress"),
   guard: effect("ward", "status-guard", "brace"),
   grow: effect("heal", "status-grow", "aura"),
   haste: effect("lightning", "status-haste", "rapid"),
   invincible: effect("ward", "status-invincible", "fortress"),
+  immortality: effect("arcane", "status-immortality", "ascend"),
   "forbidden-ritual": effect("arcane", "status-forbidden-ritual", "void"),
   "hellfire-spirit": effect("fire", "status-hellfire-spirit", "summon"),
   lethargy: effect("afflict", "status-lethargy", "bind"),
   "lethargy-atk": effect("afflict", "status-lethargy-atk", "bind"),
   lifesteal: effect("gash", "status-lifesteal", "siphon"),
+  injured: effect("gash", "status-injured", "break"),
   misfortune: effect("afflict", "status-misfortune", "fate"),
   "mirror-image": effect("evade", "status-mirror-image", "afterimage"),
   overload: effect("lightning", "status-overload", "charge"),
+  parry: effect("ward", "status-parry", "counter"),
   paralyze: effect("lightning", "status-paralyze", "snap"),
   poison: effect("afflict", "status-poison", "smoke"),
   "poison-atk": effect("afflict", "status-poison-atk", "smoke"),
   priority: effect("arcane", "status-priority", "aura"),
+  predator: effect("gash", "status-predator", "siphon"),
+  persist: effect("ward", "status-persist", "unyielding"),
   protection: effect("ward", "status-protection", "brace"),
+  rage: effect("fire", "status-rage", "aura"),
+  restraint: effect("afflict", "status-restraint", "bind"),
   sharpen: effect("slash", "status-sharpen", "aura"),
   sleep: effect("afflict", "status-sleep", "smoke"),
   solidity: effect("ward", "status-solidity", "brace"),
@@ -337,18 +351,38 @@ const STATUS_EFFECTS = Object.freeze({
   initiative: effect("evade", "status-initiative", "rapid"),
   "initiative-atk": effect("evade", "status-initiative-atk", "rapid"),
   judgment: effect("lightning", "status-judgment", "radiant"),
+  "fatal-blade": effect("slash", "status-fatal-blade", "execution"),
+  "foul-ceremony": effect("arcane", "status-foul-ceremony", "void"),
   limp: effect("afflict", "status-limp", "bind"),
   skeleton: effect("arcane", "status-skeleton", "summon"),
+  "wind-blade": effect("wind", "status-wind-blade", "projectile"),
   "limited-life-sentence": effect("afflict", "status-limited-life-sentence", "fate"),
   "void-monster": effect("arcane", "status-void-monster", "summon"),
   vulnerable: effect("afflict", "status-vulnerable", "bind"),
 });
 
 const STATUS_SOURCE_SKILLS = Object.freeze({
+  "foul-ceremony": "automaton-emergency-fuel",
   "forbidden-ritual": "witch-forbidden-ritual",
   "hellfire-spirit": "witch-hellfire-spirit",
   "limited-life-sentence": "witch-limited-life-sentence",
   "void-monster": "witch-void-monster",
+});
+
+const STATUS_ICON_SHEETS_BY_FAMILY = Object.freeze({
+  afflict: statusDebilitation,
+  arcane: statusResources,
+  evade: statusTempo,
+  fire: statusOffense,
+  frost: statusResolve,
+  gash: statusAfflictions,
+  heal: statusSustain,
+  impact: statusControl,
+  lightning: statusResources,
+  pierce: statusAttackModifiers,
+  slash: statusSummonExecution,
+  ward: statusDefense,
+  wind: statusTempo,
 });
 
 function icon(asset, column, row) {
@@ -364,6 +398,17 @@ function fullIcon(asset) {
     iconAsset: asset,
     iconPosition: "0% 0%",
     iconSize: "100% 100%",
+  });
+}
+
+function fallbackStatusIcon(status, spec) {
+  const hash = visualHash(status);
+  const x = (10 + ((hash % 8191) / 8191) * 80).toFixed(3);
+  const y = (10 + (((hash >>> 13) % 8191) / 8191) * 80).toFixed(3);
+  return Object.freeze({
+    iconAsset: STATUS_ICON_SHEETS_BY_FAMILY[spec.family] || statusAfflictions,
+    iconPosition: `${x}% ${y}%`,
+    iconSize: "225% 225%",
   });
 }
 
@@ -440,12 +485,15 @@ function inferredSkillEffect(skillId) {
   const definition = safeSkill(skillId);
   if (!definition) return null;
   const effects = definition.effects || [];
-  const statusEffect = effects.find((entry) => entry.type === "status" || entry.type === "scaled-status");
-  const damageEffect = effects.find((entry) => entry.type === "damage" || entry.type === "lost-health-damage");
+  const statusEffect = effects.find((entry) => (
+    ["modify-status", "scale-status", "scaled-status", "status", "status-from-status"].includes(entry.type)
+  ));
+  const statusType = statusEffect?.status || statusEffect?.statuses?.[0] || statusEffect?.factorStatus;
+  const damageEffect = effects.find((entry) => entry.type === "damage" || entry.type.startsWith("damage-"));
   const hasShield = effects.some((entry) => entry.type === "shield");
-  const hasHeal = effects.some((entry) => entry.type === "heal" || entry.type === "heal-lost-fraction" || entry.type === "reduce-statuses");
-  const statusVisual = statusEffect && STATUS_EFFECTS[statusEffect.status];
-  const identity = `${skillId} ${definition.name || ""} ${statusEffect?.status || ""}`;
+  const hasHeal = effects.some((entry) => entry.type.startsWith("heal") || entry.type === "reduce-statuses");
+  const statusVisual = statusType && STATUS_EFFECTS[statusType];
+  const identity = `${skillId} ${definition.name || ""} ${statusType || ""}`;
 
   let family = statusVisual?.family || familyFromText(identity);
   if (hasShield && !damageEffect) family = "ward";
@@ -501,7 +549,7 @@ export function combatVfxForIntent(intent) {
 
 export function combatVfxForStatus(status) {
   const spec = STATUS_EFFECTS[status] || effect("afflict", `status-${slug(status, "unknown")}`, "balanced");
-  const iconVisual = STATUS_ICONS[status] || STATUS_ICONS.doom;
+  const iconVisual = STATUS_ICONS[status] || fallbackStatusIcon(status, spec);
   return Object.freeze({ ...withAsset(spec), ...iconVisual });
 }
 
@@ -529,7 +577,7 @@ export function combatVfxForEvent(encounter, event) {
 
   if (event.type === "tick-damage") {
     const type = event.forbiddenRitual ? "forbidden-ritual"
-      : event.delayedDamage > 0 ? "limited-life-sentence"
+      : event.delayedDamage > 0 ? event.delayedStatuses?.[0] || "limited-life-sentence"
         : event.hellfireSpirit > 0 ? "hellfire-spirit"
           : event.voidMonster > 0 ? "void-monster"
             : event.burn > 0 ? "burn"
@@ -537,7 +585,7 @@ export function combatVfxForEvent(encounter, event) {
                 : event.poison > 0 ? "poison"
                   : event.bleed > 0 ? "bleed"
                     : "misfortune";
-    const sourceSkillId = STATUS_SOURCE_SKILLS[type];
+    const sourceSkillId = event.delayedSkillIds?.[0] || STATUS_SOURCE_SKILLS[type];
     return sourceSkillId
       ? withAsset(STATUS_EFFECTS[type], signatureForSkill(sourceSkillId))
       : combatVfxForStatus(type);
@@ -562,8 +610,14 @@ export function combatVfxForEvent(encounter, event) {
       statusVariant.motion,
     ), signature);
   }
-  if (event.type === "skill-status-amplified") {
-    return withAsset(effect("afflict", `${slug(event.skillId, "skill")}-amplified`, "void"), signature);
+  if (["skill-status-amplified", "skill-status-scaled", "skill-status-modified"].includes(event.type)) {
+    const status = event.status || event.statuses?.[0];
+    const statusVariant = STATUS_EFFECTS[status];
+    return withAsset(effect(
+      statusVariant?.family || "afflict",
+      `${slug(event.skillId, "skill")}-${slug(status, "status")}-${slug(event.type)}`,
+      statusVariant?.motion || "void",
+    ), signature);
   }
 
   const formId = event.skillId === "strike" ? activeFormId(encounter, event) : null;

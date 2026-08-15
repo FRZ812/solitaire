@@ -31,9 +31,7 @@ function actor(overrides = {}) {
 const seed = () => createRng("tow-damage-test");
 
 describe("multi-hit resolution", () => {
-  it("applies Steelskin to each individual hit, spending a point per hit", () => {
-    // This is the whole reason an attack cannot be one damage number: a 3-hit swing
-    // meets a *different* Steelskin value each time.
+  it("applies permanent Steelskin to every individual hit", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk", side: "enemy" }),
       defender: actor({ id: "def", side: "player", hp: 100, maxHp: 100, statuses: statuses(["steelskin", 4]) }),
@@ -41,9 +39,9 @@ describe("multi-hit resolution", () => {
       rng: seed(),
     });
 
-    expect(result.hits.map((hit) => hit.damage)).toEqual([6, 7, 8]);
-    expect(result.defender.hp).toBe(100 - 21);
-    expect(statusCount(result.defender.statuses, "steelskin")).toBe(1);
+    expect(result.hits.map((hit) => hit.damage)).toEqual([6, 6, 6]);
+    expect(result.defender.hp).toBe(100 - 18);
+    expect(statusCount(result.defender.statuses, "steelskin")).toBe(4);
   });
 
   it("answers with Thorn once per hit received", () => {
@@ -302,7 +300,7 @@ describe("mitigation", () => {
     expect(statusCount(result.defender.statuses, "protection")).toBe(1);
   });
 
-  it("applies Berserk to one landed hit and removes it from either side on contact", () => {
+  it("clears attack-scoped Berserk only from the attacker after the full attack", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk", statuses: statuses(["berserk", 100]) }),
       defender: actor({
@@ -316,18 +314,11 @@ describe("mitigation", () => {
       rng: seed(),
     });
 
-    expect(result.hits.map((hit) => hit.damage)).toEqual([20, 10]);
-    expect(result.hits[0]).toMatchObject({
-      berserkBonus: 10,
-      berserkSpent: 100,
-      defenderBerserkSpent: 100,
-      statusChanges: {
-        attacker: [{ type: "berserk", before: 100, after: 0 }],
-        defender: [{ type: "berserk", before: 100, after: 0 }],
-      },
-    });
+    // resolveAttack receives an already-scaled attack amount; encounter stat scaling is
+    // where Berserk adds its Count to ATK. The kernel owns its AllAttack cleanup.
+    expect(result.hits.map((hit) => hit.damage)).toEqual([10, 10]);
     expect(statusCount(result.attacker.statuses, "berserk")).toBe(0);
-    expect(statusCount(result.defender.statuses, "berserk")).toBe(0);
+    expect(statusCount(result.defender.statuses, "berserk")).toBe(100);
   });
 });
 
@@ -380,10 +371,10 @@ describe("dodge and crit", () => {
       rng: seed(),
     });
 
-    expect(result.hits[0]).toMatchObject({ critical: true, damage: 40 });
+    expect(result.hits[0]).toMatchObject({ critical: true, damage: 32 });
   });
 
-  it("turns each 100 Charge packet into one charged critical hit", () => {
+  it("uses Charge as persistent turn-scoped critical chance", () => {
     const result = resolveAttack({
       attacker: actor({ id: "mage", side: "player", critRate: 0, statuses: statuses(["charge", 100]) }),
       defender: actor({ id: "def", side: "enemy", hp: 100, maxHp: 100 }),
@@ -393,10 +384,10 @@ describe("dodge and crit", () => {
 
     expect(result.hits.map((hit) => ({ critical: hit.critical, damage: hit.damage, chargeSpent: hit.chargeSpent })))
       .toEqual([
-        { critical: true, damage: 40, chargeSpent: 100 },
-        { critical: false, damage: 20, chargeSpent: 0 },
+        { critical: true, damage: 32, chargeSpent: 0 },
+        { critical: true, damage: 32, chargeSpent: 0 },
       ]);
-    expect(statusCount(result.attacker.statuses, "charge")).toBe(0);
+    expect(statusCount(result.attacker.statuses, "charge")).toBe(100);
   });
 });
 

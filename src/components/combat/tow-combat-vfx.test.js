@@ -77,7 +77,7 @@ describe("authored combat VFX", () => {
       expect(combatVfxForStatus(status), status).toMatchObject({
         asset: expect.stringMatching(/\.png$/),
         iconAsset: expect.stringMatching(/\.(?:png|webp)$/),
-        iconPosition: expect.stringMatching(/^(?:0|100)% (?:0|100)%$/),
+        iconPosition: expect.stringMatching(/^\d+(?:\.\d+)?% \d+(?:\.\d+)?%$/),
         family: expect.any(String),
         variant: `status-${status}`,
       });

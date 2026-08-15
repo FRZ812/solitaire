@@ -89,7 +89,17 @@ export const DANGER_HORIZON_ROUNDS = 2;
  */
 export const SHIELD_COVERAGE = 0.6;
 
-const COMMAND_FORFEITING_STATUSES = new Set(["paralyze", "sleep", "stun"]);
+const COMMAND_FORFEITING_STATUSES = new Set(["confuse", "paralyze", "sleep", "stun"]);
+const BOUNDARY_DAMAGE_STATUSES = new Set([
+  "bleed",
+  "burn",
+  "doom",
+  "fatal-blade",
+  "hellfire-spirit",
+  "misfortune",
+  "poison",
+  "void-monster",
+]);
 
 // ---------------------------------------------------------------------------
 // Reading the board
@@ -138,6 +148,22 @@ function forfeitsFutureCommand(skillState) {
   )));
 }
 
+function projectionFactor(player, target, effect) {
+  if (effect.scale) return actorScaleValue(player, effect.scale);
+  const owner = effect.factorOwner === "enemy" ? target : player;
+  if (!owner) return 0;
+  if (effect.factorStatus) return statusCount(owner.statuses, effect.factorStatus);
+  if (effect.factorScale === "current-hp") return owner.hp;
+  if (effect.factorScale === "lost-hp") return Math.max(0, owner.maxHp - owner.hp);
+  if (effect.factorScale === "max-hp") return owner.maxHp;
+  return 0;
+}
+
+function projectedSourceAmount(player, target, effect, magnitude) {
+  const factor = projectionFactor(player, target, effect);
+  return Math.floor(effect.factorByRank ? factor * magnitude : (factor * magnitude) / 100);
+}
+
 /** The damage one use of a skill would deal to a target, before defence, crit and dodge. */
 export function projectedDamage(state, skillState, targetId) {
   const definition = getSkill(skillState.id);
@@ -165,13 +191,19 @@ export function projectedDamage(state, skillState, targetId) {
     // not assumed here.
     if (
       effect.target === "enemy"
-      && ["scaled-status", "status"].includes(effect.type)
-      && ["bleed", "burn", "doom", "hellfire-spirit", "misfortune", "poison", "void-monster"].includes(effect.status)
+      && ["scaled-status", "status", "status-from-status"].includes(effect.type)
+      && BOUNDARY_DAMAGE_STATUSES.has(effect.status)
     ) {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-      return total + (effect.type === "scaled-status"
-        ? Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100)
-        : magnitude);
+      return total + (effect.type === "status" ? magnitude : projectedSourceAmount(player, target, effect, magnitude));
+    }
+    if (effect.type === "scale-status" && effect.target === "enemy") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + effect.statuses.reduce((gain, status) => {
+        if (!BOUNDARY_DAMAGE_STATUSES.has(status)) return gain;
+        const before = statusCount(target.statuses, status);
+        return gain + Math.max(0, Math.floor((before * magnitude) / 100) - before);
+      }, 0);
     }
     if (effect.type === "scaled-status-enemy-lost-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
@@ -179,7 +211,7 @@ export function projectedDamage(state, skillState, targetId) {
     }
     if (effect.type !== "damage") return total;
     const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-    return total + Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100) * (effect.hits || 1);
+    return total + projectedSourceAmount(player, target, effect, magnitude) * (effect.hits || 1);
   }, 0);
 }
 
@@ -210,9 +242,18 @@ export function projectedRecovery(state, skillState) {
   const player = state.actors[state.playerId];
   if (!definition || !player) return 0;
   return definition.effects.reduce((total, effect, index) => {
-    if (effect.type !== "heal-lost-fraction") return total;
-    const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-    return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
+    if (effect.type === "heal-lost-fraction") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
+    }
+    if (effect.type === "heal-flat") {
+      return total + effectMagnitude(skillState.id, index, skillState.rank);
+    }
+    if (effect.type === "heal") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + projectedSourceAmount(player, null, effect, magnitude);
+    }
+    return total;
   }, 0);
 }
 
@@ -561,9 +602,9 @@ function moveSet(id, light, mid, heavy) {
  * Authored fixtures, calibrated rather than guessed.
  *
  * Every number below came out of a grid sweep across the whole package list, not out of
- * intuition — the first hand-pitched attempt was won 100% of the time, and the correction
- * for that was unwinnable. The recorded outcome of each setting is kept beside it so a
- * later balance change can be argued against a baseline instead of a memory.
+ * intuition. The current health values and recorded rates were re-measured after importing
+ * the shipped 1.4.16 critical multiplier and status lifecycles; retaining the older health
+ * pool made exact source rules lock basic packages out of otherwise equal-threat fixtures.
  *
  * `standard` fixtures are the equal-threat stratum the acceptance band applies to.
  * `hard` is deliberately above parity: three wolves against one traveller is a fight the
@@ -576,26 +617,26 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "lone-brigand",
     name: "A brigand on the road",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.79, randomWinRate: 0.23 }),
-    enemies: Object.freeze([foe("foe-0", "Brigand", 150, 18, moveSet("foe-0", 11, 18, 28))]),
+    baseline: Object.freeze({ informedWinRate: 0.806667, randomWinRate: 0.29 }),
+    enemies: Object.freeze([foe("foe-0", "Brigand", 120, 18, moveSet("foe-0", 11, 18, 28))]),
   }),
   Object.freeze({
     id: "brigand-pair",
     name: "Two brigands",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.98, randomWinRate: 0.28 }),
+    baseline: Object.freeze({ informedWinRate: 0.99, randomWinRate: 0.336667 }),
     enemies: Object.freeze([
-      foe("foe-0", "Brigand", 68, 10, moveSet("foe-0", 7, 10, 15)),
-      foe("foe-1", "Brigand", 68, 10, moveSet("foe-1", 7, 10, 15)),
+      foe("foe-0", "Brigand", 54, 10, moveSet("foe-0", 7, 10, 15)),
+      foe("foe-1", "Brigand", 54, 10, moveSet("foe-1", 7, 10, 15)),
     ]),
   }),
   Object.freeze({
     id: "armoured-duelist",
     name: "An armoured duelist",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.72, randomWinRate: 0.20 }),
+    baseline: Object.freeze({ informedWinRate: 0.756667, randomWinRate: 0.243333 }),
     enemies: Object.freeze([{
-      ...foe("foe-0", "Duelist", 152, 17, moveSet("foe-0", 11, 17, 27)),
+      ...foe("foe-0", "Duelist", 122, 17, moveSet("foe-0", 11, 17, 27)),
       stats: { attack: 17, defense: 6, critRate: 6, dodgeRate: 8 },
     }]),
   }),
@@ -603,11 +644,11 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "wolf-pack",
     name: "Three wolves",
     tier: "hard",
-    baseline: Object.freeze({ informedWinRate: 0.93, randomWinRate: 0.22 }),
+    baseline: Object.freeze({ informedWinRate: 0.836667, randomWinRate: 0.256667 }),
     enemies: Object.freeze([
-      foe("foe-0", "Wolf", 40, 9, moveSet("foe-0", 6, 9, 13)),
-      foe("foe-1", "Wolf", 40, 9, moveSet("foe-1", 6, 9, 13)),
-      foe("foe-2", "Wolf", 40, 9, moveSet("foe-2", 6, 9, 13)),
+      foe("foe-0", "Wolf", 32, 9, moveSet("foe-0", 6, 9, 13)),
+      foe("foe-1", "Wolf", 32, 9, moveSet("foe-1", 6, 9, 13)),
+      foe("foe-2", "Wolf", 32, 9, moveSet("foe-2", 6, 9, 13)),
     ]),
   }),
 ]);

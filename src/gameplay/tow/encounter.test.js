@@ -231,7 +231,7 @@ describe("using skills", () => {
     const result = useSkill(state, "strike");
     // 12 ATK - 4 Steelskin = 8.
     expect(result.state.actors.gatekeeper.hp).toBe(182);
-    expect(statusCount(result.state.actors.gatekeeper.statuses, "steelskin")).toBe(3);
+    expect(statusCount(result.state.actors.gatekeeper.statuses, "steelskin")).toBe(4);
   });
 
   it("does not mutate the encounter it is given", () => {
@@ -352,20 +352,20 @@ describe("ending the turn", () => {
     expect(after.events.some((event) => event.type === "enemy-attack")).toBe(false);
   });
 
-  it("uses a multi-hit attack table, so mitigation is spent per hit", () => {
+  it("uses a multi-hit attack table, applying permanent mitigation to every hit", () => {
     const state = createTowEncounter({
       seed: "multi-hit",
       player: knight({ stats: { attack: 12, defense: 13, critRate: 0, dodgeRate: 0 } }),
       enemies: [foe({ attacks: [{ id: "flurry", name: "Flurry", hits: 3, damage: 10 }] })],
       build: { traits: { ironclad: 1 }, skills: ["strike"] },
     });
-    // Ironclad rank 1 is 1 Steelskin, so hit one is reduced and the stack is then gone.
+    // Ironclad rank 1 is 1 Steelskin, and source Steelskin never decays.
     expect(statusCount(state.actors["arctic-knight"].statuses, "steelskin")).toBe(1);
     const after = endTurn(state).state;
     const attackEvent = after.events.find((e) => e.type === "enemy-attack");
     expect(attackEvent.hits).toHaveLength(3);
-    expect(attackEvent.hits.map((hit) => hit.damage)).toEqual([9, 10, 10]);
-    expect(after.actors["arctic-knight"].hp).toBe(170 - 29);
+    expect(attackEvent.hits.map((hit) => hit.damage)).toEqual([9, 9, 9]);
+    expect(after.actors["arctic-knight"].hp).toBe(170 - 27);
   });
 
   it("lets every living enemy act", () => {
@@ -441,17 +441,19 @@ describe("ending the turn", () => {
     expect(statusCount(second.actors["arctic-knight"].statuses, "bleed")).toBe(4);
   });
 
-  it("holds newly inflicted Doom through the next player command window", () => {
+  it("holds newly inflicted source Doom through the next player command window", () => {
     const state = start({
       enemies: [foe({
-        archetypeId: "witch-of-eternity",
-        build: { traits: {}, skills: ["witch-touch-of-the-dead"], runes: [] },
+        archetypeId: "tenacious-mage",
+        maxHp: 160,
+        stats: { attack: 15, defense: 12, critRate: 0, dodgeRate: 0 },
+        build: { traits: {}, skills: ["mage-destruction-ray"], runes: [] },
       })],
     });
 
     const first = endTurn(state).state;
-    expect(first.actors["arctic-knight"].hp).toBe(170 - 17);
-    expect(statusCount(first.actors["arctic-knight"].statuses, "doom")).toBe(20);
+    expect(first.actors["arctic-knight"].hp).toBe(170);
+    expect(statusCount(first.actors["arctic-knight"].statuses, "doom")).toBe(36);
     expect(first.events.some((event) => (
       event.type === "tick-damage"
       && event.actorId === "arctic-knight"
@@ -469,19 +471,19 @@ describe("ending the turn", () => {
       },
     };
     const second = endTurn(waiting).state;
-    expect(second.actors["arctic-knight"].hp).toBe(170 - 17 - 20);
+    expect(second.actors["arctic-knight"].hp).toBe(170 - 36);
     expect(statusCount(second.actors["arctic-knight"].statuses, "doom")).toBe(0);
     expect(second.events.filter((event) => (
       event.type === "tick-damage" && event.actorId === "arctic-knight"
-    )).at(-1)).toMatchObject({ doom: 20 });
+    )).at(-1)).toMatchObject({ doom: 36 });
   });
 
   it("decays end-of-turn statuses", () => {
     const state = useSkill(start({ build: { skills: ["warcry"] } }), "warcry").state;
     expect(statusCount(state.actors["arctic-knight"].statuses, "solidity")).toBe(3);
     const after = endTurn(state).state;
-    // One spent by the incoming hit, one by the end-of-turn tick.
-    expect(statusCount(after.actors["arctic-knight"].statuses, "solidity")).toBe(1);
+    // Solidity loses one Count to the landed hit and has no separate per-turn decay.
+    expect(statusCount(after.actors["arctic-knight"].statuses, "solidity")).toBe(2);
   });
 
   it("nullifies an actor held by a control status", () => {
@@ -496,8 +498,8 @@ describe("ending the turn", () => {
     const combo = useSkill(start({
       build: { traits: { combo: 3 }, skills: ["assassin-mutilate"] },
     }), "assassin-mutilate");
-    // Each later hit consumes one existing Vulnerable before adding Combo's next 3.
-    expect(statusCount(combo.state.actors.gatekeeper.statuses, "vulnerable")).toBe(7);
+    // Combo grants Eviscerate; every hit adds its Count as permanent Limp.
+    expect(statusCount(combo.state.actors.gatekeeper.statuses, "limp")).toBe(9);
 
     const valiancy = useSkill(start({
       build: { traits: { valiancy: 3 }, skills: ["assassin-mutilate"] },
@@ -514,24 +516,27 @@ describe("ending the turn", () => {
       build: { traits: { judgment: 3 }, skills: ["assassin-flurry"] },
     }), "assassin-flurry");
     const hit = judgment.state.events.find((event) => event.type === "skill-damage").hits[0];
-    expect(hit.judgmentDamage).toBe(5);
+    expect(hit.onHitStatuses).toContainEqual({ status: "doom", count: 5 });
+    expect(statusCount(judgment.state.actors.gatekeeper.statuses, "doom")).toBe(10);
     expect(statusCount(judgment.state.actors["arctic-knight"].statuses, "judgment")).toBe(0);
   });
 
-  it("lets Whirlwind's separate Lethargy hits suppress a legacy foe to zero damage", () => {
+  it("keeps Spinning Axe's source self-Lethargy separate from Valiancy's attack Lethargy", () => {
     const state = start({
       build: { traits: { valiancy: TRAIT_RANK_CAP }, skills: ["north-king-whirlwind"] },
     });
     const used = useSkill(state, "north-king-whirlwind");
-    expect(statusCount(used.state.actors.gatekeeper.statuses, "lethargy")).toBeGreaterThan(23);
+    expect(statusCount(used.state.actors.gatekeeper.statuses, "lethargy")).toBe(17);
+    expect(statusCount(used.state.actors["arctic-knight"].statuses, "lethargy")).toBe(15);
 
     const after = endTurn(used.state).state;
     const attack = after.events.find((event) => event.type === "enemy-attack");
-    expect(attack.hits.map((hit) => hit.damage)).toEqual([0]);
-    expect(after.actors["arctic-knight"].hp).toBe(170);
-    // Lethargy is encounter attrition; unlike ward, it is intentionally not discarded at
-    // the command boundary.
-    expect(statusCount(after.actors.gatekeeper.statuses, "lethargy")).toBeGreaterThan(23);
+    expect(attack.hits.map((hit) => hit.damage)).toEqual([6]);
+    expect(after.actors["arctic-knight"].hp).toBe(170 - 6);
+    expect(statusCount(after.actors.gatekeeper.statuses, "lethargy")).toBe(0);
+    // StackDownDelay 1 protects the self-inflicted Lethargy from the boundary immediately
+    // following the skill that created it.
+    expect(statusCount(after.actors["arctic-knight"].statuses, "lethargy")).toBe(15);
   });
 
   it("turns Necromancy, Bloodsuck, and Charge into combat outcomes", () => {
@@ -550,7 +555,7 @@ describe("ending the turn", () => {
     const charged = fireTraits({ ...charging, round: 4 });
     const strike = useSkill(charged, "arctic-strike");
     expect(strike.state.events.find((event) => event.type === "skill-damage").hits[0])
-      .toMatchObject({ critical: true, chargeSpent: 100 });
+      .toMatchObject({ critical: true, chargeSpent: 0 });
   });
 
   it("automatically spends control when the affected player window is skipped", () => {
@@ -707,17 +712,18 @@ describe("Priority and Haste", () => {
 
     expect(flight.ok).toBe(true);
     expect(statusCount(flight.state.actors[flight.state.playerId].statuses, "priority")).toBe(4);
-    expect(flight.state.turn.actionsRemaining).toBe(5);
+    // The source Mythic consumes the current action, then grants four Priority actions.
+    expect(flight.state.turn.actionsRemaining).toBe(4);
     expect(flight.state.events.some((event) => event.type === "enemy-attack")).toBe(false);
 
     const firstAction = useSkill(flight.state, "strike");
-    expect(firstAction.state.turn.actionsRemaining).toBe(4);
+    expect(firstAction.state.turn.actionsRemaining).toBe(3);
     expect(statusCount(firstAction.state.actors[firstAction.state.playerId].statuses, "priority")).toBe(3);
     expect(firstAction.state.events.some((event) => event.type === "enemy-attack")).toBe(false);
 
     let sequence = firstAction.state;
     for (let action = 0; action < 3; action += 1) sequence = useSkill(sequence, "strike").state;
-    expect(sequence.turn.actionsRemaining).toBe(1);
+    expect(sequence.turn.actionsRemaining).toBe(0);
     expect(statusCount(sequence.actors[sequence.playerId].statuses, "priority")).toBe(0);
   });
 
@@ -963,30 +969,31 @@ describe("telegraphed enemy turns", () => {
     });
     const promised = declaredIntents(state)[0];
     const after = endTurn(state).state;
-    expect(promised).toMatchObject({ skillId: "blade-slash", name: "Slash", kind: "damage" });
+    expect(promised).toMatchObject({ skillId: "blade-slash", name: "Katana Strike", kind: "damage" });
     expect(after.events).toContainEqual(expect.objectContaining({
       type: "skill-damage",
       actorId: "gatekeeper",
       targetId: "arctic-knight",
       skillId: promised.skillId,
     }));
-    expect(after.events).toContainEqual(expect.objectContaining({
-      type: "skill-status",
-      actorId: "gatekeeper",
-      targetId: "gatekeeper",
-      skillId: promised.skillId,
-      status: "initiative",
-    }));
+    const strikeEvent = after.events.find((entry) => (
+      entry.type === "skill-damage" && entry.skillId === promised.skillId
+    ));
+    expect(strikeEvent.hits[0].statusChanges.attacker).toContainEqual({
+      type: "initiative",
+      before: 0,
+      after: 10,
+    });
     expect(after.intents.gatekeeper.declarationIndex)
       .toBe(state.intents.gatekeeper.declarationIndex + 1);
     expect(after.events.some((entry) => entry.type === "enemy-attack")).toBe(false);
   });
 
-  it("turns an enemy Chi Liberation into an immediate bounded sword sequence", () => {
+  it("amplifies existing Doom Attack with source Chi Liberation before one sword attack", () => {
     const state = createTowEncounter({
       seed: "enemy-chi-sequence",
       player: tank(),
-      enemies: [blade()],
+      enemies: [blade({ statuses: [{ type: "doom-atk", count: 10 }] })],
       build: { traits: {}, skills: ["strike", "block"] },
       intentSchedules: {
         gatekeeper: {
@@ -994,8 +1001,6 @@ describe("telegraphed enemy turns", () => {
           steps: [
             { id: "release", attackIds: ["blade-chi-liberation"] },
             { id: "cut-one", attackIds: ["blade-slash"] },
-            { id: "cut-two", attackIds: ["blade-slash"] },
-            { id: "cut-three", attackIds: ["blade-slash"] },
           ],
         },
       },
@@ -1009,13 +1014,16 @@ describe("telegraphed enemy turns", () => {
     const chiState = after.enemyBuilds.gatekeeper.skills
       .find((skill) => skill.id === "blade-chi-liberation");
 
-    expect(chiEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "skill-status", status: "priority", count: 2 }),
-      expect.objectContaining({ type: "skill-status", status: "strength", count: 5 }),
-    ]));
-    expect(cuts).toHaveLength(3);
-    expect(statusCount(after.actors.gatekeeper.statuses, "priority")).toBe(0);
-    expect(chiState).toMatchObject({ usesRemaining: 3, cooldownRemaining: 3 });
+    expect(chiEvents).toContainEqual(expect.objectContaining({
+      type: "skill-status-scaled",
+      statuses: ["doom-atk"],
+      percent: 160,
+      changed: 6,
+    }));
+    expect(cuts).toHaveLength(1);
+    expect(statusCount(after.actors.gatekeeper.statuses, "doom-atk")).toBe(16);
+    expect(statusCount(after.actors["arctic-knight"].statuses, "doom")).toBe(16);
+    expect(chiState).toMatchObject({ usesRemaining: 1, cooldownRemaining: 6 });
   });
 
   it("holds a stunned foe's telegraph rather than erasing the attack", () => {

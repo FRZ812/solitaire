@@ -22,6 +22,8 @@ import {
 import {
   applyStatus,
   createStatusStack,
+  getStatusDefinition,
+  MAX_STATUS_COUNT,
   removeStatus,
   scaleStatus,
   statusCount,
@@ -34,6 +36,7 @@ import {
   createSkillState,
   effectMagnitude,
   getSkill,
+  restoreUses,
   skillLegality,
   spendSkill,
   tickSkillCooldown,
@@ -59,8 +62,54 @@ export const RETREAT_CHANCE_MIN = 10;
 export const RETREAT_CHANCE_MAX = 90;
 export const RETREAT_BASE_CHANCE = 50;
 
-const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep"]);
+const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep", "confuse"]);
 const MAX_ENEMY_COMMANDS_PER_WINDOW = 96;
+
+function actorWithStatuses(actor, statuses) {
+  const growDelta = statusCount(statuses, "grow") - statusCount(actor.statuses, "grow");
+  const maxHp = Math.max(1, actor.maxHp + growDelta);
+  return {
+    ...actor,
+    maxHp,
+    hp: Math.min(actor.hp, maxHp),
+    statuses,
+  };
+}
+
+function actorWithAppliedStatus(actor, type, count) {
+  return actorWithStatuses(actor, applyStatus(
+    actor.statuses,
+    type,
+    Math.min(MAX_STATUS_COUNT, Math.max(0, Math.floor(count))),
+  ));
+}
+
+function effectSubjectIds(state, target, actorId, targetId) {
+  if (target === "all") {
+    return [...new Set([...playerSideIds(state), ...state.enemyIds])]
+      .filter((id) => state.actors[id]?.hp > 0);
+  }
+  return [target === "self" ? actorId : targetId].filter(Boolean);
+}
+
+function protectStatusDecay(state, actorId, type, count, turns) {
+  if (!Number.isSafeInteger(turns) || turns <= 0 || count <= 0) return state;
+  const actorProtection = state.statusDecayProtection?.[actorId] || {};
+  const previous = actorProtection[type] || { count: 0, turnsRemaining: 0 };
+  return {
+    ...state,
+    statusDecayProtection: {
+      ...(state.statusDecayProtection || {}),
+      [actorId]: {
+        ...actorProtection,
+        [type]: {
+          count: Math.min(MAX_STATUS_COUNT, previous.count + count),
+          turnsRemaining: Math.max(previous.turnsRemaining, turns),
+        },
+      },
+    },
+  };
+}
 
 function event(state, type, detail = {}) {
   return { sequence: state.sequence + 1, round: state.round, type, ...detail };
@@ -144,10 +193,7 @@ export function fireTraits(state) {
         for (const targetId of affectedIds) {
           if (!actors[targetId] || actors[targetId].hp <= 0) continue;
           targetIds.push(targetId);
-          actors[targetId] = {
-            ...actors[targetId],
-            statuses: applyStatus(actors[targetId].statuses, status, amount),
-          };
+          actors[targetId] = actorWithAppliedStatus(actors[targetId], status, amount);
         }
         next = { ...next, actors };
       } else if (kind === "grant-status") {
@@ -157,7 +203,7 @@ export function fireTraits(state) {
           ...next,
           actors: {
             ...next.actors,
-            [ownerId]: { ...owner, statuses: applyStatus(owner.statuses, status, amount) },
+            [ownerId]: actorWithAppliedStatus(owner, status, amount),
           },
         };
       } else {
@@ -168,10 +214,7 @@ export function fireTraits(state) {
         for (const targetId of opposingIds) {
           if (actors[targetId].hp <= 0) continue;
           targetIds.push(targetId);
-          actors[targetId] = {
-            ...actors[targetId],
-            statuses: applyStatus(actors[targetId].statuses, status, amount),
-          };
+          actors[targetId] = actorWithAppliedStatus(actors[targetId], status, amount);
         }
         next = { ...next, actors };
       }
@@ -198,6 +241,23 @@ export function playerSideIds(state) {
 export function buildFor(state, actorId) {
   if (actorId === state.playerId) return state.build;
   return state.allyBuilds?.[actorId] || state.enemyBuilds?.[actorId] || null;
+}
+
+function updateBuildFor(state, actorId, update) {
+  if (actorId === state.playerId) return { ...state, build: update(state.build) };
+  if (Object.hasOwn(state.allyBuilds || {}, actorId)) {
+    return {
+      ...state,
+      allyBuilds: { ...state.allyBuilds, [actorId]: update(state.allyBuilds[actorId]) },
+    };
+  }
+  if (Object.hasOwn(state.enemyBuilds || {}, actorId)) {
+    return {
+      ...state,
+      enemyBuilds: { ...state.enemyBuilds, [actorId]: update(state.enemyBuilds[actorId]) },
+    };
+  }
+  return state;
 }
 
 /**
@@ -377,12 +437,37 @@ function statOf(actor, scale) {
       + statusCount(actor.statuses, "strength")
       + statusCount(actor.statuses, "overload")
       + statusCount(actor.statuses, "skeleton")
-      - statusCount(actor.statuses, "weak")
+      + statusCount(actor.statuses, "berserk")
       - statusCount(actor.statuses, "lethargy")
       - statusCount(actor.statuses, "cripple"));
-  if (scale === "defense") return actor.stats.defense + statusCount(actor.statuses, "tenacity");
+  if (scale === "defense") return Math.max(0,
+    actor.stats.defense
+      + statusCount(actor.statuses, "tenacity")
+      + statusCount(actor.statuses, "fortified")
+      - statusCount(actor.statuses, "injured"));
   if (scale === "max-hp") return actor.maxHp;
+  if (scale === "current-hp") return actor.hp;
   return 0;
+}
+
+function factorActor(player, target, owner) {
+  return owner === "enemy" ? target : player;
+}
+
+function sourceFactorValue(player, target, effect) {
+  if (effect.scale) return statOf(player, effect.scale);
+  const owner = factorActor(player, target, effect.factorOwner);
+  if (!owner) return 0;
+  if (effect.factorStatus) return statusCount(owner.statuses, effect.factorStatus);
+  if (effect.factorScale === "current-hp") return owner.hp;
+  if (effect.factorScale === "lost-hp") return Math.max(0, owner.maxHp - owner.hp);
+  if (effect.factorScale === "max-hp") return owner.maxHp;
+  return 0;
+}
+
+function sourcedMagnitudeAmount(player, target, effect, magnitude) {
+  const value = sourceFactorValue(player, target, effect);
+  return Math.floor(effect.factorByRank ? value * magnitude : (value * magnitude) / 100);
 }
 
 /** Validate and normalise one actor's traits, skills and runes. */
@@ -600,6 +685,7 @@ export function createTowEncounter({
     allyBuilds,
     turn: { actionsRemaining: 1, allies: {} },
     scheduledEffects: [],
+    statusDecayProtection: {},
     events: [],
   };
 
@@ -853,7 +939,30 @@ function isScheduledEffect(value) {
     && Number.isSafeInteger(value.turnsRemaining)
     && value.turnsRemaining > 0
     && Number.isSafeInteger(value.amount)
-    && value.amount >= 0;
+    && value.amount >= 0
+    && (value.status === undefined || Boolean(getStatusDefinition(value.status)));
+}
+
+function isStatusDecayProtection(value, actorIds) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const knownActors = new Set(actorIds);
+  return Object.entries(value).every(([actorId, statuses]) => (
+    knownActors.has(actorId)
+    && statuses
+    && typeof statuses === "object"
+    && !Array.isArray(statuses)
+    && Object.entries(statuses).every(([type, entry]) => (
+      getStatusDefinition(type)
+      && entry
+      && typeof entry === "object"
+      && !Array.isArray(entry)
+      && Number.isSafeInteger(entry.count)
+      && entry.count > 0
+      && entry.count <= 1_000_000
+      && Number.isSafeInteger(entry.turnsRemaining)
+      && entry.turnsRemaining > 0
+    ))
+  ));
 }
 
 export function isTowEncounter(value) {
@@ -910,6 +1019,8 @@ export function isTowEncounter(value) {
   if (value.build?.basicAttack != null && !isWeaponAttackSnapshot(value.build?.basicAttack)) return false;
   const actorIds = [value.playerId, ...value.allyIds, ...value.enemyIds];
   if (new Set(actorIds).size !== actorIds.length) return false;
+  if (value.statusDecayProtection !== undefined
+    && !isStatusDecayProtection(value.statusDecayProtection, actorIds)) return false;
   if (Object.keys(value.actors).length !== actorIds.length) return false;
   if (value.allyIds.some((id) => value.actors[id]?.side !== "player")) return false;
   if (value.enemyIds.some((id) => value.actors[id]?.side !== "enemy")) return false;
@@ -967,12 +1078,17 @@ export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
   "damage-self-lost-hp",
   "delayed-damage",
   "heal",
+  "heal-flat",
   "heal-lost-fraction",
+  "modify-status",
   "reduce-statuses",
+  "restore-skill-uses",
+  "scale-status",
   "scaled-status",
   "scaled-status-enemy-lost-hp",
   "shield",
   "status",
+  "status-from-status",
   "temporary-max-hp",
 ]);
 
@@ -1002,9 +1118,9 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       const weaponAttack = skillId === "strike"
         ? weaponAttackAtRank(buildFor(next, playerId)?.basicAttack, rank)
         : null;
-      const amount = Math.floor((statOf(player, effect.scale) * (
-        weaponAttack?.damagePercent ?? magnitude()
-      )) / 100);
+      const amount = weaponAttack
+        ? Math.floor((statOf(player, effect.scale) * weaponAttack.damagePercent) / 100)
+        : sourcedMagnitudeAmount(player, target, effect, magnitude());
       const hit = resolveAttack({
         attacker: player,
         defender: target,
@@ -1037,10 +1153,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
           ...next,
           actors: {
             ...next.actors,
-            [targetId]: {
-              ...currentTarget,
-              statuses: applyStatus(currentTarget.statuses, statusEffect.status, count),
-            },
+            [targetId]: actorWithAppliedStatus(currentTarget, statusEffect.status, count),
           },
         };
         next = push(next, "skill-status", {
@@ -1080,7 +1193,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "heal") {
-      const amount = Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
+      const amount = sourcedMagnitudeAmount(player, null, effect, magnitude());
       if (amount <= 0 || player.hp >= player.maxHp) return;
       next = {
         ...next,
@@ -1090,6 +1203,21 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         },
       };
       next = push(next, "skill-heal", { actorId: playerId, skillId, amount });
+      return;
+    }
+
+    if (effect.type === "heal-flat") {
+      const amount = magnitude();
+      if (amount <= 0 || player.hp >= player.maxHp) return;
+      const healed = Math.min(amount, player.maxHp - player.hp);
+      next = {
+        ...next,
+        actors: {
+          ...next.actors,
+          [playerId]: { ...player, hp: player.hp + healed },
+        },
+      };
+      next = push(next, "skill-heal", { actorId: playerId, skillId, amount: healed });
       return;
     }
 
@@ -1144,10 +1272,15 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         attack: { hits: 1, damage: amount },
         rng: next.rng,
       });
+      const spentAttackStatuses = ["berserk", "predator"].reduce(
+        (statuses, status) => removeStatus(statuses, status),
+        hit.attacker.statuses,
+      );
+      const resolvedAttacker = { ...hit.attacker, statuses: spentAttackStatuses };
       next = {
         ...next,
         rng: hit.rng,
-        actors: { ...next.actors, [playerId]: hit.attacker, [targetId]: hit.defender },
+        actors: { ...next.actors, [playerId]: resolvedAttacker, [targetId]: hit.defender },
       };
       next = push(next, "skill-damage", {
         actorId: playerId,
@@ -1198,9 +1331,8 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         actors: {
           ...next.actors,
           [subjectId]: {
-            ...subject,
+            ...actorWithStatuses(subject, cleaned),
             shield: effect.clearShield ? 0 : subject.shield,
-            statuses: cleaned,
           },
         },
       };
@@ -1222,13 +1354,122 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       const statuses = consumeStatusCount(player.statuses, effect.status, spent);
       next = {
         ...next,
-        actors: { ...next.actors, [playerId]: { ...player, statuses } },
+        actors: { ...next.actors, [playerId]: actorWithStatuses(player, statuses) },
       };
       next = push(next, "skill-status-spent", {
         actorId: playerId,
         skillId,
         status: effect.status,
         spent,
+      });
+      return;
+    }
+
+    if (effect.type === "modify-status") {
+      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      for (const subjectId of subjectIds) {
+        const subject = next.actors[subjectId];
+        if (!subject || subject.hp <= 0) continue;
+        const delta = magnitude();
+        const statuses = delta < 0
+          ? consumeStatusCount(subject.statuses, effect.status, Math.abs(delta))
+          : applyStatus(subject.statuses, effect.status, delta);
+        next = {
+          ...next,
+          actors: { ...next.actors, [subjectId]: actorWithStatuses(subject, statuses) },
+        };
+        next = push(next, "skill-status-modified", {
+          actorId: playerId,
+          skillId,
+          targetId: subjectId,
+          status: effect.status,
+          delta,
+        });
+      }
+      return;
+    }
+
+    if (effect.type === "status-from-status") {
+      const source = effect.factorOwner === "enemy" ? next.actors[targetId] : next.actors[playerId];
+      if (!source) return;
+      const count = Math.min(
+        MAX_STATUS_COUNT,
+        Math.floor(statusCount(source.statuses, effect.factorStatus) * magnitude()),
+      );
+      if (count <= 0) return;
+      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      for (const subjectId of subjectIds) {
+        const subject = next.actors[subjectId];
+        if (!subject || subject.hp <= 0) continue;
+        next = {
+          ...next,
+          actors: {
+            ...next.actors,
+            [subjectId]: actorWithAppliedStatus(subject, effect.status, count),
+          },
+        };
+        next = protectStatusDecay(next, subjectId, effect.status, count, effect.stackDownDelay);
+        next = push(next, "skill-status", {
+          actorId: playerId,
+          skillId,
+          status: effect.status,
+          target: effect.target,
+          targetId: subjectId,
+          count,
+          factorStatus: effect.factorStatus,
+        });
+      }
+      return;
+    }
+
+    if (effect.type === "scale-status") {
+      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      for (const subjectId of subjectIds) {
+        const subject = next.actors[subjectId];
+        if (!subject || subject.hp <= 0) continue;
+        const before = subject.statuses;
+        const scaled = effect.statuses.reduce(
+          (statuses, status) => scaleStatus(statuses, status, magnitude()),
+          before,
+        );
+        const changed = effect.statuses.reduce(
+          (total, status) => total + Math.abs(statusCount(scaled, status) - statusCount(before, status)),
+          0,
+        );
+        if (changed <= 0) continue;
+        next = {
+          ...next,
+          actors: { ...next.actors, [subjectId]: actorWithStatuses(subject, scaled) },
+        };
+        next = push(next, "skill-status-scaled", {
+          actorId: playerId,
+          skillId,
+          targetId: subjectId,
+          statuses: [...effect.statuses],
+          percent: magnitude(),
+          changed,
+        });
+      }
+      return;
+    }
+
+    if (effect.type === "restore-skill-uses") {
+      const amount = magnitude();
+      let restored = 0;
+      next = updateBuildFor(next, playerId, (build) => ({
+        ...build,
+        skills: build.skills.map((entry) => {
+          if (entry.id === skillId || entry.usesRemaining === UNLIMITED_USES) return entry;
+          const updated = restoreUses(entry, amount);
+          restored += updated.usesRemaining - entry.usesRemaining;
+          return updated;
+        }),
+      }));
+      next = push(next, "skill-uses-restored", {
+        actorId: playerId,
+        skillId,
+        amount,
+        restored,
       });
       return;
     }
@@ -1248,7 +1489,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       if (gained <= 0) return;
       next = {
         ...next,
-        actors: { ...next.actors, [subjectId]: { ...target, statuses: amplified } },
+        actors: { ...next.actors, [subjectId]: actorWithStatuses(target, amplified) },
       };
       next = push(next, "skill-status-amplified", {
         actorId: playerId,
@@ -1262,30 +1503,39 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "delayed-damage") {
-      const target = next.actors[targetId];
+      const delayedTargetId = effect.target === "self" ? playerId : targetId;
+      const target = next.actors[delayedTargetId];
       if (!target || target.hp <= 0) return;
       const amount = magnitude();
-      const turns = effect.turns;
+      const delayedStatus = effect.status || "limited-life-sentence";
+      const turns = effect.turnsByRank
+        ? effect.turnsByRank[Math.min(rank - 1, effect.turnsByRank.length - 1)]
+        : effect.turns;
       next = {
         ...next,
         scheduledEffects: [
           ...(next.scheduledEffects || []),
-          { type: "damage", skillId, sourceId: playerId, targetId, turnsRemaining: turns, amount },
+          {
+            type: "damage",
+            skillId,
+            sourceId: playerId,
+            targetId: delayedTargetId,
+            turnsRemaining: turns,
+            amount,
+            status: delayedStatus,
+          },
         ],
         actors: {
           ...next.actors,
-          [targetId]: {
-            ...target,
-            statuses: applyStatus(target.statuses, "limited-life-sentence", turns),
-          },
+          [delayedTargetId]: actorWithAppliedStatus(target, delayedStatus, turns),
         },
       };
       next = push(next, "skill-status", {
         actorId: playerId,
         skillId,
-        status: "limited-life-sentence",
-        target: "enemy",
-        targetId,
+        status: delayedStatus,
+        target: effect.target,
+        targetId: delayedTargetId,
         count: turns,
         delayedDamage: amount,
       });
@@ -1342,7 +1592,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         ...next,
         actors: {
           ...next.actors,
-          [targetId]: { ...target, statuses: applyStatus(target.statuses, effect.status, count) },
+          [targetId]: actorWithAppliedStatus(target, effect.status, count),
         },
       };
       next = push(next, "skill-status", {
@@ -1357,43 +1607,38 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "status" || effect.type === "scaled-status") {
-      const count = effect.type === "status"
+      const count = Math.min(MAX_STATUS_COUNT, effect.type === "status"
         ? magnitude()
-        : Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
+        : sourcedMagnitudeAmount(player, next.actors[targetId], effect, magnitude()));
       if (count <= 0) return;
-      if (effect.target === "self") {
+      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      for (const subjectId of subjectIds) {
+        const subject = next.actors[subjectId];
+        if (!subject || subject.hp <= 0) continue;
         const priorityBefore = effect.status === "priority"
-          ? statusCount(player.statuses, "priority")
+          ? statusCount(subject.statuses, "priority")
           : 0;
         next = {
           ...next,
           actors: {
             ...next.actors,
-            [playerId]: { ...player, statuses: applyStatus(player.statuses, effect.status, count) },
+            [subjectId]: actorWithAppliedStatus(subject, effect.status, count),
           },
         };
+        next = protectStatusDecay(next, subjectId, effect.status, count, effect.stackDownDelay);
         if (effect.status === "priority") {
-          next = applyImmediatePriorityBudget(next, playerId, priorityBefore);
+          next = applyImmediatePriorityBudget(next, subjectId, priorityBefore);
         }
-      } else {
-        const target = next.actors[targetId];
-        if (!target || target.hp <= 0) return;
-        next = {
-          ...next,
-          actors: {
-            ...next.actors,
-            [targetId]: { ...target, statuses: applyStatus(target.statuses, effect.status, count) },
-          },
-        };
+        next = push(next, "skill-status", {
+          actorId: playerId,
+          skillId,
+          status: effect.status,
+          target: effect.target,
+          targetId: subjectId,
+          count,
+        });
       }
-      next = push(next, "skill-status", {
-        actorId: playerId,
-        skillId,
-        status: effect.status,
-        target: effect.target,
-        targetId: effect.target === "self" ? playerId : targetId,
-        count,
-      });
+      return;
     }
   });
 
@@ -1446,9 +1691,10 @@ function withBuild(state, actorId, build) {
 }
 
 function spendAction(state, actorId) {
-  const actor = state.actors[actorId];
-  const actionsBefore = actionsLeftFor(state, actorId);
-  const spendsPriority = actionsBefore > regularActionsFor(actor);
+  // Priority actions are always spent before the ordinary action budget. Comparing the
+  // remaining total with a recomputed base budget leaves a phantom Priority stack when a
+  // turn-consuming skill grants Priority after its base action has already been spent.
+  const spendsPriority = priorityAdvantageFor(state, actorId) > 0;
   let next;
   if (actorId === state.playerId) {
     next = {
@@ -1547,6 +1793,7 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
   const misfortune = includeMisfortune ? statusCount(actor.statuses, "misfortune") : 0;
   const voidMonster = onlyMisfortune ? 0 : statusCount(actor.statuses, "void-monster");
   const hellfireSpirit = onlyMisfortune ? 0 : statusCount(actor.statuses, "hellfire-spirit");
+  const fatalBlade = onlyMisfortune ? 0 : statusCount(actor.statuses, "fatal-blade");
   const scheduled = state.scheduledEffects || [];
   const due = onlyMisfortune
     ? []
@@ -1554,10 +1801,16 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
   const delayedDamage = due
     .filter((entry) => entry.type === "damage")
     .reduce((total, entry) => total + entry.amount, 0);
+  const delayedSkillIds = due
+    .filter((entry) => entry.type === "damage")
+    .map((entry) => entry.skillId);
+  const delayedStatuses = due
+    .filter((entry) => entry.type === "damage" && entry.status)
+    .map((entry) => entry.status);
   const forbiddenRitual = due.some((entry) => entry.type === "fatal");
   const fatalDamage = forbiddenRitual ? actor.hp : 0;
   const total = burn + doom + poison + bleed + misfortune
-    + voidMonster + hellfireSpirit + delayedDamage + fatalDamage;
+    + voidMonster + hellfireSpirit + fatalBlade + delayedDamage + fatalDamage;
   const scheduledEffects = onlyMisfortune
     ? scheduled
     : scheduled.flatMap((entry) => {
@@ -1584,22 +1837,64 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
       misfortune,
       voidMonster,
       hellfireSpirit,
+      fatalBlade,
       delayedDamage,
+      delayedSkillIds,
+      delayedStatuses,
       forbiddenRitual,
     },
   );
 }
 
-function resolveActorTurnEnd(state, actorId, { includeMisfortune = false } = {}) {
-  const damaged = boundaryStatusDamage(state, actorId, { includeMisfortune });
-  const actor = damaged.actors[actorId];
+function decayActorStatusesAtBoundary(state, actorId) {
+  const actor = state.actors[actorId];
+  const protection = state.statusDecayProtection?.[actorId] || {};
+  let protectedStatuses = createStatusStack();
+  let tickableStatuses = createStatusStack();
+  const remainingProtection = {};
+
+  for (const entry of actor.statuses) {
+    const protectedEntry = protection[entry.type];
+    const protectedCount = protectedEntry
+      ? Math.min(entry.count, protectedEntry.count)
+      : 0;
+    const tickableCount = entry.count - protectedCount;
+    if (tickableCount > 0) tickableStatuses = applyStatus(tickableStatuses, entry.type, tickableCount);
+    if (protectedCount > 0) {
+      protectedStatuses = applyStatus(protectedStatuses, entry.type, protectedCount);
+      if (protectedEntry.turnsRemaining > 1) {
+        remainingProtection[entry.type] = {
+          count: protectedCount,
+          turnsRemaining: protectedEntry.turnsRemaining - 1,
+        };
+      }
+    }
+  }
+
+  let statuses = tickEndOfTurnDamage(tickableStatuses);
+  statuses = tickEndOfTurn(statuses);
+  for (const entry of protectedStatuses) statuses = applyStatus(statuses, entry.type, entry.count);
+
+  const statusDecayProtection = { ...(state.statusDecayProtection || {}) };
+  if (Object.keys(remainingProtection).length > 0) {
+    statusDecayProtection[actorId] = remainingProtection;
+  } else {
+    delete statusDecayProtection[actorId];
+  }
+
   return {
-    ...damaged,
+    ...state,
+    statusDecayProtection,
     actors: {
-      ...damaged.actors,
-      [actorId]: { ...actor, statuses: tickEndOfTurnDamage(actor.statuses) },
+      ...state.actors,
+      [actorId]: actorWithStatuses(actor, statuses),
     },
   };
+}
+
+function resolveActorTurnEnd(state, actorId, { includeMisfortune = false } = {}) {
+  const damaged = boundaryStatusDamage(state, actorId, { includeMisfortune });
+  return decayActorStatusesAtBoundary(damaged, actorId);
 }
 
 function useEnemySkill(state, enemyId, skillId, targetId) {
@@ -1823,12 +2118,6 @@ export function endTurn(state) {
 
   if (next.phase !== "player") return { ok: true, reason: null, state: next };
 
-  // Ordinary status decay remains the round-boundary pass. Damage statuses already applied
-  // their own source-specific lifecycle alongside their damage at each holder's turn end.
-  const ticked = { ...next.actors };
-  for (const actorId of Object.keys(ticked)) {
-    ticked[actorId] = { ...ticked[actorId], statuses: tickEndOfTurn(ticked[actorId].statuses) };
-  }
   // Cooldowns tick for everyone who could have spent one, allies included.
   const tickedAllyBuilds = {};
   for (const [allyId, build] of Object.entries(next.allyBuilds || {})) {
@@ -1840,7 +2129,6 @@ export function endTurn(state) {
   }
   next = {
     ...next,
-    actors: ticked,
     round: next.round + 1,
     build: {
       ...next.build,

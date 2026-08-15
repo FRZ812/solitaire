@@ -15,6 +15,7 @@ import { Icon } from "../Icon.jsx";
 import {
   CHARACTER_ABILITY_TYPE_LABELS,
   characterAbilitiesFor,
+  describeCharacterAbilityEffect,
 } from "../../gameplay/tow/character-abilities.js";
 import { createSkillState, generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
 import {
@@ -68,71 +69,9 @@ function ArrowIcon({ direction = "right" }) {
   );
 }
 
-function readableList(values = []) {
-  const labels = values.map(titleCase);
-  if (labels.length < 2) return labels[0] || "";
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
-  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
-}
-
-function rankedEffectAmount(effect, rank) {
-  const table = effect.percentByRank || effect.countByRank;
-  if (!Array.isArray(table) || table.length === 0) return null;
-  return table[Math.min(table.length - 1, Math.max(0, rank - 1))];
-}
-
 function abilityMechanicalSummary(definition, rank = 1) {
-  const readable = (definition.effects || []).map((effect) => {
-    const amount = rankedEffectAmount(effect, rank);
-    const scale = ({ attack: "ATK", defense: "DEF", "max-hp": "MAX HP" })[effect.scale]
-      || String(effect.scale || "ATK").toUpperCase();
-    const status = titleCase(effect.status);
-    const statuses = readableList(effect.statuses);
-    const targetVerb = effect.target === "enemy" ? "Inflict" : "Gain";
-
-    if (effect.type === "damage") {
-      const hits = Math.max(1, effect.hits || 1);
-      return hits > 1
-        ? `${hits} hits at ${amount}% ${scale} damage each`
-        : `${amount}% ${scale} damage`;
-    }
-    if (effect.type === "damage-enemy-lost-hp") {
-      return `Damage equal to ${amount}% of enemy missing health`;
-    }
-    if (effect.type === "damage-self-lost-hp") {
-      return `Damage equal to ${amount}% of own missing health`;
-    }
-    if (effect.type === "damage-enemy-max-hp") {
-      return `Damage equal to ${amount}% of enemy maximum health`;
-    }
-    if (effect.type === "delayed-damage") {
-      return `Deal ${amount} special damage after ${effect.turns} turns`;
-    }
-    if (effect.type === "temporary-max-hp") {
-      return `Gain ${amount} maximum health for ${effect.turns} turns${effect.fatal ? ", then die" : ""}`;
-    }
-    if (effect.type === "shield") return `Gain Ward equal to ${amount}% ${scale}`;
-    if (effect.type === "heal") return `Restore ${amount}% ${scale} health`;
-    if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
-    if (effect.type === "scaled-status") return `${targetVerb} ${status} equal to ${amount}% ${scale}`;
-    if (effect.type === "scaled-status-enemy-lost-hp") {
-      return `Inflict ${status} equal to ${amount}% of enemy missing health`;
-    }
-    if (effect.type === "status") return `${targetVerb} ${amount} ${status}`;
-    if (effect.type === "reduce-statuses") {
-      if (effect.target === "enemy" && effect.toPercent === 0) {
-        return effect.clearShield
-          ? `Remove enemy Ward, ${statuses}`
-          : `Consume enemy ${statuses}`;
-      }
-      return `Reduce ${effect.target === "enemy" ? "enemy " : ""}${statuses} to ${effect.toPercent}%`;
-    }
-    if (effect.type === "amplify-statuses") {
-      return `Raise ${effect.target === "self" ? "own" : "enemy"} ${statuses} to ${amount}%`;
-    }
-    if (effect.type === "consume-status") return `Spend ${amount} ${status}`;
-    return titleCase(effect.type);
-  });
+  const readable = (definition.effects || [])
+    .map((effect) => describeCharacterAbilityEffect(effect, rank));
   if (definition.cooldown > 0) readable.push(`${definition.cooldown}-turn cooldown`);
   return readable.join(" · ") || "No immediate combat effect";
 }

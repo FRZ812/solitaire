@@ -154,7 +154,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     tagline: "A crown can be taken. A king's weight cannot.",
     playstyle: "Every repeated hit compounds Valiancy. Whirlwind erodes the foe, Vitality erases attrition, and Earthquake ends the argument with overwhelming scale.",
     attention: "Medium", attributes: { body: 5, reflex: 2, vigor: 4, mind: 2, wit: 3, presence: 5 },
-    baseStats: { maxHp: 160, attack: 14, defense: 13, critRate: 6, dodgeRate: 4 },
+    baseStats: { maxHp: 180, attack: 13, defense: 13, critRate: 6, dodgeRate: 4 },
     gear: ["battle-axe", "chain-shirt", "traveling-cloak", "marching-boots"], color: "#b66e4a",
     portrait: { scale: 1.07, x: "49%" },
     character: authoredCharacter({
@@ -185,10 +185,10 @@ export const STARTING_ARCHETYPES = Object.freeze([
     }),
   }),
   archetype({
-    id: "last-assassin", name: "Crumble Executioner", role: "Multi-hit finisher", professionId: "rogue", traitId: "combo",
+    id: "last-assassin", name: "Crumble Executioner", role: "Multi-hit finisher", professionId: "rogue", traitId: "assassin",
     skills: ["assassin-flurry", "assassin-deflect", "assassin-flash-bomb", "assassin-execution", "assassin-storm-of-knives"],
     tagline: "One opening is enough. Two blades make certain.",
-    playstyle: "Flurry steadily exposes a target. Deflect answers multi-hit intent, Flash Bomb creates a safe opening, and Execution converts that opening into a heavy strike that clears the enemy's accumulated wounds.",
+    playstyle: "Chain Slash turns Assassin's Eviscerate into permanent Limp. Parrying answers multi-hit intent, Flashbang steals a command, and Behead converts the opening into a heavy strike that clears the enemy's Limp.",
     attention: "High", attributes: { body: 3, reflex: 5, vigor: 3, mind: 2, wit: 5, presence: 2 },
     baseStats: { maxHp: 160, attack: 14, defense: 11, critRate: 12, dodgeRate: 5 },
     gear: ["twin-daggers", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#8b78a8",
@@ -208,7 +208,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     tagline: "Nothing is gone while the bones still answer.",
     playstyle: "Accumulate Skeletons passively and actively, weather pressure with Bone Shield, then direct five rapid attacks through the opening.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 4, presence: 4 },
-    baseStats: { maxHp: 150, attack: 10, defense: 15, critRate: 12, dodgeRate: 5 },
+    baseStats: { maxHp: 150, attack: 10, defense: 16, critRate: 12, dodgeRate: 5 },
     gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#8f769e",
     portrait: { scale: 1.06, x: "51%" },
     character: authoredCharacter({
@@ -226,7 +226,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     tagline: "A failed theorem is only a weapon whose conditions are not yet met.",
     playstyle: "Barrier buys time for Charge to mature. Flame Storm supplies attrition; Amplification converts the current ATK line into a turn of explosive scaling.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 5, presence: 2 },
-    baseStats: { maxHp: 150, attack: 15, defense: 12, critRate: 6, dodgeRate: 5 },
+    baseStats: { maxHp: 160, attack: 15, defense: 12, critRate: 6, dodgeRate: 5 },
     gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#b95e58",
     portrait: { scale: 1.04, x: "49%" },
     character: authoredCharacter({
@@ -239,12 +239,12 @@ export const STARTING_ARCHETYPES = Object.freeze([
     }),
   }),
   archetype({
-    id: "exiled-priestess", name: "Judgment Martyr", role: "Missing-health verdict", professionId: "cleric", traitId: "judgment",
+    id: "exiled-priestess", name: "Justice Martyr", role: "Missing-health verdict", professionId: "cleric", traitId: "judgment",
     skills: ["priestess-crush", "priestess-block", "priestess-wrath-of-heaven", "priestess-doom", "priestess-immediate-judgment"],
     tagline: "If heaven will not answer, I will deliver the verdict myself.",
     playstyle: "Judgment builds naturally. Block keeps the Priestess alive at a dangerous health line, Wrath weaponizes what is missing, and Doom magnifies every lingering wound.",
     attention: "High", attributes: { body: 4, reflex: 2, vigor: 4, mind: 3, wit: 2, presence: 5 },
-    baseStats: { maxHp: 144, attack: 11, defense: 16, critRate: 6, dodgeRate: 4 },
+    baseStats: { maxHp: 170, attack: 11, defense: 16, critRate: 6, dodgeRate: 4 },
     gear: ["war-hammer", "chain-shirt", "round-shield", "traveling-cloak"], color: "#d2b05e",
     portrait: { scale: 1.08, x: "50%" },
     character: authoredCharacter({

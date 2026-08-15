@@ -23,11 +23,11 @@ describe("status definitions", () => {
       removeAtEndOfTurn: false,
     });
     expect(getStatusDefinition("steelskin")).toMatchObject({
-      permanent: false,
-      decreaseWhenHit: true,
+      permanent: true,
+      decreaseWhenHit: false,
     });
     expect(getStatusDefinition("solidity")).toMatchObject({
-      decreaseAtEndOfTurn: true,
+      decreaseAtEndOfTurn: false,
       decreaseWhenHit: true,
     });
     expect(getStatusDefinition("guard")).toMatchObject({
@@ -35,10 +35,10 @@ describe("status definitions", () => {
       decreaseWhenHit: true,
     });
     expect(getStatusDefinition("overload")).toMatchObject({ removeAtEndOfTurn: true });
-    expect(getStatusDefinition("doom-atk")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("doom-atk")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("thorn")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("tenacity")).toMatchObject({ permanent: true });
-    expect(getStatusDefinition("lethargy")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("lethargy")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("vulnerable")).toMatchObject({ decreaseWhenHit: true });
     expect(getStatusDefinition("burn")).toMatchObject({
       permanent: true,
@@ -54,7 +54,7 @@ describe("status definitions", () => {
     expect(getStatusDefinition("charge")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("initiative")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("priority")).toMatchObject({ decreaseAtEndOfTurn: true });
-    expect(getStatusDefinition("berserk")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("berserk")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("bone-shield")).toMatchObject({ decreaseWhenHit: true });
     expect(getStatusDefinition("mirror-image")).toMatchObject({
       decreaseWhenHit: true,
@@ -66,10 +66,10 @@ describe("status definitions", () => {
     expect(getStatusDefinition("forbidden-ritual")).toMatchObject({ decreaseAtEndOfTurn: true });
   });
 
-  it("marks undocumented lifecycles as a gap instead of inventing one", () => {
+  it("records shipped control lifecycles without applying duplicate boundary decay", () => {
     for (const type of ["paralyze", "stun"]) {
       const spec = getStatusDefinition(type);
-      expect(spec.lifecycleEvidence).toBe("gap");
+      expect(spec.lifecycleEvidence).toBe("shipped-1.4.16");
       expect(spec.permanent).toBe(false);
       expect(spec.removeAtEndOfTurn).toBe(false);
       expect(spec.decreaseAtEndOfTurn).toBe(false);
@@ -91,7 +91,8 @@ describe("status definitions", () => {
       "poison", "cripple", "charge", "grow", "overload", "poison-atk", "weak",
       "focus", "solidity", "guard", "sharpen", "eviscerate", "priority", "doom",
       "bone-shield", "mirror-image", "void-monster", "hellfire-spirit",
-      "limited-life-sentence", "forbidden-ritual",
+      "limited-life-sentence", "forbidden-ritual", "counter-attack", "parry",
+      "persist", "predator", "restraint", "fatal-blade", "injured", "fortified",
     ]));
   });
 });
@@ -160,7 +161,7 @@ describe("decrementing on hit", () => {
     stack = applyStatus(stack, "evade", 1);
 
     const after = decrementOnHit(stack);
-    expect(statusCount(after, "steelskin")).toBe(3);
+    expect(statusCount(after, "steelskin")).toBe(4);
     expect(statusCount(after, "burn")).toBe(79);
     expect(statusCount(after, "protection")).toBe(20);
     // Thorn is permanent and Evade only decays at end of turn.
@@ -169,11 +170,11 @@ describe("decrementing on hit", () => {
   });
 
   it("spends once per individual hit, so a multi-hit attack costs more", () => {
-    // Steelskin is applied to each individual hit, so a 3-hit attack ticks it three times.
-    const stack = applyStatus(createStatusStack(), "steelskin", 4);
+    // Protection is spent per individual hit while persistent Steelskin is not.
+    const stack = applyStatus(createStatusStack(), "protection", 4);
     let after = stack;
     for (let hit = 0; hit < 3; hit += 1) after = decrementOnHit(after);
-    expect(statusCount(after, "steelskin")).toBe(1);
+    expect(statusCount(after, "protection")).toBe(1);
   });
 
   it("spends Bone Shield and Mirror Image only on landed contact", () => {
@@ -186,7 +187,7 @@ describe("decrementing on hit", () => {
   });
 
   it("drops a status that reaches zero rather than leaving an empty stack", () => {
-    const stack = applyStatus(createStatusStack(), "steelskin", 1);
+    const stack = applyStatus(createStatusStack(), "burn", 1);
     const after = decrementOnHit(stack);
     expect(after).toEqual([]);
     expect(hasStatus(after, "steelskin")).toBe(false);
@@ -208,7 +209,7 @@ describe("ticking at end of turn", () => {
     stack = applyStatus(stack, "misfortune", 180);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "overload")).toBe(false);
-    expect(hasStatus(after, "doom-atk")).toBe(false);
+    expect(statusCount(after, "doom-atk")).toBe(25);
     expect(hasStatus(after, "charge")).toBe(false);
     expect(hasStatus(after, "misfortune")).toBe(false);
   });
@@ -221,7 +222,7 @@ describe("ticking at end of turn", () => {
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "evade")).toBe(false);
     expect(statusCount(after, "haste")).toBe(1);
-    expect(statusCount(after, "solidity")).toBe(9);
+    expect(statusCount(after, "solidity")).toBe(10);
     expect(statusCount(after, "priority")).toBe(2);
   });
 

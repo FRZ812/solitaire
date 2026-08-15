@@ -263,7 +263,7 @@ describe("combat feedback receipts", () => {
 
     expect(timeline.map((cue) => cue.actionIndex)).toEqual([0, 0, 0, 1]);
     expect(timeline.map((cue) => cue.declarationLabel))
-      .toEqual(["Flame Strike", "Flame Strike", "Flame Strike", "Swing"]);
+      .toEqual(["Fire Strike", "Fire Strike", "Fire Strike", "Swing"]);
     expect(timeline[2].delayMs).toBeGreaterThan(timeline[1].delayMs);
     expect(timeline[3].delayMs).toBeGreaterThan(timeline[2].delayMs);
     expect(timeline[3]).toMatchObject({ attackerId: "foe", targetId: "hero" });
@@ -324,7 +324,7 @@ describe("combat feedback receipts", () => {
       label: "Amplified",
       kicker: "+8",
       targetSide: "enemy",
-      visual: { family: "afflict", variant: "priestess-doom-amplified" },
+      visual: { family: "fire", variant: "priestess-doom-burn-skill-status-amplified" },
     });
   });
 

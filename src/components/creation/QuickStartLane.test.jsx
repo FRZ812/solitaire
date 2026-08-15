@@ -223,11 +223,11 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.querySelectorAll(".character-details__test-loadout")).toHaveLength(1);
     expect(details.querySelector(".character-details__split")).toBeNull();
     expect(summaries).toEqual([
-      "2 hits at 55% ATK damage each",
-      "Gain Ward equal to 175% DEF",
-      "Inflict 2 Paralyze",
-      expect.stringMatching(/^240% ATK damage · Consume enemy Burn, Poison, Bleed/),
-      "4 hits at 42% ATK damage each · Inflict Bleed equal to 60% ATK",
+      "Deal 2 hits of 50% ATK damage",
+      "Gain Parry equal to 185% DEF",
+      "Inflict 2 Stun · 6-turn cooldown",
+      "Deal 240% ATK damage · Remove Limp on the enemy",
+      "Deal 4 hits of 35% ATK damage · 9-turn cooldown",
     ]);
   });
 

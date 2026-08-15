@@ -1,6 +1,7 @@
-# Tower of Winter character-roster adaptation ledger
+# Tower of Winter character-roster source ledger
 
-Captured 2026-08-14 for the five-active-ability character templates.
+Captured 2026-08-15 against the shipped Tower of Winter 1.4.16 character, skill,
+and status tables, with the Namu character page used as the readable reference.
 
 The reference game supports a five-slot skill inventory and lets later acquisitions
 replace equipped skills. This implementation makes that rule explicit:
@@ -11,10 +12,10 @@ replace equipped skills. This implementation makes that rule explicit:
 4. A General ability can later replace only one of slots 3–5.
 5. No starting archetype begins with a General ability.
 
-This is deliberately separate from `TOW_EVIDENCE.md`. Names and documented mechanics
-stay literal where evidence exists; `adapted` entries preserve the sourced combat
-identity with kernel-native values where the accessible source does not publish a
-coefficient.
+This is deliberately separate from `TOW_EVIDENCE.md`. Every character ability now uses
+the shipped name, grade, rank count, use count, cooldown, turn cost, targets, factors,
+and status effects. Every active character record is direct source data; approximation
+metadata is never shown to the player.
 
 ## Sources
 
@@ -30,10 +31,9 @@ coefficient.
 - `historical:values` — <https://gall.dcinside.com/mgallery/board/view/?id=tow&no=2268>
 - `historical:witch-skills` — <https://gall.dcinside.com/mgallery/board/view/?id=tow&no=3866>
 
-Fidelity labels are internal audit metadata only: `direct` means the implemented name
-and numbers are documented; `adapted` means the documented identity or behavior is
-retained while its values are fitted to this combat kernel. They are never rendered as
-ability effects or player-facing notes.
+The runtime retains stable Solitaire ability IDs for save and VFX compatibility, but all
+276 records carry `source.fidelity = "direct"`. Source metadata is never rendered as an
+ability effect or player-facing note.
 
 ## Complete roster and source chassis
 
@@ -42,12 +42,12 @@ ability effects or player-facing notes.
 | 1 | Arctic Knight / 극지의 기사 | 170 | 12 | 13 | 9% | 4% | Ironclad 3 |
 | 2 | Demon Slayer / 악마 살육자 | 160 | 13 | 12 | 9% | 5% | Quickness 3 |
 | 3 | Owner of Clocktower / 시계탑의 주인 | 150 | 14 | 14 | 9% | 4% | Innovation 3 |
-| 4 | Old King of Northland / 북부의 옛 왕 | 160 | 14 | 13 | 6% | 4% | Valiancy 3 |
+| 4 | Old King of Northland / 북부의 옛 왕 | 180 | 13 | 13 | 6% | 4% | Valiancy 3 |
 | 5 | Sleepless One / 잠 못드는 자 | 190 | 12 | 15 | 3% | 3% | Ignition 3 |
-| 6 | Last Assassin / 최후의 암살자 | 160 | 14 | 11 | 12% | 5% | Combo 3 |
-| 7 | Witch of Eternity / 영겁의 마녀 | 150 | 10 | 15 | 12% | 5% | Necromancy 3 |
-| 8 | Tenacious Mage / 집념의 마도사 | 150 | 15 | 12 | 6% | 5% | Charge 3 |
-| 9 | Exiled Priestess / 추방된 성녀 | 144 | 11 | 16 | 6% | 4% | Judgment 3 |
+| 6 | Last Assassin / 최후의 암살자 | 160 | 14 | 11 | 12% | 5% | Assassin 3 |
+| 7 | Witch of Eternity / 영겁의 마녀 | 150 | 10 | 16 | 12% | 5% | Necromancy 3 |
+| 8 | Tenacious Mage / 집념의 마도사 | 160 | 15 | 12 | 6% | 5% | Charge 3 |
+| 9 | Exiled Priestess / 추방된 성녀 | 170 | 11 | 16 | 6% | 4% | Justice 3 |
 | 10 | Wandering Blade / 방랑하는 검 | 160 | 14 | 12 | 9% | 5% | Gale 3 |
 | 11 | Desolate Vampire / 비탄의 흡혈귀 | 170 | 13 | 13 | 9% | 4% | Bloodsuck 3 |
 | 12 | Forsaken Automaton / 남겨진 자동인형 | 200 | 15 | 10 | 6% | 3% | Overheat 3 |
@@ -56,18 +56,18 @@ ability effects or player-facing notes.
 
 | Character | Fixed Basic Attack | Fixed Defensive | Flexible exclusive 1 | Flexible exclusive 2 | Flexible exclusive 3 |
 |---|---|---|---|---|---|
-| Arctic Knight | Strike — 100% ATK (`direct`) | Block — 250% DEF ward (`direct`) | Deliberate Blow — 110% ATK + 110% DEF ward (`direct`) | Incineration — damage, Burn, self-Paralyze (`direct`) | Mortal Blow — 210% ATK, self-Paralyze (`direct`) |
-| Demon Slayer | Shoot — 100% ATK (`direct`) | Evasion — Evade + 220% DEF ward (`direct`) | Kick — damage + Stun (`direct`) | Arrow Rain — four-hit Poison barrage (`adapted`) | Tracker's Net — bind + exposure (`adapted`) |
-| Owner of Clocktower | Fire — 100% ATK (`direct`) | Suppressive Shot — DEF-scaled Lethargy (`direct`) | Missile Support — swift 200% ATK (`direct`) | Redesign — Tenacity + Strength (`direct`) | Improvement — swift Strength + Tenacity (`direct`) |
-| Old King of Northland | Cleave — 100% ATK (`direct`) | Vitality — heal 185% DEF (`direct`) | Whirlwind — three-hit Lethargy pressure (`adapted`) | Earthquake — damage + Lethargy shockwave (`direct`) | Neutralizing Blow — DEF damage + Lethargy (`adapted`) |
-| Sleepless One | Flame Strike — attack + Burn (`adapted`) | Flame Curtain — ward + Burn (`adapted`) | Entangling Roots — bind + Poison (`adapted`) | High-Speed Flight — Priority 4 (`direct`) | Fire Essence — swift Strength + Overload (`adapted`) |
-| Last Assassin | Flurry — native two-hit attack (`direct`) | Deflect — 175% DEF ward (`direct`) | Flash Bomb — control + exposure (`adapted`) | Execution — missing-health finisher (`adapted`) | Storm of Knives — four hits + Bleed (`adapted`) |
-| Witch of Eternity | Attack — 100% ATK (`direct`) | Bone Shield — 60% direct-damage reduction, 15 uses (`direct`) | Skeleton Summon — gain 12 Skeletons, 5 uses, uses the action (`direct`) | All-Out Attack — 5 hits at 40% ATK, 2 uses, cooldown 9 (`direct`) | Mirror Image — +33% Dodge, lost on hit or turn end (`direct`) |
-| Tenacious Mage | Magic Arrow — 100% ATK (`adapted`) | Barrier — ward + Protection (`direct`) | Flame Storm — three-hit Burn spell (`adapted`) | Amplification — swift ATK-scaled Strength (`direct`) | God-Slaying Spear — 360% ATK, self-Paralyze (`adapted`) |
-| Exiled Priestess | Crush — attack + Judgment (`adapted`) | Holy Shield — maximum-HP ward (`adapted`) | Wrath of Heaven — own missing HP as damage (`direct`) | Doom — amplifies Burn, Poison, and Bleed (`direct`) | Immediate Judgment — DEF damage + Doom (`adapted`) |
-| Wandering Blade | Slash — attack + Initiative (`adapted`) | Blade Barrier — ward + Guard (`adapted`) | Chi Liberation — swift Priority + Strength (`adapted`) | One Flash — decisive strike + Priority (`adapted`) | Katana Dance — three hits + Initiative (`adapted`) |
-| Desolate Vampire | Claw — attack with Bloodsuck synergy (`adapted`) | Blood Thirst — ATK/DEF healing (`adapted`) | Heart Destroyer — heavy strike + Bleed (`adapted`) | Rampage — four hits + Lifesteal (`adapted`) | Bloodflow Absorption — damage + recovery (`adapted`) |
-| Forsaken Automaton | Bombardment — 100% ATK (`adapted`) | Repair — lost-HP heal + ward (`adapted`) | Emergency Cooling — vent Limp + Solidity (`adapted`) | Fate Manipulator — Priority + Overload + self-Limp (`adapted`) | Final Counter — equal DEF ward and damage (`adapted`) |
+| Arctic Knight | Strike — 100% ATK damage | Block — 250% DEF Ward | Deliberate Blow — 110% ATK damage + 110% DEF Ward | Incineration — 110% ATK damage + 110% ATK Burn + 2 self-Paralyze | Mortal Blow — 210% ATK damage + 1 self-Paralyze |
+| Demon Slayer | Shoot — 100% ATK damage | Evasion — 1 Evade + 220% DEF Ward | Front Kick — 50% ATK damage + 1 Stun | Rain of Arrows — four hits at 35% ATK | Tracker's Net — 20% DEF Cripple + 1 Paralyze |
+| Owner of Clocktower | Fire! — 100% ATK damage | Suppressive Shot — 125% DEF Lethargy | Missile Support — 200% ATK Doom | Redesign — 40% ATK Tenacity + 40% DEF Strength | Improvement — 4 Strength + 4 Tenacity |
+| Old King of Northland | Slice — 100% ATK damage | Vitality — heal 185% DEF | Spinning Axe — 210% ATK damage + 15 self-Lethargy | Earthquake — 400% ATK damage + 400% DEF Lethargy | Pulverize — 140% ATK damage + 2 Weak |
+| Sleepless One | Swing — 100% ATK damage | Hard Scale — 50% DEF Ward + 1 Solidity | Entagling Root — 1 Paralyze + 10 Poison | Superfast Flight — 4 Priority | Fire Essence — amplify own Overload to 350% |
+| Last Assassin | Chain Slash — two hits at 50% ATK | Parrying — 185% DEF Parry | Flashbang — 2 Stun | Behead — 240% ATK damage, then remove enemy Limp | Storm of Knife — four hits at 35% ATK |
+| Witch of Eternity | Shadow Bolt — 100% ATK damage | Bone Shield — 50% DEF Ward + 2 Bone Shield | Animate Dead — 12 Skeleton | Skeleton Wave — five hits at 40% ATK, with no Doom | Mirror Image — 3 Mirror Image |
+| Tenacious Mage | Magic Missile — 100% ATK damage | Mana Shield — 200% DEF Ward + 4 Protection | Flame Storm — 36% ATK Lethargy + 36% ATK Burn | Amplification — 50% ATK Strength | Spear of Godslayer — three hits at 120% ATK |
+| Exiled Priestess | Smite — 100% ATK damage | Block — 190% DEF Ward + 60% DEF Judgment | Holy Punishment — 35% of own lost HP as damage | Perdition — amplify enemy Burn, Poison, and Bleed to 200% | Instance Inquisition — amplify own Judgment to 150% |
+| Wandering Blade | Katana Strike — 100% ATK damage | Blade Barrier — 180% DEF Ward + 16% DEF Thorn | Chi Liberation — amplify own Doom Attack to 160% | Hissatsu — 1000% ATK Doom | Katana Dance — 180% DEF Parry + 20% DEF Thorn |
+| Desolate Vampire | Scratch — 100% ATK damage | Bloodthirst — 250% DEF Predator + 1 Solidity | Heartbreaker — damage equal to 3.75× enemy Bleed | Rampage — 30% MAX HP self-Doom + 50% MAX HP damage | Bloodsucking — 20% ATK Bleed + heal 120% ATK |
+| Forsaken Automaton | Firing — 100% ATK damage | Recovery — heal 185% DEF + reduce own Limp to 40% | Emergency Cooling — remove own Limp | Fate Manipulator — transfer own Limp to the enemy, then clear it | Final Counter — damage equal to 2.4× own Limp |
 
 ## General active ability replacement pool
 
@@ -97,7 +97,5 @@ the Basic Attack and Defensive ability cannot be selected.
 | Transcendence | Strength 8 + Tenacity 8 + Focus 20 |
 | Peace Declaration | Paralyze 1 + DEF-scaled Lethargy |
 
-Every adaptation decision is stored on its runtime skill as `source.fidelity =
-"adapted"` with a concise `source.detail`. Character selection, its complete detail
-drawer, reward replacement, arsenal presentation, and combat all read those same
-definitions.
+Character selection, its complete detail drawer, reward replacement, arsenal
+presentation, and combat all read these same definitions.

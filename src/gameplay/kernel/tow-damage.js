@@ -11,7 +11,6 @@
 import { nextInt } from "./rng.js";
 import {
   applyStatus,
-  consumeStatusCount,
   decrementOnHit,
   removeStatus,
   statusCount,
@@ -19,8 +18,8 @@ import {
 
 export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   // Crit *rate* is observed on every stat block. What a crit multiplies by is not.
-  critMultiplier: 2,
-  critMultiplierEvidence: "gap",
+  critMultiplier: 1.6,
+  critMultiplierEvidence: "observed",
 
   // Observed: Solidity -30%, Guard -50%. Not observed: how two of them compose.
   percentReductionStacking: "multiplicative",
@@ -61,18 +60,15 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   stopHitsOnDefeat: true,
   stopHitsOnDefeatEvidence: "gap",
 
-  // The source records Charge in 100-point packets but leaves the status-table effect
-  // blank. Solitaire makes that packet an explicit charged critical window: the next
-  // landed hit is critical and spends one packet. Keeping the threshold here makes the
-  // adaptation auditable instead of leaving the Tenacious Mage's innate trait inert.
-  chargeThreshold: 100,
-  chargedHit: "guaranteed-critical",
-  chargedHitEvidence: "adapted",
+  // Charged is a temporary CriticalChance stat modifier. It clears at the holder's turn
+  // boundary; attacks do not spend a 100-point packet.
+  chargedMode: "critical-chance",
+  chargedEvidence: "shipped-1.4.16",
 
-  // Berserk's Count is its damage percentage for the one landed contact it survives.
-  // The status is then removed in full from an attacker who hit and a defender who was hit.
-  berserkDamagePerCountPercent: 1,
-  berserkEvidence: "observed",
+  // Berserk is an ATK stat modifier. The encounter resolver clears it after the holder's
+  // next attack (AllAttack) or at their turn boundary (AllPerTurn).
+  berserkMode: "attack-stat",
+  berserkEvidence: "shipped-1.4.16",
 
   // Witch of Eternity's Bone Shield explicitly reduces direct damage by 60% while a
   // charge remains. The charge lifecycle is owned by status-stack and resolves per hit.
@@ -114,7 +110,21 @@ function dodgeChanceFor(defender) {
     ? POLICY.concealDodgeBonus * (POLICY.dodgeBonusStacksWithCount ? conceal : 1)
     : 0;
   const mirrorImageBonus = mirrorImage > 0 ? POLICY.mirrorImageDodgeBonus : 0;
-  return clampRate(defender.stats.dodgeRate + evadeBonus + concealBonus + mirrorImageBonus);
+  const restraintPenalty = statusCount(defender.statuses, "restraint") > 0 ? 100 : 0;
+  return clampRate(defender.stats.dodgeRate + evadeBonus + concealBonus + mirrorImageBonus - restraintPenalty);
+}
+
+function criticalChanceFor(attacker) {
+  return clampRate(
+    attacker.stats.critRate
+      + statusCount(attacker.statuses, "focus")
+      + statusCount(attacker.statuses, "charge")
+      + statusCount(attacker.statuses, "covert"),
+  );
+}
+
+function criticalMultiplierFor(attacker) {
+  return POLICY.critMultiplier + (statusCount(attacker.statuses, "sharpen") / 100);
 }
 
 function percentMultiplierFor(defender) {
@@ -124,6 +134,8 @@ function percentMultiplierFor(defender) {
   if (statusCount(defender.statuses, "bone-shield") > 0) {
     multiplier *= 1 - (POLICY.boneShieldDamageReductionPercent / 100);
   }
+  const persist = statusCount(defender.statuses, "persist");
+  if (persist > 0) multiplier *= Math.max(0, 1 - (persist / 100));
   return multiplier;
 }
 
@@ -132,12 +144,16 @@ function flatReductionFor(defender) {
   const protection = POLICY.protectionMode === "flat-count"
     ? statusCount(defender.statuses, "protection")
     : 0;
-  return steelskin + protection;
+  return steelskin + protection + statusCount(defender.statuses, "parry");
 }
 
 function vulnerableMultiplierFor(defender) {
   const vulnerable = statusCount(defender.statuses, "vulnerable");
-  return vulnerable > 0 ? 1 + (POLICY.vulnerableDamagePercent / 100) : 1;
+  const weak = statusCount(defender.statuses, "weak");
+  const limp = statusCount(defender.statuses, "limp");
+  return (vulnerable > 0 ? 1 + (POLICY.vulnerableDamagePercent / 100) : 1)
+    * (weak > 0 ? 1.3 : 1)
+    * (1 + (limp / 100));
 }
 
 function mitigationSnapshot(defender) {
@@ -147,6 +163,9 @@ function mitigationSnapshot(defender) {
     solidity: statusCount(defender.statuses, "solidity") > 0,
     steelskin: statusCount(defender.statuses, "steelskin"),
     protection: statusCount(defender.statuses, "protection"),
+    parry: statusCount(defender.statuses, "parry"),
+    persist: statusCount(defender.statuses, "persist"),
+    weak: statusCount(defender.statuses, "weak"),
     vulnerable: statusCount(defender.statuses, "vulnerable"),
     boneShield: statusCount(defender.statuses, "bone-shield") > 0,
     limp: statusCount(defender.statuses, "limp"),
@@ -172,10 +191,12 @@ function applyOnHitPassives(attacker, defender, directDamage) {
 
   for (const [attackStatus, targetStatus] of [
     ["doom-atk", "doom"],
+    ["judgment", "doom"],
     ["poison-atk", "poison"],
     ["bleed-atk", "bleed"],
     ["lethargy-atk", "lethargy"],
-    ["eviscerate", "vulnerable"],
+    ["eviscerate", "limp"],
+    ["death-claw", "limp"],
   ]) {
     const count = statusCount(nextAttacker.statuses, attackStatus);
     if (count <= 0) continue;
@@ -186,16 +207,9 @@ function applyOnHitPassives(attacker, defender, directDamage) {
     applied.push({ status: targetStatus, count });
   }
 
-  let judgmentDamage = 0;
-  const judgment = statusCount(nextAttacker.statuses, "judgment");
-  if (judgment > 0) {
-    judgmentDamage = Math.min(nextDefender.hp, judgment);
-    nextDefender = { ...nextDefender, hp: nextDefender.hp - judgmentDamage };
-    nextAttacker = { ...nextAttacker, statuses: removeStatus(nextAttacker.statuses, "judgment") };
-  }
-
   let lifestealHeal = 0;
-  const lifesteal = statusCount(nextAttacker.statuses, "lifesteal");
+  const lifesteal = statusCount(nextAttacker.statuses, "lifesteal")
+    + statusCount(nextAttacker.statuses, "predator");
   if (lifesteal > 0 && directDamage > 0 && nextAttacker.hp > 0) {
     lifestealHeal = Math.max(1, Math.ceil((directDamage * lifesteal) / 100));
     lifestealHeal = Math.min(lifestealHeal, nextAttacker.maxHp - nextAttacker.hp);
@@ -220,7 +234,7 @@ function applyOnHitPassives(attacker, defender, directDamage) {
     attacker: nextAttacker,
     defender: nextDefender,
     applied,
-    judgmentDamage,
+    judgmentDamage: 0,
     lifestealHeal,
     priorityGained,
   };
@@ -307,19 +321,12 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
     currentRng = critRoll.rng;
     const attackerStatusesBefore = currentAttacker.statuses;
     const defenderStatusesBefore = currentDefender.statuses;
-    const chargeSpent = statusCount(currentAttacker.statuses, "charge") >= POLICY.chargeThreshold
-      ? POLICY.chargeThreshold
-      : 0;
-    const critical = chargeSpent > 0 || critRoll.value <= currentAttacker.stats.critRate;
+    const critical = critRoll.value <= criticalChanceFor(currentAttacker);
 
-    const beforeBerserk = attack.damage * (critical ? POLICY.critMultiplier : 1);
-    const attackerBerserk = statusCount(currentAttacker.statuses, "berserk");
-    const defenderBerserk = statusCount(currentDefender.statuses, "berserk");
+    const afterCritical = attack.damage * (critical ? criticalMultiplierFor(currentAttacker) : 1);
     const defenderSleep = statusCount(currentDefender.statuses, "sleep");
-    const rawDamage = Math.floor(
-      beforeBerserk * (1 + ((attackerBerserk * POLICY.berserkDamagePerCountPercent) / 100)),
-    );
-    const berserkBonus = Math.max(0, rawDamage - beforeBerserk);
+    const rawDamage = Math.floor(afterCritical);
+    const berserkBonus = 0;
     const mitigation = mitigationSnapshot(currentDefender);
     let damage = rawDamage;
     let vulnerableBonus = 0;
@@ -339,7 +346,8 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
     // Thorn answers per hit received, not per attack.
     let thorn = 0;
     if (damage > 0 || POLICY.thornOnFullyMitigatedHit) {
-      thorn = statusCount(currentDefender.statuses, "thorn");
+      thorn = statusCount(currentDefender.statuses, "thorn")
+        + statusCount(currentDefender.statuses, "counter-attack");
       if (thorn > 0) {
         const retaliation = applyDamage(currentAttacker, thorn);
         currentAttacker = retaliation.actor;
@@ -350,31 +358,12 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       ...currentDefender,
       statuses: decrementOnHit(currentDefender.statuses),
     };
-    if (defenderBerserk > 0) {
-      currentDefender = {
-        ...currentDefender,
-        statuses: removeStatus(currentDefender.statuses, "berserk"),
-      };
-    }
     if (defenderSleep > 0) {
       currentDefender = {
         ...currentDefender,
         statuses: removeStatus(currentDefender.statuses, "sleep"),
       };
     }
-    if (attackerBerserk > 0) {
-      currentAttacker = {
-        ...currentAttacker,
-        statuses: removeStatus(currentAttacker.statuses, "berserk"),
-      };
-    }
-    if (chargeSpent > 0) {
-      currentAttacker = {
-        ...currentAttacker,
-        statuses: consumeStatusCount(currentAttacker.statuses, "charge", chargeSpent),
-      };
-    }
-
     const passive = applyOnHitPassives(currentAttacker, currentDefender, damage);
     currentAttacker = passive.attacker;
     currentDefender = passive.defender;
@@ -391,8 +380,8 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       baseDamage: attack.damage,
       rawDamage,
       berserkBonus,
-      berserkSpent: attackerBerserk,
-      defenderBerserkSpent: defenderBerserk,
+      berserkSpent: 0,
+      defenderBerserkSpent: 0,
       sleepBroken: defenderSleep,
       vulnerableBonus,
       vulnerablePercent: mitigation.vulnerable > 0 ? POLICY.vulnerableDamagePercent : 0,
@@ -403,7 +392,7 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       absorbed: landed.absorbed,
       toHp: landed.toHp,
       thorn,
-      chargeSpent,
+      chargeSpent: 0,
       onHitStatuses: passive.applied,
       judgmentDamage: passive.judgmentDamage,
       lifestealHeal: passive.lifestealHeal,
@@ -412,5 +401,16 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
     });
   }
 
-  return { attacker: currentAttacker, defender: currentDefender, rng: currentRng, hits };
+  // AllAttack statuses affect the complete authored attack, including every hit, then
+  // clear in full. They never disappear merely because their holder was struck.
+  const attackStatuses = ["berserk", "predator", "judgment"].reduce(
+    (statuses, type) => removeStatus(statuses, type),
+    currentAttacker.statuses,
+  );
+  return {
+    attacker: { ...currentAttacker, statuses: attackStatuses },
+    defender: currentDefender,
+    rng: currentRng,
+    hits,
+  };
 }
