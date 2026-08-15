@@ -32,7 +32,7 @@ import statusSummonExecution from "../../assets/generated/winter-tower/status/su
 import statusSustain from "../../assets/generated/winter-tower/status/sustain-v1.png";
 import statusTempo from "../../assets/generated/winter-tower/status/tempo-v1.png";
 import { getSkill } from "../../gameplay/tow/skills.js";
-import { resolveTowAbilityArt, resolveTowIntentArt } from "./tow-combat-ability-art.js";
+import { resolveTowIntentArt } from "./tow-combat-ability-art.js";
 
 export const COMBAT_VFX_ASSETS = Object.freeze({
   afflict: afflictAsset,
@@ -95,18 +95,17 @@ function visualProfile(variant) {
   });
 }
 
-function withAsset(spec, signatureAsset = null) {
+function withAsset(spec) {
   const dedicatedAsset = DEDICATED_ABILITY_VFX_ASSETS[spec.variant] || null;
   return Object.freeze({
     ...spec,
-    // A declared ability owns its foreground effect. Family decals remain fallbacks for
-    // anonymous attacks and statuses, never the shared face of two authored abilities.
+    // Combat effects must stay transparent and character-anchored. Ability-card artwork is
+    // full-bleed UI art; treating it as a foreground effect produces a floating square icon
+    // instead of the authored strike, ward, flame, or reaction VFX.
     asset: dedicatedAsset
-      || signatureAsset
       || COMBAT_VFX_ASSETS[spec.family]
       || COMBAT_VFX_ASSETS.impact,
-    assetSource: dedicatedAsset ? "dedicated" : signatureAsset ? "ability" : "family",
-    signatureAsset,
+    assetSource: dedicatedAsset ? "dedicated" : "family",
     profile: visualProfile(spec.variant),
   });
 }
@@ -118,30 +117,6 @@ function safeSkill(skillId) {
   } catch {
     return null;
   }
-}
-
-function signatureForSkill(skillId, weaponPresentation = null) {
-  const definition = safeSkill(skillId);
-  return definition ? resolveTowAbilityArt(definition, weaponPresentation) : null;
-}
-
-function familyForForm(formId) {
-  const value = String(formId || "");
-  if (/(arrow|bow|volley|pinning)/.test(value)) return "bow";
-  if (/(dagger|nightfang|shadow|silencing)/.test(value)) return "dagger";
-  if (/(mace|dawnward|pealing|sunbreak)/.test(value)) return "mace";
-  if (/(staff|bolt|cinder|arcane)/.test(value)) return "arcane";
-  if (/(spear|thrust)/.test(value)) return "spear";
-  if (/(axe)/.test(value)) return "axe";
-  if (/(unarmed)/.test(value)) return "unarmed";
-  return "sword";
-}
-
-function signatureForForm(formId) {
-  return resolveTowAbilityArt(safeSkill("strike"), {
-    activeFormId: formId,
-    family: familyForForm(formId),
-  });
 }
 
 const SKILL_EFFECTS = Object.freeze({
@@ -361,14 +336,6 @@ const STATUS_EFFECTS = Object.freeze({
   vulnerable: effect("afflict", "status-vulnerable", "bind"),
 });
 
-const STATUS_SOURCE_SKILLS = Object.freeze({
-  "foul-ceremony": "automaton-emergency-fuel",
-  "forbidden-ritual": "witch-forbidden-ritual",
-  "hellfire-spirit": "witch-hellfire-spirit",
-  "limited-life-sentence": "witch-limited-life-sentence",
-  "void-monster": "witch-void-monster",
-});
-
 const STATUS_ICON_SHEETS_BY_FAMILY = Object.freeze({
   afflict: statusDebilitation,
   arcane: statusResources,
@@ -567,12 +534,7 @@ export function combatVfxForEvent(encounter, event) {
       `enemy-${slug(event.attackId, "attack")}`,
       skillVisual?.motion || ((event.hits?.length || attack?.hits || 1) > 1 ? "multi" : "heavy"),
     );
-    const signature = resolveTowIntentArt({
-      attackId: event.attackId,
-      skillId: attack?.skillId,
-      name: attack?.name,
-    }, family);
-    return withAsset(spec, signature);
+    return withAsset(spec);
   }
 
   if (event.type === "tick-damage") {
@@ -585,22 +547,18 @@ export function combatVfxForEvent(encounter, event) {
                 : event.poison > 0 ? "poison"
                   : event.bleed > 0 ? "bleed"
                     : "misfortune";
-    const sourceSkillId = event.delayedSkillIds?.[0] || STATUS_SOURCE_SKILLS[type];
-    return sourceSkillId
-      ? withAsset(STATUS_EFFECTS[type], signatureForSkill(sourceSkillId))
-      : combatVfxForStatus(type);
+    return combatVfxForStatus(type);
   }
 
   const skillVariant = event.skillId && skillEffectFor(event.skillId);
-  const signature = signatureForSkill(event.skillId);
   if (event.type === "skill-shield") {
-    return withAsset(effect("ward", `${slug(event.skillId, "ward")}-ward`, skillVariant?.motion || "brace"), signature);
+    return withAsset(effect("ward", `${slug(event.skillId, "ward")}-ward`, skillVariant?.motion || "brace"));
   }
   if (event.type === "ward-expired") {
     return withAsset(effect("ward", "ward-expired", "shatter"));
   }
   if (event.type === "skill-heal" || event.type === "skill-cleanse") {
-    return withAsset(effect("heal", `${slug(event.skillId, "heal")}-heal`, skillVariant?.motion || "mend"), signature);
+    return withAsset(effect("heal", `${slug(event.skillId, "heal")}-heal`, skillVariant?.motion || "mend"));
   }
   if (event.type === "skill-status" && event.status && STATUS_EFFECTS[event.status]) {
     const statusVariant = STATUS_EFFECTS[event.status];
@@ -608,7 +566,7 @@ export function combatVfxForEvent(encounter, event) {
       statusVariant.family,
       `${slug(event.skillId, "skill")}-${slug(event.status, "status")}`,
       statusVariant.motion,
-    ), signature);
+    ));
   }
   if (["skill-status-amplified", "skill-status-scaled", "skill-status-modified"].includes(event.type)) {
     const status = event.status || event.statuses?.[0];
@@ -617,12 +575,12 @@ export function combatVfxForEvent(encounter, event) {
       statusVariant?.family || "afflict",
       `${slug(event.skillId, "skill")}-${slug(status, "status")}-${slug(event.type)}`,
       statusVariant?.motion || "void",
-    ), signature);
+    ));
   }
 
   const formId = event.skillId === "strike" ? activeFormId(encounter, event) : null;
-  if (formId && FORM_EFFECTS[formId]) return withAsset(FORM_EFFECTS[formId], signatureForForm(formId));
-  if (skillVariant) return withAsset(skillVariant, signature);
+  if (formId && FORM_EFFECTS[formId]) return withAsset(FORM_EFFECTS[formId]);
+  if (skillVariant) return withAsset(skillVariant);
   if (event.status && STATUS_EFFECTS[event.status]) return combatVfxForStatus(event.status);
 
   if (event.type === "enemy-nullified") return withAsset(effect("afflict", "enemy-interrupted", "snap"));
@@ -636,14 +594,14 @@ export function combatVfxForEvent(encounter, event) {
   if (event.type === "retreat-attempt") return withAsset(effect(event.succeeded ? "evade" : "afflict", event.succeeded ? "retreat-escaped" : "retreat-cornered", event.succeeded ? "afterimage" : "bind"));
 
   const family = familyFromText(`${event.skillId || ""} ${event.attackId || ""}`);
-  return withAsset(effect(family, `event-${slug(event.skillId || event.attackId || event.type)}`, "balanced"), signature);
+  return withAsset(effect(family, `event-${slug(event.skillId || event.attackId || event.type)}`, "balanced"));
 }
 
 export function combatVfxVariantForSkill(skillId) {
   const spec = skillEffectFor(skillId);
-  return spec ? withAsset(spec, signatureForSkill(skillId)) : null;
+  return spec ? withAsset(spec) : null;
 }
 
 export function combatVfxVariantForForm(formId) {
-  return FORM_EFFECTS[formId] ? withAsset(FORM_EFFECTS[formId], signatureForForm(formId)) : null;
+  return FORM_EFFECTS[formId] ? withAsset(FORM_EFFECTS[formId]) : null;
 }

@@ -317,6 +317,10 @@ describe("compact combat HUD", () => {
     expect(effects.map((effect) => effect.dataset.effectLane)).toEqual(["0", "1"]);
     expect(effects.map((effect) => effect.style.getPropertyValue("--tow-effect-delay")))
       .toEqual(["0ms", "155ms"]);
+    expect(effects.every((effect) => effect.dataset.vfxSource === "family")).toBe(true);
+    expect(effects.every((effect) => effect.querySelector(".tow-combat__effect-asset")
+      .getAttribute("src").endsWith(".png"))).toBe(true);
+    expect(effects.every((effect) => !effect.querySelector(".tow-combat__effect-signature"))).toBe(true);
   });
 
   it("drains health once per resolved hit instead of collapsing the total", async () => {
@@ -487,7 +491,7 @@ describe("compact combat HUD", () => {
     }
   });
 
-  it("declares enemy actions with the same translucent icon-and-name language", async () => {
+  it("declares enemy actions with a lightweight name cue instead of a floating ability card", async () => {
     const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
     await renderView({ encounter: base });
     const enemyId = base.enemyIds[0];
@@ -513,22 +517,22 @@ describe("compact combat HUD", () => {
     const declaration = container.querySelector(".tow-combat__declaration--enemy");
     expect(declaration).toBeTruthy();
     expect(declaration.textContent).toContain(attack.name);
-    expect(declaration.querySelector(".tow-combat__declaration-sigil img")).toBeTruthy();
+    expect(declaration.querySelector(".tow-combat__declaration-sigil")).toBeTruthy();
+    expect(declaration.querySelector(".tow-combat__declaration-sigil img")).toBeNull();
     expect(container.querySelector(".tow-combat__action-beat-copy")).toBeNull();
   });
 
-  it("uses authored ability artwork rather than VFX SVGs in the declaration plane", async () => {
+  it("keeps authored ability artwork in the command tile rather than floating it over combat", async () => {
     vi.useFakeTimers();
     try {
       const mounted = await renderView();
       const action = mounted.querySelector(".tow-combat__action");
       const commandArt = action.querySelector(".tow-combat__ability-art img").getAttribute("src");
       await act(async () => action.click());
-      const declarationArt = mounted
-        .querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img")
-        .getAttribute("src");
-      expect(declarationArt).toBe(commandArt);
-      expect(declarationArt).not.toContain("data:image/svg+xml");
+      expect(commandArt).toMatch(/\.(?:png|webp)$/);
+      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil")).toBeTruthy();
+      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img"))
+        .toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -595,9 +599,8 @@ describe("compact combat HUD", () => {
       expect(onUseSkill).not.toHaveBeenCalled();
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
       expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeTruthy();
-      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img")
-        .getAttribute("src"))
-        .toBe(action.querySelector(".tow-combat__ability-art img").getAttribute("src"));
+      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img"))
+        .toBeNull();
       expect(action.classList.contains("is-committed")).toBe(true);
       expect(action.disabled).toBe(false);
       expect([...mounted.querySelectorAll(".tow-combat__action")]

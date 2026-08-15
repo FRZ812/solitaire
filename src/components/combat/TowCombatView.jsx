@@ -722,17 +722,8 @@ function CombatEffects({ cues }) {
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,
               "--tow-effect-x": `${laneX}px`,
               "--tow-effect-y": `${laneY}px`,
-              "--tow-signature-rotate": profile.rotate || "0deg",
-              "--tow-signature-scale": profile.scale || 1,
-              "--tow-signature-x": profile.x || "0%",
-              "--tow-signature-y": profile.y || "0%",
-              "--tow-signature-delay": profile.delay || "0ms",
-              "--tow-signature-mirror": profile.mirror || 1,
             }}
           >
-            {cue.visual?.signatureAsset && cue.visual.signatureAsset !== cue.visual.asset ? (
-              <img className="tow-combat__effect-signature" src={cue.visual.signatureAsset} alt="" />
-            ) : null}
             {cue.visual?.asset ? <img className="tow-combat__effect-asset" src={cue.visual.asset} alt="" /> : null}
             {cue.outcomeAsset && cue.outcomeAsset !== cue.visual?.asset ? (
               <img className="tow-combat__effect-outcome" src={cue.outcomeAsset} alt="" />
@@ -805,7 +796,6 @@ function CombatRecord({ receipts, tempo, opening, expanded, onToggle, compact = 
 function ActionDeclaration({
   label,
   visual,
-  art = null,
   actorName,
   side = "player",
   delayMs = 0,
@@ -825,7 +815,6 @@ function ActionDeclaration({
       aria-hidden={side === "enemy" ? "true" : undefined}
     >
       <span className="tow-combat__declaration-sigil" aria-hidden="true">
-        <img src={art || visual.asset} alt="" />
         <i />
       </span>
       <small aria-hidden="true">{side === "enemy" ? actorName : "Declared"}</small>
@@ -858,7 +847,6 @@ function CombatDeclarations({ beat, cues, encounter }) {
         <ActionDeclaration
           label={beat.displayName}
           visual={beat.choreography.visual}
-          art={beat.art}
           actorName={beat.actorName}
           durationMs={playerDeclarationDuration}
           testId="tow-action-beat"
@@ -869,7 +857,6 @@ function CombatDeclarations({ beat, cues, encounter }) {
           key={`enemy-declaration-${cue.actionIndex}-${cue.sequence}`}
           label={cue.declarationLabel}
           visual={cue.visual}
-          art={cue.skillId ? resolveTowAbilityArt(getSkill(cue.skillId), null) : null}
           actorName={actor.name}
           side="enemy"
           // The enemy answers after the committed action has had its own title beat. Their
@@ -1106,7 +1093,6 @@ export function TowCombatView({
     const beat = {
       actorId: activeCommander.id,
       actorName: activeCommander.id === encounter.playerId ? "You" : activeCommander.name,
-      art: row.art,
       choreography,
       displayName: row.displayName,
       phase: "windup",
