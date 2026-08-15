@@ -142,6 +142,7 @@ import {
   createDefaultArchetypeDraft,
   getStartingArchetype,
   practiceBuildForArchetypeDraft,
+  practiceSkillRanksForArchetypeDraft,
 } from "./gameplay/tow/starting-archetypes.js";
 import { settleTowEncounter } from "./gameplay/tow/settlement.js";
 import {
@@ -3013,7 +3014,11 @@ export function Solitaire() {
       return;
     }
     setQuickStartError(null);
-    setPracticeDraft({ receipt: compiled.receipt, scenarioId });
+    setPracticeDraft({
+      receipt: compiled.receipt,
+      scenarioId,
+      skillRanks: practiceSkillRanksForArchetypeDraft(draft),
+    });
   }
 
   function handleArchetypeBegin(draft) {
@@ -4377,6 +4382,7 @@ export function Solitaire() {
         <PracticeFight
           receipt={practiceDraft.receipt}
           scenarioId={practiceDraft.scenarioId}
+          skillRanks={practiceDraft.skillRanks}
           onExit={() => setPracticeDraft(null)}
         />
       )}

@@ -342,12 +342,29 @@ export function isArchetypePracticeLoadout(archetypeId, skillIds) {
     && skills.slice(2).every(legalFlexibleAbility);
 }
 
+export function isArchetypePracticeSkillRanks(archetypeId, skillIds, skillRanks) {
+  if (!isArchetypePracticeLoadout(archetypeId, skillIds)) return false;
+  return Array.isArray(skillRanks)
+    && skillRanks.length === SKILL_SLOTS
+    && skillRanks.every((rank, index) => {
+      const definition = getSkill(skillIds[index]);
+      return Number.isSafeInteger(rank) && rank >= 1 && rank <= definition.rankCount;
+    });
+}
+
 export function normalizeArchetypeDraft(input = {}) {
   const selected = getStartingArchetype(input.archetypeId) || STARTING_ARCHETYPES[0];
   const normalized = { archetypeId: selected.id, preview: input.preview === true };
-  if (isArchetypePracticeLoadout(selected.id, input.testSkillIds)
-    && input.testSkillIds.some((id, index) => id !== selected.build.skills[index])) {
+  const hasPracticeLoadout = isArchetypePracticeLoadout(selected.id, input.testSkillIds);
+  const practiceSkillIds = hasPracticeLoadout ? input.testSkillIds : selected.build.skills;
+  if (hasPracticeLoadout
+    && practiceSkillIds.some((id, index) => id !== selected.build.skills[index])) {
     normalized.testSkillIds = [...input.testSkillIds];
+  }
+  if ((input.testSkillIds == null || hasPracticeLoadout)
+    && isArchetypePracticeSkillRanks(selected.id, practiceSkillIds, input.testSkillRanks)
+    && input.testSkillRanks.some((rank) => rank !== 1)) {
+    normalized.testSkillRanks = [...input.testSkillRanks];
   }
   return normalized;
 }
@@ -362,6 +379,12 @@ export function practiceBuildForArchetypeDraft(draft) {
     skills: [...(normalized.testSkillIds || selected.build.skills)],
     runes: [...selected.build.runes],
   };
+}
+
+/** Optional practice-only rank overrides; omitted when every selected ability is Rank 1. */
+export function practiceSkillRanksForArchetypeDraft(draft) {
+  const normalized = normalizeArchetypeDraft(draft);
+  return normalized.testSkillRanks ? [...normalized.testSkillRanks] : null;
 }
 
 export function archetypeItemRows(archetypeId) {

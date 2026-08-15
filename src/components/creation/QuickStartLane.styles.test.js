@@ -39,6 +39,13 @@ describe("Quick Start layout", () => {
     const sectionRule = archetypeStartCss.match(/\.character-details__body > section\s*\{([^}]*)\}/)?.[1] || "";
     expect(sectionRule).toContain("flex: 0 0 auto");
   });
+
+  it("keeps practice rank controls visible and gives their mobile confirmation a full row", () => {
+    const rankRule = archetypeStartCss.match(/\.ability-swap-picker__rank-bar\s*\{([^}]*)\}/)?.[1] || "";
+    expect(rankRule).toContain("flex: 0 0 auto");
+    expect(rankRule).toContain("grid-template-columns");
+    expect(archetypeStartCss).toMatch(/@media \(max-width: 390px\)[\s\S]*?\.ability-swap-picker__confirm\s*\{[\s\S]*?grid-column: 1 \/ -1/);
+  });
 });
 
 describe("Practice result layout", () => {

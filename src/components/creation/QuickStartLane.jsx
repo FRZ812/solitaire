@@ -101,8 +101,8 @@ const PRACTICE_SLOT_LABELS = Object.freeze([
   "Flexible 3",
 ]);
 
-function abilityUsesLabel(definition) {
-  const uses = createSkillState(definition.id, 1).usesRemaining;
+function abilityUsesLabel(definition, rank = 1) {
+  const uses = createSkillState(definition.id, rank).usesRemaining;
   return uses == null ? "Unlimited" : `${uses} / act`;
 }
 
@@ -110,6 +110,7 @@ function AbilitySwapPicker({
   slotIndex,
   slotLabel,
   value,
+  rank,
   groups,
   skillIds,
   accent,
@@ -126,8 +127,13 @@ function AbilitySwapPicker({
   const [open, setOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState(selectedGroup.id);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [pendingSkillId, setPendingSkillId] = useState(value);
+  const [pendingRank, setPendingRank] = useState(rank);
   const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0];
   const options = activeGroup?.options || [];
+  const pendingSkill = groups.flatMap((group) => group.options)
+    .find((skill) => skill.id === pendingSkillId) || selected;
+  const pendingRankCap = pendingSkill?.rankCount || 1;
 
   const equippedSlot = (skillId) => skillIds.findIndex(
     (chosenId, chosenIndex) => chosenIndex !== slotIndex && chosenId === skillId,
@@ -145,17 +151,18 @@ function AbilitySwapPicker({
 
   useEffect(() => {
     if (!open) return undefined;
-    const preferred = options.findIndex((skill) => skill.id === value);
+    const preferred = options.findIndex((skill) => skill.id === pendingSkillId);
     const nextIndex = firstAvailableIndex(options, preferred);
     setActiveIndex(nextIndex);
     const frame = globalThis.requestAnimationFrame?.(() => optionRefs.current[nextIndex]?.focus());
     return () => globalThis.cancelAnimationFrame?.(frame);
-  // Opening or changing category should move focus into the visible option set.
-  // `value` is intentionally included so a chosen replacement receives the marker before close.
-  }, [activeGroupId, open, value]);
+  // Opening, choosing a candidate, or changing category keeps focus in the visible option set.
+  }, [activeGroupId, open, pendingSkillId]);
 
   const openPicker = () => {
     setActiveGroupId(selectedGroup.id);
+    setPendingSkillId(value);
+    setPendingRank(rank);
     setOpen(true);
   };
 
@@ -164,10 +171,20 @@ function AbilitySwapPicker({
     if (restoreFocus) globalThis.requestAnimationFrame?.(() => triggerRef.current?.focus());
   };
 
-  const choose = (skill) => {
+  const selectCandidate = (skill) => {
     if (!skill || isUnavailable(skill.id)) return;
-    onChange(skill.id);
+    setPendingSkillId(skill.id);
+    setPendingRank(skill.id === value ? rank : 1);
+  };
+
+  const confirmCandidate = () => {
+    if (!pendingSkill || isUnavailable(pendingSkill.id)) return;
+    onChange(pendingSkill.id, pendingRank);
     closePicker();
+  };
+
+  const changePendingRank = (delta) => {
+    setPendingRank((current) => Math.max(1, Math.min(pendingRankCap, current + delta)));
   };
 
   const moveActive = (direction) => {
@@ -193,12 +210,14 @@ function AbilitySwapPicker({
       trapModalFocus(event, panelRef.current);
       return;
     }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp")
+      && event.target?.getAttribute?.("role") === "option") {
       event.preventDefault();
       moveActive(event.key === "ArrowDown" ? 1 : -1);
       return;
     }
-    if (event.key === "Home" || event.key === "End") {
+    if ((event.key === "Home" || event.key === "End")
+      && event.target?.getAttribute?.("role") === "option") {
       event.preventDefault();
       const direction = event.key === "Home" ? 1 : -1;
       const start = event.key === "Home" ? -1 : options.length;
@@ -214,12 +233,13 @@ function AbilitySwapPicker({
     }
     if ((event.key === "Enter" || event.key === " ") && event.target?.getAttribute?.("role") === "option") {
       event.preventDefault();
-      choose(options[activeIndex]);
+      selectCandidate(options[activeIndex]);
     }
   };
 
   if (!selected || !activeGroup) return null;
-  const selectedSummary = abilityMechanicalSummary(selected);
+  const selectedSummary = abilityMechanicalSummary(selected, rank);
+  const candidateUnchanged = pendingSkillId === value && pendingRank === rank;
 
   return (
     <div className="ability-swap-picker">
@@ -241,11 +261,11 @@ function AbilitySwapPicker({
         <span className="ability-swap-picker__trigger-copy">
           <span className="ability-swap-picker__trigger-title">
             <strong>{resolveTowActionName(selected)}</strong>
-            <small>{titleCase(selected.rarity)}</small>
+            <small>{titleCase(selected.rarity)} · Rank {rank}</small>
           </span>
           <span className="ability-swap-picker__trigger-summary">{selectedSummary}</span>
           <span className="ability-swap-picker__trigger-uses">
-            {abilityUsesLabel(selected)}{selected.consumesTurn ? "" : " · swift"}
+            {abilityUsesLabel(selected, rank)}{selected.consumesTurn ? "" : " · swift"}
           </span>
         </span>
         <span className="ability-swap-picker__change" aria-hidden="true">
@@ -313,23 +333,25 @@ function AbilitySwapPicker({
               {options.map((skill, index) => {
                 const unavailableSlot = equippedSlot(skill.id);
                 const unavailable = unavailableSlot >= 0;
-                const current = skill.id === value;
-                const summary = abilityMechanicalSummary(skill);
+                const equipped = skill.id === value;
+                const candidate = skill.id === pendingSkillId;
+                const previewRank = candidate ? pendingRank : (equipped ? rank : 1);
+                const summary = abilityMechanicalSummary(skill, previewRank);
                 return (
                   <button
                     ref={(node) => { optionRefs.current[index] = node; }}
                     type="button"
                     role="option"
-                    aria-selected={current}
+                    aria-selected={candidate}
                     aria-disabled={unavailable}
                     tabIndex={index === activeIndex ? 0 : -1}
-                    className={`${index === activeIndex ? "is-active" : ""}${current ? " is-selected" : ""}${unavailable ? " is-unavailable" : ""}`}
+                    className={`${index === activeIndex ? "is-active" : ""}${candidate ? " is-selected" : ""}${equipped ? " is-equipped" : ""}${unavailable ? " is-unavailable" : ""}`}
                     data-rarity={skill.rarity}
                     data-skill-id={skill.id}
                     key={skill.id}
                     onFocus={() => !unavailable && setActiveIndex(index)}
                     onPointerEnter={() => !unavailable && setActiveIndex(index)}
-                    onClick={() => choose(skill)}
+                    onClick={() => selectCandidate(skill)}
                   >
                     <span className="ability-swap-picker__option-art">
                       <img src={resolveTowAbilityArt(skill)} alt="" />
@@ -337,19 +359,60 @@ function AbilitySwapPicker({
                     <span className="ability-swap-picker__option-copy">
                       <span className="ability-swap-picker__option-title">
                         <strong>{resolveTowActionName(skill)}</strong>
-                        <small>{titleCase(skill.rarity)}</small>
+                        <small>{titleCase(skill.rarity)} · Rank {previewRank}/{skill.rankCount}</small>
                       </span>
                       <span className="ability-swap-picker__option-summary">{summary}</span>
                       <span className="ability-swap-picker__option-meta">
-                        {abilityUsesLabel(skill)}{skill.consumesTurn ? " · uses action" : " · swift action"}
+                        {abilityUsesLabel(skill, previewRank)}{skill.consumesTurn ? " · uses action" : " · swift action"}
                       </span>
                     </span>
                     <span className="ability-swap-picker__availability">
-                      {current ? "Equipped" : unavailable ? `In slot ${unavailableSlot + 1}` : "Available"}
+                      {candidate ? "Selected" : equipped ? "Equipped" : unavailable ? `In slot ${unavailableSlot + 1}` : "Available"}
                     </span>
                   </button>
                 );
               })}
+            </div>
+
+            <div
+              className="ability-swap-picker__rank-bar"
+              data-skill-id={pendingSkill.id}
+              data-rank={pendingRank}
+            >
+              <span className="ability-swap-picker__rank-copy">
+                <small>Starting rank</small>
+                <strong>{resolveTowActionName(pendingSkill)}</strong>
+                <span>{pendingRankCap === 1 ? "Fixed at Rank 1" : `Choose Rank 1–${pendingRankCap}`}</span>
+              </span>
+              <span className="ability-swap-picker__rank-stepper" aria-label={`${resolveTowActionName(pendingSkill)} starting rank`}>
+                <button
+                  type="button"
+                  data-action="decrease-rank"
+                  aria-label={`Lower ${resolveTowActionName(pendingSkill)} starting rank`}
+                  disabled={pendingRank <= 1}
+                  onClick={() => changePendingRank(-1)}
+                >−</button>
+                <output aria-live="polite">
+                  <strong>Rank {pendingRank}</strong>
+                  <small>of {pendingRankCap}</small>
+                </output>
+                <button
+                  type="button"
+                  data-action="increase-rank"
+                  aria-label={`Raise ${resolveTowActionName(pendingSkill)} starting rank`}
+                  disabled={pendingRank >= pendingRankCap}
+                  onClick={() => changePendingRank(1)}
+                >+</button>
+              </span>
+              <button
+                type="button"
+                className="ability-swap-picker__confirm"
+                data-action="confirm-ability-swap"
+                disabled={candidateUnchanged}
+                onClick={confirmCandidate}
+              >
+                {candidateUnchanged ? "Current selection" : `Equip Rank ${pendingRank}`}
+              </button>
             </div>
 
             <footer>
@@ -363,7 +426,7 @@ function AbilitySwapPicker({
   );
 }
 
-function SelectLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
+function SelectLoadoutEditor({ selected, skillIds, skillRanks, onSkillChange, onReset }) {
   const exclusiveAbilities = useMemo(() => characterAbilitiesFor(selected.id), [selected.id]);
   const basicOptions = useMemo(
     () => exclusiveAbilities.filter((skill) => skill.abilityType === "basic-attack"),
@@ -381,14 +444,15 @@ function SelectLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
     () => generalAbilityIds().map((id) => getSkill(id)).filter(Boolean),
     [],
   );
-  const changed = skillIds.some((id, index) => id !== selected.build.skills[index]);
+  const changed = skillIds.some((id, index) => id !== selected.build.skills[index])
+    || skillRanks.some((rank) => rank !== 1);
 
   return (
     <section className="character-details__test-loadout">
       <div className="character-details__section-heading">
         <div>
           <span className="character-details__label">Select loadout</span>
-          <p>Tap one of five slots to choose its ability for practice.</p>
+          <p>Choose each practice ability and the source rank it starts at.</p>
         </div>
         <button type="button" disabled={!changed} onClick={onReset}>Reset kit</button>
       </div>
@@ -431,10 +495,11 @@ function SelectLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
                 slotIndex={slotIndex}
                 slotLabel={PRACTICE_SLOT_LABELS[slotIndex]}
                 value={skillId}
+                rank={skillRanks[slotIndex]}
                 groups={groups}
                 skillIds={skillIds}
                 accent={selected.color}
-                onChange={(nextSkillId) => onSkillChange(slotIndex, nextSkillId)}
+                onChange={(nextSkillId, nextRank) => onSkillChange(slotIndex, nextSkillId, nextRank)}
               />
             </div>
           );
@@ -557,6 +622,7 @@ function ScenarioPicker({ value, onChange }) {
 function CharacterDetails({
   selected,
   testSkillIds,
+  testSkillRanks,
   onTestSkillChange,
   onResetTestSkills,
   scenarioId,
@@ -631,6 +697,7 @@ function CharacterDetails({
           <SelectLoadoutEditor
             selected={selected}
             skillIds={testSkillIds}
+            skillRanks={testSkillRanks}
             onSkillChange={onTestSkillChange}
             onReset={onResetTestSkills}
           />
@@ -716,6 +783,7 @@ export function QuickStartLane({
   const previewTraitRank = selected.build.traits[baseTrait?.id] || 1;
   const previewTraitSummary = baseTrait ? describeTraitAtRank(baseTrait.id, previewTraitRank) : "";
   const testSkillIds = normalized.testSkillIds || selected.build.skills;
+  const testSkillRanks = normalized.testSkillRanks || testSkillIds.map(() => 1);
 
   useEffect(() => setDetailsOpen(false), [selected.id]);
   useEffect(() => {
@@ -731,11 +799,13 @@ export function QuickStartLane({
   }, [normalized.preview, selected.id]);
 
   const change = (patch) => onDraftChange?.(updateDraft(normalized, patch));
-  const changeTestSkill = (slotIndex, skillId) => {
+  const changeTestSkill = (slotIndex, skillId, rank) => {
     const nextSkillIds = [...testSkillIds];
     if (nextSkillIds.some((selectedId, index) => index !== slotIndex && selectedId === skillId)) return;
     nextSkillIds[slotIndex] = skillId;
-    change({ testSkillIds: nextSkillIds });
+    const nextSkillRanks = [...testSkillRanks];
+    nextSkillRanks[slotIndex] = rank;
+    change({ testSkillIds: nextSkillIds, testSkillRanks: nextSkillRanks });
   };
   const focusCarouselChoice = (index) => {
     const node = thumbnailRefs.current[index];
@@ -953,8 +1023,9 @@ export function QuickStartLane({
         <CharacterDetails
           selected={selected}
           testSkillIds={testSkillIds}
+          testSkillRanks={testSkillRanks}
           onTestSkillChange={changeTestSkill}
-          onResetTestSkills={() => change({ testSkillIds: null })}
+          onResetTestSkills={() => change({ testSkillIds: null, testSkillRanks: null })}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
           onPractice={() => onPractice?.(normalized, scenarioId)}

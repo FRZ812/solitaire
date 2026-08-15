@@ -30,6 +30,7 @@ import { sealTowTerminalReceipt } from "./outcomes.js";
 import { skillStatesForReadiness } from "./readiness.js";
 import { verifyTowSession } from "./replay.js";
 import { TOW_RULESET_ID, createTowSession } from "./session.js";
+import { getSkill } from "./skills.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
@@ -105,14 +106,46 @@ export function getPracticeScenario(scenarioId) {
  * a different practice fight depending on whether the player reached it from Quick Start or
  * from the roster, which is a difference the player can see and cannot explain.
  */
-export function draftHash(receipt) {
+function normalizedPracticeSkillRanks(receipt, skillRanks) {
+  if (skillRanks == null) return null;
+  if (!Array.isArray(skillRanks) || skillRanks.length !== receipt.build.skills.length) return false;
+  if (!skillRanks.every((rank, index) => {
+    const definition = getSkill(receipt.build.skills[index]);
+    return definition && Number.isSafeInteger(rank) && rank >= 1 && rank <= definition.rankCount;
+  })) return false;
+  return skillRanks.some((rank) => rank !== 1) ? [...skillRanks] : null;
+}
+
+function withPracticeSkillRanks(build, sourceSkillIds, skillRanks) {
+  if (!skillRanks) return build;
+  return {
+    ...build,
+    skills: build.skills.map((entry) => {
+      const id = typeof entry === "string" ? entry : entry.id;
+      const sourceIndex = sourceSkillIds.indexOf(id);
+      if (sourceIndex < 0) return entry;
+      return typeof entry === "string"
+        ? { id, rank: skillRanks[sourceIndex] }
+        : { ...entry, id, rank: skillRanks[sourceIndex] };
+    }),
+  };
+}
+
+export function draftHash(receipt, skillRanks = null) {
   if (!isCharacterBootstrapReceipt(receipt)) return null;
+  const ranks = normalizedPracticeSkillRanks(receipt, skillRanks);
+  if (ranks === false) return null;
   const archetype = getStartingArchetype(receipt.archetypeId);
   const itemIds = archetype?.gear || [];
+  const build = withPracticeSkillRanks(
+    effectiveTowBuild(receipt.build, itemIds),
+    receipt.build.skills,
+    ranks,
+  );
   return gameplayChecksum({
     archetypeId: receipt.archetypeId,
     professionId: receipt.professionId,
-    build: effectiveTowBuild(receipt.build, itemIds),
+    build,
     itemIds,
   });
 }
@@ -187,14 +220,25 @@ function rejected(reason) {
  * argument through which campaign state, storage, or a narrator could reach it — practice
  * cannot write because it was never handed anything to write with.
  */
-export function createPracticeSession(receipt, scenarioId = DEFAULT_PRACTICE_SCENARIO_ID, attemptIndex = 0) {
+export function createPracticeSession(
+  receipt,
+  scenarioId = DEFAULT_PRACTICE_SCENARIO_ID,
+  attemptIndex = 0,
+  { skillRanks = null } = {},
+) {
   if (!isCharacterBootstrapReceipt(receipt)) return rejected("invalid-bootstrap-receipt");
   const scenario = getPracticeScenario(scenarioId);
   if (!scenario) return rejected("unknown-practice-scenario");
 
-  const hash = draftHash(receipt);
+  const ranks = normalizedPracticeSkillRanks(receipt, skillRanks);
+  if (ranks === false) return rejected("invalid-practice-skill-ranks");
+  const hash = draftHash(receipt, ranks);
   const archetype = getStartingArchetype(receipt.archetypeId);
-  const effectiveBuild = effectiveTowBuild(receipt.build, archetype?.gear || []);
+  const effectiveBuild = withPracticeSkillRanks(
+    effectiveTowBuild(receipt.build, archetype?.gear || []),
+    receipt.build.skills,
+    ranks,
+  );
   const seed = derivePracticeSeed({
     packageId: receipt.professionId,
     scenarioId: scenario.id,

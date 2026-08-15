@@ -36,6 +36,17 @@ Rare, six Legendary, and two Mythic abilities. Their advancement spans are also 
 Common has six ranks, Uncommon five, Rare four, Legendary two, and Mythic one. The exact
 catalogue is compiled rather than hand-authored from prose.
 
+## Practice rank preview
+
+The character-details loadout editor lets the player choose both an ability and its
+starting rank for a practice fight. Rank controls are bounded by the source progression
+span, so Mythic and any other single-rank ability is fixed at Rank 1 while multi-rank
+abilities can be previewed from Rank 1 through their sourced maximum. Damage, status,
+and use-count text update live at the selected rank before the player confirms the swap.
+
+The selected ranks are part of the deterministic practice seed and starting encounter
+state only. They do not change the authored journey loadout or durable build schema.
+
 ## Status and damage lifecycle
 
 The status table distinguishes turn-boundary events from being attacked. The runtime

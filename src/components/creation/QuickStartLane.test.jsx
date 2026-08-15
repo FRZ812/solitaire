@@ -248,6 +248,9 @@ describe("the simple grid-to-preview flow", () => {
     const nextName = next.querySelector(".ability-swap-picker__option-title strong").textContent;
     await keydown(next, "Enter");
 
+    panel = document.querySelector(".ability-swap-picker__panel");
+    expect(panel.querySelector('[role="option"][aria-selected="true"]')).toBe(next);
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
     expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(trigger.textContent).toContain(nextName);
@@ -257,6 +260,54 @@ describe("the simple grid-to-preview flow", () => {
     await keydown(panel.querySelector('[role="option"].is-active'), "Escape");
     expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("chooses a bounded source rank with live values before equipping an ability", async () => {
+    const asked = [];
+    const mounted = await render(
+      <ControlledStart onPractice={(draft) => asked.push(draft)} />,
+    );
+    const selected = STARTING_ARCHETYPES[5];
+    await click(mounted.querySelectorAll(".character-choice-card")[5]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+
+    const trigger = mounted.querySelectorAll(".ability-swap-picker__trigger")[0];
+    await click(trigger);
+    let panel = document.querySelector(".ability-swap-picker__panel");
+    const decrease = panel.querySelector('[data-action="decrease-rank"]');
+    const increase = panel.querySelector('[data-action="increase-rank"]');
+    expect(decrease.disabled).toBe(true);
+    expect(increase.disabled).toBe(false);
+    expect(panel.querySelector(".ability-swap-picker__rank-stepper output").textContent)
+      .toContain("Rank 1of 6");
+
+    await click(increase);
+    await click(panel.querySelector('[data-action="increase-rank"]'));
+    panel = document.querySelector(".ability-swap-picker__panel");
+    expect(panel.querySelector(".ability-swap-picker__rank-stepper output").textContent)
+      .toContain("Rank 3of 6");
+    expect(panel.querySelector('[role="option"][aria-selected="true"] .ability-swap-picker__option-summary').textContent)
+      .toContain("2 hits of 64% ATK damage");
+
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
+    expect(trigger.textContent).toContain("Rank 3");
+    expect(trigger.querySelector(".ability-swap-picker__trigger-summary").textContent)
+      .toContain("2 hits of 64% ATK damage");
+
+    await click(mounted.querySelectorAll(".ability-swap-picker__trigger")[2]);
+    panel = document.querySelector(".ability-swap-picker__panel");
+    await click(panel.querySelector('[role="option"][data-skill-id="assassin-shadow-strike"]'));
+    expect(panel.querySelector(".ability-swap-picker__rank-copy").textContent).toContain("Fixed at Rank 1");
+    expect(panel.querySelector('[data-action="decrease-rank"]').disabled).toBe(true);
+    expect(panel.querySelector('[data-action="increase-rank"]').disabled).toBe(true);
+    await keydown(panel.querySelector('[role="option"][aria-selected="true"]'), "Escape");
+
+    await click(mounted.querySelector(".character-details__practice > button"));
+    expect(asked).toEqual([{
+      archetypeId: selected.id,
+      preview: true,
+      testSkillRanks: [3, 1, 1, 1, 1],
+    }]);
   });
 
   it("starts the selected authored character without asking for a name or face", async () => {
@@ -349,6 +400,7 @@ describe("every advertised character reaches the production fight", () => {
       .find((option) => option.dataset.skillId !== selected.build.skills[0]);
     const replacementBasic = replacementBasicOption.dataset.skillId;
     await click(replacementBasicOption);
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
 
     triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
     await click(triggers[2]);
@@ -360,6 +412,7 @@ describe("every advertised character reaches the production fight", () => {
     options = panel.querySelectorAll('[role="option"]');
     expect(options).toHaveLength(18);
     await click(panel.querySelector('[role="option"][data-skill-id="penetration"]'));
+    await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
 
     triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
     expect(triggers[2].textContent).toContain("Penetration");

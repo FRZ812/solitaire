@@ -13,8 +13,10 @@ import {
   getStartingArchetype,
   invalidStartingArchetypes,
   isArchetypePracticeLoadout,
+  isArchetypePracticeSkillRanks,
   normalizeArchetypeDraft,
   practiceBuildForArchetypeDraft,
+  practiceSkillRanksForArchetypeDraft,
 } from "./starting-archetypes.js";
 import {
   effectiveTowBuild,
@@ -113,6 +115,30 @@ describe("disposable practice loadouts", () => {
       preview: true,
       testSkillIds,
     })).not.toHaveProperty("testSkillIds");
+  });
+
+  it("keeps only supported per-ability starting ranks in the disposable draft", () => {
+    const archetype = getStartingArchetype("last-assassin");
+    const skillIds = [...archetype.build.skills];
+    const skillRanks = skillIds.map((id) => Math.min(2, getSkill(id).rankCount));
+    const draft = normalizeArchetypeDraft({
+      archetypeId: archetype.id,
+      preview: true,
+      testSkillRanks: skillRanks,
+    });
+
+    expect(isArchetypePracticeSkillRanks(archetype.id, skillIds, skillRanks)).toBe(true);
+    expect(draft.testSkillRanks).toEqual(skillRanks);
+    expect(practiceSkillRanksForArchetypeDraft(draft)).toEqual(skillRanks);
+    expect(practiceBuildForArchetypeDraft(draft).skills).toEqual(skillIds);
+
+    const impossible = [...skillRanks];
+    impossible[0] = getSkill(skillIds[0]).rankCount + 1;
+    expect(isArchetypePracticeSkillRanks(archetype.id, skillIds, impossible)).toBe(false);
+    expect(normalizeArchetypeDraft({
+      archetypeId: archetype.id,
+      testSkillRanks: impossible,
+    })).not.toHaveProperty("testSkillRanks");
   });
 });
 
