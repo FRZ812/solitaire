@@ -23,7 +23,7 @@ export const CHARACTER_ABILITY_TYPES = Object.freeze([
 export const CHARACTER_ABILITY_TYPE_LABELS = Object.freeze({
   "basic-attack": "Basic attack",
   defensive: "Defensive",
-  archetype: "Exclusive ability",
+  archetype: "Archetype ability",
   general: "General ability",
 });
 

@@ -96,7 +96,7 @@ export const PERMANENT_STARTING_KEEPSAKES = Object.freeze([
     unlock: achievement(
       "winter-without-end",
       "Winter Without End",
-      "Conquer the Tower with every authored character.",
+      "Conquer the Tower with every combat archetype.",
     ),
   }),
 ]);

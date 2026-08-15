@@ -317,7 +317,7 @@ describe("compact combat HUD", () => {
     expect(effects.map((effect) => effect.dataset.effectLane)).toEqual(["0", "1"]);
     expect(effects.map((effect) => effect.style.getPropertyValue("--tow-effect-delay")))
       .toEqual(["0ms", "155ms"]);
-    expect(effects.every((effect) => effect.dataset.vfxSource === "canvas")).toBe(true);
+    expect(effects.every((effect) => effect.dataset.vfxSource === "imagegen-flipbook")).toBe(true);
     expect(effects.map((effect) => effect.dataset.vfxChoreography)).toEqual([
       "combo-left",
       "combo-right",
@@ -326,7 +326,13 @@ describe("compact combat HUD", () => {
     expect(effects.every((effect) => !effect.querySelector(".tow-combat__effect-asset"))).toBe(true);
     expect(effects.every((effect) => !effect.querySelector(".tow-combat__effect-signature"))).toBe(true);
     expect(container.querySelector("[data-testid='tow-combat-vfx-canvas']")).toMatchObject({
-      dataset: expect.objectContaining({ renderer: "canvas-2d", cueCount: "2" }),
+      dataset: expect.objectContaining({
+        renderer: "imagegen-flipbook",
+        frameCount: "9",
+        fps: "18",
+        cueCount: "2",
+        flipbookCount: "2",
+      }),
     });
   });
 

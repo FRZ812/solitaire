@@ -124,7 +124,7 @@ describe("the matrix stays honest about what it does not cover", () => {
     }
   });
 
-  it("names the traits restricted to one authored character", () => {
+  it("names the traits restricted to one combat archetype", () => {
     expect(exclusiveTraitIds().sort()).toEqual([
       "assassin",
       "combo",

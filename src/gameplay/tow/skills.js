@@ -199,7 +199,7 @@ function passive(id, name, rarity, bonuses) {
 }
 
 const SKILLS = Object.freeze(Object.fromEntries([
-  // --- Arctic Knight basics -------------------------------------------------
+  // --- Knight compatibility basics -----------------------------------------
   skill("strike", "Strike", {
     rarity: "common",
     effects: [damage("attack", [100, 115, 130, 145, 160, 175])],
@@ -539,7 +539,7 @@ export function abilityReplacementFamily(definition) {
   return null;
 }
 
-/** The authored character represented by a roster loadout, if it has one. */
+/** The canonical combat archetype represented by a roster loadout, if it has one. */
 export function loadoutCharacterId(loadout) {
   if (!Array.isArray(loadout)) return null;
   const owners = new Set(loadout

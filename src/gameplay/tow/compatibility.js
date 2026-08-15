@@ -176,7 +176,7 @@ export function gapLifecycleStatusTypes() {
   return statusTypes().filter((type) => getStatusDefinition(type).lifecycleEvidence === "gap");
 }
 
-/** Traits restricted to one authored character rather than generally acquirable. */
+/** Traits restricted to one combat archetype rather than generally acquirable. */
 export function exclusiveTraitIds() {
   return traitIds().filter((id) => getTrait(id).exclusiveTo !== null);
 }

@@ -199,7 +199,7 @@ const AUTHORED_CHOREOGRAPHIES = Object.freeze({
   "peace-declaration": "silencing-line",
 
   ...prefixedChoreographies("arctic", {
-    strike: "frost-sweep",
+    strike: "single-sweep",
     block: "fortress-barrier",
     "shield-bash": "impact-rings",
     slaughter: "wound-rip",
