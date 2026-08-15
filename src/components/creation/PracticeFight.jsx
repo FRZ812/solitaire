@@ -23,21 +23,27 @@ import {
 import { getStartingArchetype } from "../../gameplay/tow/starting-archetypes.js";
 import { weaponPresentationFromItemIds } from "../../gameplay/tow/weapon-presentation.js";
 
-export function PracticeFight({ receipt, scenarioId, skillRarities = null, onExit }) {
+export function PracticeFight({
+  receipt,
+  scenarioId,
+  skillRarities = null,
+  combatItemId = null,
+  onExit,
+}) {
   const archetype = getStartingArchetype(receipt?.archetypeId);
   const playerPortraitKey = archetype?.character?.portraitKey ?? null;
   const weaponPresentation = weaponPresentationFromItemIds(archetype?.gear || []);
   const [attemptIndex, setAttemptIndex] = useState(0);
   const [practice, setPractice] = useState(
-    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities }),
+    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities, combatItemId }),
   );
   const [feedback, setFeedback] = useState(null);
 
   const start = useCallback((index) => {
     setFeedback(null);
     setAttemptIndex(index);
-    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRarities }));
-  }, [receipt, scenarioId, skillRarities]);
+    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRarities, combatItemId }));
+  }, [receipt, scenarioId, skillRarities, combatItemId]);
 
   const dispatch = useCallback((input) => {
     setPractice((current) => {
@@ -46,7 +52,7 @@ export function PracticeFight({ receipt, scenarioId, skillRarities = null, onExi
       const actorId = input.actorId ?? session.encounter.playerId;
       const result = dispatchTowPlayerAction(session, {
         ...input,
-        id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
+        id: [session.sessionId, session.revision, input.type, actorId, input.skillId, input.itemId]
           .filter((part) => part !== null && part !== undefined)
           .join(":"),
         expectedRevision: session.revision,
@@ -126,6 +132,9 @@ export function PracticeFight({ receipt, scenarioId, skillRarities = null, onExi
       onRetreat={(actorId) => dispatch({ type: "attempt-retreat", actorId: actorId ?? null })}
       onUseSkill={(skillId, targetId, actorId) => dispatch({
         type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
+      })}
+      onUseItem={(itemId, targetId, actorId) => dispatch({
+        type: "use-item", itemId, targetId: targetId ?? null, actorId: actorId ?? null,
       })}
       onStandDown={(actorId) => dispatch({ type: "stand-down", actorId: actorId ?? null })}
       onSettle={() => {}}

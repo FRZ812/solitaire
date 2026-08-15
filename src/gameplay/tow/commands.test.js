@@ -98,6 +98,28 @@ describe("accepting a command", () => {
     strike(session);
     expect(JSON.stringify(session)).toBe(before);
   });
+
+  it("records a combat-item command and advances its spent action exactly once", () => {
+    const session = open({
+      player: { resolve: 8, resolveMax: 8 },
+      build: { combatItems: [{ id: "fire-pot", quantity: 1 }] },
+    });
+    const result = dispatchTowPlayerAction(session, {
+      id: "item-1",
+      expectedRevision: 0,
+      type: "use-item",
+      actorId: "wanderer",
+      itemId: "fire-pot",
+      skillId: null,
+      targetId: "foe-0",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.autoAdvanced).toBe(true);
+    expect(result.session.commands[0]).toMatchObject({ type: "use-item", itemId: "fire-pot" });
+    expect(result.events).toContainEqual(expect.objectContaining({
+      commandId: "item-1", type: "combat-item-used", itemId: "fire-pot",
+    }));
+  });
 });
 
 describe("interactive turn advancement", () => {

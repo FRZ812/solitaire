@@ -4,6 +4,7 @@ import React, { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstrap.js";
+import { STARTING_COMBAT_ITEMS } from "../../gameplay/tow/combat-items.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
 import {
@@ -48,6 +49,14 @@ async function click(element) {
 async function keydown(element, key) {
   expect(element).toBeTruthy();
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+}
+
+async function change(element, value) {
+  expect(element).toBeTruthy();
+  await act(async () => {
+    element.value = value;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 }
 
 function ControlledStart(props) {
@@ -169,7 +178,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.textContent).toContain("Starting fusions");
     expect(details.textContent).toContain("Select loadout");
     expect(details.textContent).toContain("Source identity");
-    expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(5);
+    expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(6);
     expect(details.textContent).not.toContain("Possible refinement");
     expect(details.textContent).toContain("Passive trait");
     expect(details.textContent).not.toContain("Starting abilities");
@@ -192,7 +201,11 @@ describe("the simple grid-to-preview flow", () => {
 
     await click(details.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([[
-      { archetypeId: STARTING_ARCHETYPES[6].id, preview: true },
+      {
+        archetypeId: STARTING_ARCHETYPES[6].id,
+        keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+        preview: true,
+      },
       PRACTICE_SCENARIOS[1].id,
     ]]);
   });
@@ -321,6 +334,7 @@ describe("the simple grid-to-preview flow", () => {
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([{
       archetypeId: selected.id,
+      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
       preview: true,
       testSkillRarities: ["legendary", "common", "legendary", "legendary", "rare"],
     }]);
@@ -369,6 +383,7 @@ describe("the simple grid-to-preview flow", () => {
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([{
       archetypeId: selected.id,
+      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
       preview: true,
       testSkillIds: expectedSkillIds,
       testSkillRarities: expectedRarities,
@@ -382,7 +397,24 @@ describe("the simple grid-to-preview flow", () => {
     const begin = mounted.querySelector(".character-preview__begin");
     expect(begin.disabled).toBe(false);
     await click(begin);
-    expect(begun).toEqual([{ archetypeId: STARTING_ARCHETYPES[4].id, preview: true }]);
+    expect(begun).toEqual([{
+      archetypeId: STARTING_ARCHETYPES[4].id,
+      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      preview: true,
+    }]);
+  });
+
+  it("carries the selected combat keepsake into the authored start", async () => {
+    const begun = [];
+    const mounted = await render(<ControlledStart onBegin={(draft) => begun.push(draft)} />);
+    await click(mounted.querySelector(".character-choice-card"));
+    const select = mounted.querySelector(".character-preview__keepsake select");
+    expect(select.querySelectorAll("option")).toHaveLength(4);
+    await change(select, "fire-pot");
+    expect(mounted.querySelector(".character-preview__keepsake").textContent)
+      .toContain("Strike for 150% ATK");
+    await click(mounted.querySelector(".character-preview__begin"));
+    expect(begun[0]).toMatchObject({ keepsakeId: "fire-pot" });
   });
 });
 
@@ -502,12 +534,17 @@ describe("every advertised character reaches the production fight", () => {
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([[{
       archetypeId: selected.id,
+      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
       preview: true,
       testSkillIds: expectedTestSkills,
     }, PRACTICE_SCENARIOS[0].id]]);
 
     await click(mounted.querySelector(".character-details__close"));
     await click(mounted.querySelector(".character-preview__begin"));
-    expect(begun).toEqual([{ archetypeId: selected.id, preview: true }]);
+    expect(begun).toEqual([{
+      archetypeId: selected.id,
+      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      preview: true,
+    }]);
   });
 });

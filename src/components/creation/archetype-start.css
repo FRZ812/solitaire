@@ -1857,6 +1857,39 @@
   line-height: 1.4;
 }
 
+.character-details__keepsake-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.character-details__keepsake-grid > button {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid rgba(219, 207, 185, 0.12);
+  border-radius: 9px;
+  background: rgba(17, 25, 29, 0.54);
+  color: #8d9690;
+  text-align: left;
+}
+
+.character-details__keepsake-grid > button.is-selected {
+  border-color: color-mix(in srgb, var(--character-accent), #fff 18%);
+  background: color-mix(in srgb, var(--character-accent) 13%, rgba(17, 25, 29, 0.72));
+}
+
+.character-details__keepsake-grid strong {
+  color: #ded7c8;
+  font-size: 0.65rem;
+}
+
+.character-details__keepsake-grid span {
+  font-size: 0.56rem;
+  line-height: 1.35;
+}
+
 .character-details__practice {
   position: relative;
   display: grid;

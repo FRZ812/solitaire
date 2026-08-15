@@ -28,7 +28,7 @@ import {
 import { towBuildForCharacter } from "./professions.js";
 import { effectMagnitude, getSkill, skillLegality } from "./skills.js";
 
-export const TOW_SIMULATION_VERSION = 2;
+export const TOW_SIMULATION_VERSION = 3;
 
 /** A fight that has run this long has stopped being a fight; the run is recorded as a draw. */
 export const MAX_SIMULATED_ROUNDS = 200;
@@ -68,8 +68,8 @@ export const GUARD_RULE = Object.freeze({
  *
  * Two rounds is the horizon. If the declared damage would not put the next round in doubt,
  * the shield is not urgent and the fight is better ended sooner — because every extra round
- * is another round of taking hits, and now another round of spending readiness that the
- * next fight will miss.
+   * is another round of taking hits, and now another round that may demand scarce Resolve
+   * the next fight will miss.
  */
 export const DANGER_HORIZON_ROUNDS = 2;
 
@@ -108,7 +108,10 @@ const BOUNDARY_DAMAGE_STATUSES = new Set([
 /** Which of the player's skills can legally be used right now. */
 export function legalSkills(state) {
   const turnAvailable = state.turn.actionsRemaining > 0;
-  return state.build.skills.filter((skillState) => skillLegality(skillState, { turnAvailable }).ok);
+  return state.build.skills.filter((skillState) => skillLegality(skillState, {
+    turnAvailable,
+    resolveAvailable: state.actors[state.playerId]?.resolve,
+  }).ok);
 }
 
 /**
@@ -284,8 +287,9 @@ function effectWouldChangeBoard(state, skillState, targetId) {
       if (effect.status === "lethargy") return actorScaleValue(target, "attack") > 0;
       return statusCount(target.statuses, effect.status) <= 0;
     }
-    // Permanent encounter buffs are allowed to stack when their skill has multiple uses.
-    // Temporary evasion/guard-like statuses instead wait until the live stack is spent.
+    // Permanent encounter buffs are allowed to stack while the player decides the extra
+    // commitment is worth its Resolve. Temporary evasion/guard-like statuses instead wait
+    // until the live stack is spent.
     if (getStatusDefinition(effect.status)?.permanent) return true;
     return statusCount(player.statuses, effect.status) <= 0;
   });
@@ -353,9 +357,9 @@ export const intentAwarePolicy = Object.freeze({
     ), targets[0]);
 
     // A no-turn ability is an extra input inside this command window, not an alternative
-    // to the main action. Use direct free attacks first, then a free setup whose effect is
-    // not already active. The board-change check prevents permanent buffs and refreshed
-    // wards from being mindlessly stacked just because the command costs no turn.
+    // to the main action. Use direct free attacks first, then a setup whose effect changes
+    // the board. Temporary wards wait until spent; permanent buffs may stack when the
+    // additional commitment is worth their shared Resolve cost.
     const freeActions = options.filter((skillState) => {
       const definition = getSkill(skillState.id);
       return definition?.consumesTurn === false
@@ -386,7 +390,7 @@ export const intentAwarePolicy = Object.freeze({
     // A self-Paralyze is a real future action cost now. Keep Mortal Blow and similar skills
     // as finishers (the check above), but do not call them the best routine attack merely
     // because their coefficient is largest. An informed player would not repeatedly trade
-    // every second command window for overkill while an unlimited safe strike is available.
+    // every second command window for overkill while a safe, Resolve-free strike is available.
     const sustainableOffensive = offensive.filter((skillState) => !forfeitsFutureCommand(skillState));
     const routineOffensive = sustainableOffensive.length > 0 ? sustainableOffensive : offensive;
     const bestAttack = routineOffensive.length > 0
@@ -568,6 +572,8 @@ export function standardPlayer(overrides = {}) {
     id: "wanderer",
     name: "Wanderer",
     maxHp: 120,
+    resolve: 8,
+    resolveMax: 8,
     stats: { attack: 14, defense: 8, critRate: 5, dodgeRate: 5 },
     ...overrides,
   };
@@ -617,14 +623,14 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "lone-brigand",
     name: "A brigand on the road",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.806667, randomWinRate: 0.29 }),
+    baseline: Object.freeze({ informedWinRate: 0.57, randomWinRate: 0.02 }),
     enemies: Object.freeze([foe("foe-0", "Brigand", 120, 18, moveSet("foe-0", 11, 18, 28))]),
   }),
   Object.freeze({
     id: "brigand-pair",
     name: "Two brigands",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.99, randomWinRate: 0.336667 }),
+    baseline: Object.freeze({ informedWinRate: 0.976667, randomWinRate: 0.04 }),
     enemies: Object.freeze([
       foe("foe-0", "Brigand", 54, 10, moveSet("foe-0", 7, 10, 15)),
       foe("foe-1", "Brigand", 54, 10, moveSet("foe-1", 7, 10, 15)),
@@ -634,7 +640,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "armoured-duelist",
     name: "An armoured duelist",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.756667, randomWinRate: 0.243333 }),
+    baseline: Object.freeze({ informedWinRate: 0.456667, randomWinRate: 0.016667 }),
     enemies: Object.freeze([{
       ...foe("foe-0", "Duelist", 122, 17, moveSet("foe-0", 11, 17, 27)),
       stats: { attack: 17, defense: 6, critRate: 6, dodgeRate: 8 },
@@ -644,7 +650,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "wolf-pack",
     name: "Three wolves",
     tier: "hard",
-    baseline: Object.freeze({ informedWinRate: 0.836667, randomWinRate: 0.256667 }),
+    baseline: Object.freeze({ informedWinRate: 0.656667, randomWinRate: 0.013333 }),
     enemies: Object.freeze([
       foe("foe-0", "Wolf", 32, 9, moveSet("foe-0", 6, 9, 13)),
       foe("foe-1", "Wolf", 32, 9, moveSet("foe-1", 6, 9, 13)),
@@ -665,17 +671,17 @@ export const EQUAL_THREAT_FIXTURES = Object.freeze(
  * change that quietly relaxes its own acceptance test has not been reviewed.
  */
 export const ACCEPTANCE_TARGETS = Object.freeze({
-  // Re-measured at 0.833 after one-window wards replaced banked shields and the informed
-  // policy learned that no-turn abilities are extra inputs rather than substitutes for its
-  // main action. The per-fixture and no-lockout gates below keep the aggregate honest.
-  informedWinRateMin: 0.70,
-  informedWinRateMax: 0.90,
-  informedAdvantageMin: 0.20,
-  // Set from measurement, as the plan requires, and tightened once the bridge and the guard
-  // rule were fixed: per-package medians now run 6–18 rounds across the fixture set, where
-  // the first recorded baseline ran to 41. Twenty-five leaves room for balance movement
-  // while still catching a return of the forty-round grind.
-  medianRoundsMax: 25,
+  // Resolve v3 measures a deliberately harsher fight: informed play wins 0.668 of the
+  // equal-threat cohort while random legal play wins only 0.026. The 0.60–0.80 band keeps
+  // good tactics viable without letting equal threats collapse into guaranteed victories.
+  informedWinRateMin: 0.60,
+  informedWinRateMax: 0.80,
+  // Shared Resolve makes wasteful sequencing genuinely costly. Requiring a fifty-point
+  // gap protects the design claim that reading declarations and rationing power decide fights.
+  informedAdvantageMin: 0.50,
+  // Current per-package medians run 5–12 rounds. Fifteen allows modest balance movement but
+  // catches a return to the old long-resource-war pacing before it reaches production.
+  medianRoundsMax: 15,
 });
 
 export function getStandardFixture(fixtureId) {

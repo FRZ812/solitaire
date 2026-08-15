@@ -8,6 +8,7 @@
 // Every mapping choice below is a judgement, not evidence, and is marked as such.
 
 import { deriveCombatStats } from "../../engine/combat-stats.js";
+import { resolvePoolForMind } from "../../engine/attributes.js";
 import { createStatusStack } from "../kernel/status-stack.js";
 import { admitTowEncounter } from "./admission.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
@@ -164,6 +165,18 @@ function nonNegativeInt(value) {
   return Number.isFinite(rounded) && rounded > 0 ? rounded : 0;
 }
 
+function resolveSnapshot(character, fallbackMind = 0) {
+  const authoredMax = Number(character?.resolveMax);
+  const baseMax = positiveInt(
+    Number.isFinite(authoredMax) ? authoredMax : resolvePoolForMind(fallbackMind),
+  );
+  const authoredCurrent = Number(character?.resolve);
+  const baseCurrent = Number.isFinite(authoredCurrent)
+    ? Math.max(0, Math.min(baseMax, Math.round(authoredCurrent)))
+    : baseMax;
+  return { resolve: baseCurrent, resolveMax: baseMax };
+}
+
 /**
  * Build the Tower of Winter player actor for a Solitaire character.
  *
@@ -183,12 +196,14 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
     const vitalityMax = positiveInt(character.vitalityMax, maxHp);
     const vitality = Math.max(0, Math.min(vitalityMax, Number(character.vitality ?? vitalityMax)));
     const hp = Math.max(0, Math.min(maxHp, Math.round(maxHp * (vitality / vitalityMax))));
+    const resolve = resolveSnapshot(character, character.attributes?.mind ?? 0);
     return {
       id,
       name: character.name || "Wanderer",
       side: "player",
       hp,
       maxHp,
+      ...resolve,
       shield: 0,
       stats: {
         attack: positiveInt(sourceBase.attack + itemBonus.attack),
@@ -205,6 +220,7 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
   const baseMaxHp = positiveInt(character.vitalityMax, maxHp);
   const healthBonus = Math.max(0, maxHp - baseMaxHp);
   const hp = Math.max(0, Math.min(maxHp, Math.round(character.vitality ?? maxHp) + healthBonus));
+  const resolve = resolveSnapshot(character, stats.attrs?.mind ?? character.attributes?.mind ?? 0);
 
   // See PROVISIONAL_BRIDGE_POLICY.attackFromWeapon: the weapon's midpoint plus the frame
   // behind it, because a Tower of Winter skill scales off ATK alone.
@@ -216,6 +232,7 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
     side: "player",
     hp,
     maxHp,
+    ...resolve,
     shield: 0,
     stats: {
       attack,
@@ -247,6 +264,7 @@ export function towEnemyFromBestiary(enemy, { id } = {}) {
   const max = Math.max(min, nonNegativeInt(enemy.weapon?.max));
   const attack = positiveInt((min + max) / 2);
   const identity = enemyTowBuild(enemy);
+  const resolve = resolveSnapshot(enemy, enemy.attrs?.mind ?? enemy.attributes?.mind ?? 0);
 
   return {
     id: actorId,
@@ -254,6 +272,7 @@ export function towEnemyFromBestiary(enemy, { id } = {}) {
     side: "enemy",
     hp,
     maxHp,
+    ...resolve,
     shield: 0,
     stats: {
       attack,

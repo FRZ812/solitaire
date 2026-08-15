@@ -4,7 +4,7 @@ import { sealTowTerminalReceipt } from "./outcomes.js";
 import { decodeTowSession, encodeTowSession, isStoredTowSession } from "./persistence.js";
 import { createTowSession, markTowSessionSettled, sealTowSession } from "./session.js";
 
-function open(context = {}) {
+function open(context = {}, { current = false, combatItems = [] } = {}) {
   const opened = createTowSession({
     sessionId: "combat-1",
     rootSeed: "seed-1",
@@ -12,6 +12,7 @@ function open(context = {}) {
       id: "wanderer",
       name: "Wanderer",
       maxHp: 170,
+      ...(current ? { resolve: 8, resolveMax: 8 } : {}),
       stats: { attack: 12, defense: 13, critRate: 0, dodgeRate: 0 },
     },
     enemies: [{
@@ -21,7 +22,7 @@ function open(context = {}) {
       stats: { attack: 5, defense: 0, critRate: 0, dodgeRate: 0 },
       attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 4 }],
     }],
-    build: { traits: {}, skills: ["strike", "block"] },
+    build: { traits: {}, skills: ["strike", "block"], ...(combatItems.length ? { combatItems } : {}) },
     context,
   });
   if (!opened.ok) throw new Error(opened.reason);
@@ -69,6 +70,39 @@ describe("the reload gates", () => {
     expect(decoded.ok).toBe(true);
     expect(decoded.session.encounter).toEqual(session.encounter);
     expect(decoded.session.commands).toHaveLength(session.commands.length);
+  });
+
+  it("round-trips a current item command with its exact snapshotted spend", () => {
+    const session = open({}, {
+      current: true,
+      combatItems: [{ id: "fire-pot", quantity: 1 }],
+    });
+    const used = dispatchTowCommand(session, {
+      id: "throw-fire-pot",
+      expectedRevision: 0,
+      type: "use-item",
+      actorId: "wanderer",
+      itemId: "fire-pot",
+      skillId: null,
+      targetId: "foe-0",
+    });
+    expect(used.ok).toBe(true);
+    const decoded = decodeTowSession(stored(used.session));
+    expect(decoded.ok).toBe(true);
+    expect(decoded.session.commands[0]).toMatchObject({
+      type: "use-item",
+      itemId: "fire-pot",
+    });
+    expect(decoded.session.encounter.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "combat-item-used", itemId: "fire-pot" }),
+    ]));
+  });
+
+  it("continues to read v1 command rows written before itemId existed", () => {
+    const legacy = stored(play(open(), 1));
+    legacy.commands.forEach((command) => delete command.itemId);
+    const decoded = decodeTowSession(sealTowSession({ ...legacy, checksum: null }));
+    expect(decoded.ok).toBe(true);
   });
 
   it("reads back a terminal session before settlement", () => {

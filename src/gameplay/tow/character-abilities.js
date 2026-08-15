@@ -427,7 +427,7 @@ export function describeCharacterAbilityEffect(effect, rank = 1) {
     return `Deal ${value} damage after ${turns} turns`;
   }
   if (effect.type === "temporary-max-hp") return `Gain ${value} maximum health for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
-  if (effect.type === "restore-skill-uses") return `Restore ${value} uses to every other limited ability`;
+  if (effect.type === "restore-skill-uses") return `Restore ${value} Resolve`;
   return effect.type.replace(/-/g, " ");
 }
 

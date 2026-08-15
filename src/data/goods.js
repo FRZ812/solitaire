@@ -66,6 +66,30 @@ export const GOODS = {
     description: "A potent alchemical cordial — drunk down, it restores a good deal of vitality at once.",
     use: { verb: "Drink", vitality: 15 },
   },
+  // ---- Character-start combat keepsakes ---------------------------------
+  // These are ordinary carried consumables, but their decisive effect is resolved by the
+  // replay-safe combat reducer. Each costs the holder's action as well as the single item,
+  // so choosing one is an emergency plan rather than a sixth ability slot.
+  "crimson-vial": {
+    id: "crimson-vial", name: "Crimson Vial", kind: "remedy", value: 65,
+    appearance: "A thumb-sized red vial in a wire cage, warm despite the winter air.",
+    description: "A single combat draught that restores 25% of maximum health. Chosen as a starting keepsake or found later.",
+  },
+  "lucid-tonic": {
+    id: "lucid-tonic", name: "Lucid Tonic", kind: "remedy", value: 70,
+    appearance: "A clear ampoule in which one silver bubble refuses to rise.",
+    description: "A single combat draught that restores 3 Resolve. Chosen as a starting keepsake or found later.",
+  },
+  "warding-ash": {
+    id: "warding-ash", name: "Warding Ash", kind: "remedy", value: 55,
+    appearance: "Grey temple ash folded into waxed paper and marked with a closed eye.",
+    description: "Scattered in combat, it raises a one-window ward worth 150% of Defence.",
+  },
+  "fire-pot": {
+    id: "fire-pot", name: "Fire Pot", kind: "remedy", value: 60,
+    appearance: "A pitch-sealed clay pot with a short black fuse under its carrying loop.",
+    description: "Thrown in combat, it makes a 150% Attack strike against one target.",
+  },
 
   // ---- Butcher (meat) ----
   "fresh-meat": {

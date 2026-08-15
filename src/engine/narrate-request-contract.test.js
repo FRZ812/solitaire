@@ -325,16 +325,16 @@ describe("narrator application trust boundary", () => {
     expect(aftermathPrompts.length).toBe(3);
   });
 
-  it("restores readiness only from a rest the engine committed", () => {
-    // Not when a rest screen opens, not when a camp is interrupted, and not because a
-    // narrator described a pleasant night. Both restore sites sit behind an early return on
-    // a refused rest, and there are only two of them.
-    const restores = appSource.match(/readiness: restoreReadiness\(\)/g) || [];
-    expect(restores.length).toBe(2);
+  it("restores Resolve only from a rest the engine committed", () => {
+    // Resolve recovery belongs to applyRest. The UI cannot refill the combat resource by
+    // opening a screen, accepting narrator prose, or reviving the retired readiness map.
+    expect(appSource).not.toContain("restoreReadiness");
+    expect(appSource).not.toContain("skillStatesForReadiness");
     for (const handler of ["function handleRest(", "function handleHaltMakeCamp("]) {
       const start = appSource.indexOf(handler);
       expect(start).toBeGreaterThan(-1);
-      const body = appSource.slice(start, appSource.indexOf("restoreReadiness()", start));
+      const body = appSource.slice(start, appSource.indexOf("setState(withTowMechanics", start));
+      expect(body).toContain("applyRest(state, hours)");
       expect(body).toContain("if (!r.ok)");
       expect(body).toContain("return;");
     }

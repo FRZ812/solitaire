@@ -53,7 +53,7 @@ function viewElement(encounter, props = {}) {
 }
 
 describe("compact combat HUD", () => {
-  it("keeps full-art abilities clean while showing finite uses at the lower right", async () => {
+  it("keeps full-art abilities clean while showing Resolve prices at the lower right", async () => {
     const mounted = await renderView();
     const actions = [...mounted.querySelectorAll(".tow-combat__action")];
     const strike = mounted.querySelector("[data-skill-id='strike']");
@@ -64,13 +64,37 @@ describe("compact combat HUD", () => {
     expect(mounted.querySelector(".tow-combat__ability-art-name")).toBeNull();
     expect(mounted.querySelector(".tow-combat__action-charge")).toBeNull();
     expect(mounted.querySelector(".tow-combat__action-swift")).toBeNull();
-    expect(strike.querySelector(".tow-combat__action-uses")).toBeNull();
-    expect(block.querySelector(".tow-combat__action-uses")?.textContent).toBe("30/30");
-    expect(evasion.querySelector(".tow-combat__action-uses")?.textContent).toBe("4/4");
-    expect(block.getAttribute("aria-label")).toMatch(/30 of 30 uses remaining/i);
+    expect(strike.querySelector(".tow-combat__action-cost")).toBeNull();
+    expect(block.querySelector(".tow-combat__action-cost")?.textContent).toBe("1RP");
+    expect(evasion.querySelector(".tow-combat__action-cost")?.textContent).toBe("4RP");
+    expect(block.getAttribute("aria-label")).toMatch(/1 Resolve/i);
     expect(actions.map((action) => action.textContent).join("")).not.toContain("∞");
     expect(actions.every((action) => action.querySelector(".tow-combat__sr-only")?.textContent)).toBe(true);
     expect(actions.every((action) => action.classList.contains("production-combat__action"))).toBe(true);
+    const resolve = mounted.querySelector(".tow-combat__bar--resolve[role='meter']");
+    expect(resolve).toBeTruthy();
+    expect(resolve.getAttribute("aria-label")).toMatch(/Resolve$/);
+    expect(resolve.getAttribute("aria-valuenow")).toBe(resolve.getAttribute("aria-valuemax"));
+  });
+
+  it("shows captured charges only while resuming a legacy encounter", async () => {
+    const base = openLabSession({ packageId: "fighter", scenarioId: "training-yard" }).session.encounter;
+    const { resolve: _resolve, resolveMax: _resolveMax, ...legacyPlayer } = base.actors[base.playerId];
+    const legacy = {
+      ...base,
+      actors: { ...base.actors, [base.playerId]: legacyPlayer },
+      build: {
+        ...base.build,
+        skills: base.build.skills.map((skill) => (
+          skill.id === "block" ? { ...skill, usesRemaining: 2 } : skill
+        )),
+      },
+    };
+    const mounted = await renderView({ encounter: legacy });
+    const block = mounted.querySelector("[data-skill-id='block']");
+    expect(block.querySelector(".tow-combat__action-cost--legacy")?.textContent).toBe("2/30");
+    expect(block.getAttribute("aria-label")).toMatch(/2 of 30 legacy uses remaining/i);
+    expect(mounted.querySelector(`[aria-label='${legacyPlayer.name} Resolve']`)).toBeNull();
   });
 
   it("darkens a cooling skill and gives its centered cooldown precedence over uses", async () => {
@@ -91,14 +115,29 @@ describe("compact combat HUD", () => {
     let cooling = mounted.querySelector("[data-skill-id='rapid-cooling']");
     expect(cooling.classList.contains("is-on-cooldown")).toBe(true);
     expect(cooling.querySelector(".tow-combat__action-cooldown")?.textContent).toBe("2");
-    expect(cooling.querySelector(".tow-combat__action-uses")).toBeNull();
+    expect(cooling.querySelector(".tow-combat__action-cost")).toBeNull();
     expect(cooling.getAttribute("aria-label")).toMatch(/Cooldown, 2 turns remaining/i);
 
     await act(async () => root.render(viewElement(withRapidCooling(0))));
     cooling = mounted.querySelector("[data-skill-id='rapid-cooling']");
     expect(cooling.classList.contains("is-on-cooldown")).toBe(false);
     expect(cooling.querySelector(".tow-combat__action-cooldown")).toBeNull();
-    expect(cooling.querySelector(".tow-combat__action-uses")?.textContent).toBe("4/5");
+    expect(cooling.querySelector(".tow-combat__action-cost")?.textContent).toBe("3RP");
+  });
+
+  it("offers the snapshotted keepsake as a one-action satchel command", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const encounter = {
+      ...base,
+      build: { ...base.build, combatItems: [{ id: "fire-pot", quantity: 1 }] },
+    };
+    const onUseItem = vi.fn();
+    const mounted = await renderView({ encounter, onUseItem });
+    const item = mounted.querySelector(".tow-combat__item");
+    expect(item.textContent).toContain("Fire Pot");
+    expect(item.textContent).toContain("150% ATK");
+    await act(async () => item.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(onUseItem).toHaveBeenCalledWith("fire-pot", "foe-0", "wanderer");
   });
 
   it("moves the incoming attack to one compact icon above the enemy", async () => {

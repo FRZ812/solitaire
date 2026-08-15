@@ -32,10 +32,12 @@ import {
 } from "../kernel/status-stack.js";
 import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
+import { getCombatItem, normalizeCombatItems } from "./combat-items.js";
 import {
   createSkillState,
   effectMagnitude,
   getSkill,
+  resolveCost,
   restoreUses,
   skillLegality,
   spendSkill,
@@ -62,17 +64,54 @@ export const RETREAT_CHANCE_MIN = 10;
 export const RETREAT_CHANCE_MAX = 90;
 export const RETREAT_BASE_CHANCE = 50;
 
+export const TOW_COMBAT_BALANCE_POLICY = Object.freeze({
+  // A committed technique may create a lethal next decision, but a full-health peer must
+  // not disappear to one ordinary roll. Critical hits can still exceed this base budget.
+  directSkillDamageFraction: 0.45,
+  maxHpSkillDamageFraction: 0.35,
+  damagingStatusFraction: 0.30,
+  // A thirteen-round sentence remains a severe clock, but it no longer carries a flat 666
+  // from a 5,000-HP source boss into a guaranteed kill against a peer-scale character.
+  delayedSkillDamageFraction: 0.65,
+  temporaryMaxHpFraction: 0.50,
+});
+
+const DAMAGING_STATUS_TYPES = new Set([
+  "bleed",
+  "burn",
+  "doom",
+  "fatal-blade",
+  "hellfire-spirit",
+  "misfortune",
+  "poison",
+  "void-monster",
+]);
+
 const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep", "confuse"]);
 const MAX_ENEMY_COMMANDS_PER_WINDOW = 96;
 
 function actorWithStatuses(actor, statuses) {
-  const growDelta = statusCount(statuses, "grow") - statusCount(actor.statuses, "grow");
+  // The source catalogue expected bosses with thousands of HP. Current Solitaire actors
+  // are peer-scale, so a translated damage stack cannot carry a boss-sized payload into one
+  // boundary tick. Actors without Resolve are legacy replay snapshots and remain untouched.
+  const balancedStatuses = Number.isFinite(actor.resolve)
+    ? statuses.map((entry) => DAMAGING_STATUS_TYPES.has(entry.type)
+      ? {
+        ...entry,
+        count: Math.min(
+          entry.count,
+          Math.max(1, Math.floor(actor.maxHp * TOW_COMBAT_BALANCE_POLICY.damagingStatusFraction)),
+        ),
+      }
+      : entry)
+    : statuses;
+  const growDelta = statusCount(balancedStatuses, "grow") - statusCount(actor.statuses, "grow");
   const maxHp = Math.max(1, actor.maxHp + growDelta);
   return {
     ...actor,
     maxHp,
     hp: Math.min(actor.hp, maxHp),
-    statuses,
+    statuses: balancedStatuses,
   };
 }
 
@@ -471,15 +510,18 @@ function sourcedMagnitudeAmount(player, target, effect, magnitude) {
 }
 
 /** Validate and normalise one actor's traits, skills and runes. */
-function normalizeBuild(build) {
+function normalizeBuild(build, { resolveEconomy = false } = {}) {
   const traits = cloneJsonData(build?.traits || {}, "invalid-build-traits");
   for (const [traitId, rank] of Object.entries(traits)) {
     if (!getCombatTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
     if (!Number.isSafeInteger(rank) || rank < 1 || rank > 7) throw new TypeError("invalid-trait-rank");
   }
-  const skills = (build?.skills || []).map((entry) => (
-    typeof entry === "string" ? createSkillState(entry) : { ...entry }
-  ));
+  const skills = (build?.skills || []).map((entry) => {
+    const state = typeof entry === "string" ? createSkillState(entry) : { ...entry };
+    // A current actor spends from one Resolve pool. Legacy actors omit that pool and retain
+    // their captured charge counters so an already-recorded exchange still replays exactly.
+    return resolveEconomy ? { ...state, usesRemaining: UNLIMITED_USES } : state;
+  });
   const hasBasicAttack = Object.hasOwn(build || {}, "basicAttack");
   const basicAttack = build?.basicAttack == null
     ? null
@@ -489,6 +531,9 @@ function normalizeBuild(build) {
     traits,
     skills,
     runes: [...(build?.runes || [])],
+    ...(Object.hasOwn(build || {}, "combatItems")
+      ? { combatItems: normalizeCombatItems(build.combatItems) }
+      : {}),
     ...(hasBasicAttack ? { basicAttack } : {}),
   };
 }
@@ -603,7 +648,9 @@ export function createTowEncounter({
   const allyActors = allies.map((ally) => {
     const { build: allyBuild, ...actorFields } = ally;
     const actor = createTowActor({ ...actorFields, side: "player" });
-    allyBuilds[actor.id] = normalizeBuild(allyBuild);
+    allyBuilds[actor.id] = normalizeBuild(allyBuild, {
+      resolveEconomy: Number.isFinite(actor.resolve),
+    });
     return actor;
   });
   // New foes bring a build just like player-side actors. `enemyAttacks` is retained as the
@@ -621,7 +668,9 @@ export function createTowEncounter({
     } = enemy;
     const actor = createTowActor({ ...actorFields, side: "enemy" });
     if (enemyBuild) {
-      const normalized = normalizeBuild(enemyBuild);
+      const normalized = normalizeBuild(enemyBuild, {
+        resolveEconomy: Number.isFinite(actor.resolve),
+      });
       enemyBuilds[actor.id] = normalized;
       enemyArchetypes[actor.id] = typeof archetypeId === "string" ? archetypeId : null;
       enemyAttacks[actor.id] = normalized.skills.map((skillState) => skillActionEntry(actor, skillState));
@@ -644,7 +693,9 @@ export function createTowEncounter({
   ];
   if (new Set(everyId).size !== everyId.length) throw new TypeError("duplicate-actor-id");
 
-  const playerBuild = normalizeBuild(build);
+  const playerBuild = normalizeBuild(build, {
+    resolveEconomy: Number.isFinite(playerActor.resolve),
+  });
 
   // Every foe gets a rotation over its own action index. For new fights that index is a
   // projection of real archetype skills; for v1 replay snapshots it can still be an immutable
@@ -768,7 +819,10 @@ function availableEnemySchedule(state, enemyId) {
   if (!schedule || !build) return schedule;
 
   const legal = build.skills.filter((skillState) => (
-    skillLegality(skillState, { turnAvailable: true }).ok
+    skillLegality(skillState, {
+      turnAvailable: true,
+      resolveAvailable: state.actors[enemyId]?.resolve,
+    }).ok
     && !enemySkillReserved(state, enemyId, skillState)
   ));
   const useful = legal.filter((skillState) => enemySkillUseful(state, enemyId, skillState));
@@ -1065,7 +1119,7 @@ function isControlled(actor) {
  *
  * A skill whose effect is not on this list does nothing when used — it is transcribed into
  * the catalogue and then silently ignored, which is the worst of both worlds: the player is
- * offered it, spends a use and a turn on it, and gets no rules. A generated test walks the
+ * offered it, spends Resolve and a turn on it, and gets no rules. A generated test walks the
  * whole catalogue against this list so a newly transcribed effect fails loudly here rather
  * than quietly in someone's fight.
  */
@@ -1103,6 +1157,16 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
   const lastShieldEffectIndex = shieldEffectIndexes.at(-1) ?? -1;
   const shieldBeforeSkill = next.actors[playerId]?.shield || 0;
   let shieldRaisedBySkill = 0;
+  const openingTarget = next.actors[targetId];
+  // Some authored abilities deal separate ATK-, DEF-, and HP-scaled packets. They are one
+  // committed technique, so current rules give the whole ability one direct-damage budget;
+  // applying the peer-health ceiling independently to every packet would restore one-shots.
+  let directDamageBudget = Number.isFinite(next.actors[playerId]?.resolve) && openingTarget
+    ? Math.max(
+      1,
+      Math.floor(openingTarget.maxHp * TOW_COMBAT_BALANCE_POLICY.directSkillDamageFraction),
+    )
+    : Number.POSITIVE_INFINITY;
 
   definition.effects.forEach((effect, index) => {
     // Asked for per branch rather than up front: not every effect carries a rank table, and
@@ -1118,19 +1182,32 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       const weaponAttack = skillId === "strike"
         ? weaponAttackAtRank(buildFor(next, playerId)?.basicAttack, rank)
         : null;
-      const amount = weaponAttack
+      const authoredAmount = weaponAttack
         ? Math.floor((statOf(player, effect.scale) * weaponAttack.damagePercent) / 100)
         : sourcedMagnitudeAmount(player, target, effect, magnitude());
+      const hitCount = weaponAttack?.hits ?? effect.hits ?? 1;
+      const currentBudget = Number.isFinite(directDamageBudget)
+        ? Math.floor(directDamageBudget / hitCount)
+        : authoredAmount;
+      const amount = Math.min(authoredAmount, currentBudget);
+      if (amount <= 0) return;
+      directDamageBudget = Math.max(0, directDamageBudget - amount * hitCount);
       const hit = resolveAttack({
         attacker: player,
         defender: target,
-        attack: { hits: weaponAttack?.hits ?? effect.hits ?? 1, damage: amount },
+        attack: { hits: hitCount, damage: amount },
         rng: next.rng,
       });
       next = {
         ...next,
         rng: hit.rng,
-        actors: { ...next.actors, [playerId]: hit.attacker, [targetId]: hit.defender },
+        actors: {
+          ...next.actors,
+          [playerId]: hit.attacker,
+          // Attack-payload statuses (Doom ATK, Poison ATK, and kin) are applied inside the
+          // shared damage kernel, so bring the resolved stack through the same peer cap.
+          [targetId]: actorWithStatuses(hit.defender, hit.defender.statuses),
+        },
       };
       next = push(next, "skill-damage", {
         actorId: playerId,
@@ -1226,8 +1303,12 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       if (!target || target.hp <= 0) return;
       const source = effect.type === "damage-self-lost-hp" ? player : target;
       const lost = Math.max(0, source.maxHp - source.hp);
-      const amount = Math.floor((lost * magnitude()) / 100);
+      const authoredAmount = Math.floor((lost * magnitude()) / 100);
+      const amount = Number.isFinite(directDamageBudget)
+        ? Math.min(authoredAmount, directDamageBudget)
+        : authoredAmount;
       if (amount <= 0) return;
+      directDamageBudget = Math.max(0, directDamageBudget - amount);
       const applied = Math.min(target.hp, amount);
       next = {
         ...next,
@@ -1262,7 +1343,13 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     if (effect.type === "damage-enemy-max-hp") {
       const target = next.actors[targetId];
       if (!target || target.hp <= 0) return;
-      const amount = Math.floor((target.maxHp * magnitude()) / 100);
+      const authoredAmount = Math.floor((target.maxHp * magnitude()) / 100);
+      const amount = Number.isFinite(player.resolve)
+        ? Math.min(
+          authoredAmount,
+          Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.maxHpSkillDamageFraction)),
+        )
+        : authoredAmount;
       if (amount <= 0) return;
       // Reaper's Scythe is max-health based, but it remains a real attack: critical and
       // Vulnerable modifiers resolve through the same per-hit path as weapon damage.
@@ -1280,7 +1367,11 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       next = {
         ...next,
         rng: hit.rng,
-        actors: { ...next.actors, [playerId]: resolvedAttacker, [targetId]: hit.defender },
+        actors: {
+          ...next.actors,
+          [playerId]: resolvedAttacker,
+          [targetId]: actorWithStatuses(hit.defender, hit.defender.statuses),
+        },
       };
       next = push(next, "skill-damage", {
         actorId: playerId,
@@ -1455,6 +1546,30 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
 
     if (effect.type === "restore-skill-uses") {
       const amount = magnitude();
+      const currentActor = next.actors[playerId];
+      if (Number.isFinite(currentActor?.resolve)) {
+        const restored = Math.max(
+          0,
+          Math.min(currentActor.resolveMax, currentActor.resolve + amount) - currentActor.resolve,
+        );
+        if (restored > 0) {
+          next = {
+            ...next,
+            actors: {
+              ...next.actors,
+              [playerId]: { ...currentActor, resolve: currentActor.resolve + restored },
+            },
+          };
+        }
+        next = push(next, "skill-resolve-restored", {
+          actorId: playerId,
+          skillId,
+          amount,
+          restored,
+        });
+        return;
+      }
+      // Captured v1 encounters had no Resolve field and keep the old restoration rule.
       let restored = 0;
       next = updateBuildFor(next, playerId, (build) => ({
         ...build,
@@ -1506,7 +1621,18 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       const delayedTargetId = effect.target === "self" ? playerId : targetId;
       const target = next.actors[delayedTargetId];
       if (!target || target.hp <= 0) return;
-      const amount = magnitude();
+      const authoredAmount = magnitude();
+      const amount = Number.isFinite(player.resolve) && delayedTargetId !== playerId
+        ? Math.min(
+          authoredAmount,
+          Math.max(
+            1,
+            Math.floor(
+              target.maxHp * TOW_COMBAT_BALANCE_POLICY.delayedSkillDamageFraction,
+            ),
+          ),
+        )
+        : authoredAmount;
       const delayedStatus = effect.status || "limited-life-sentence";
       const turns = effect.turnsByRank
         ? effect.turnsByRank[Math.min(rank - 1, effect.turnsByRank.length - 1)]
@@ -1543,7 +1669,16 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "temporary-max-hp") {
-      const amount = magnitude();
+      const authoredAmount = magnitude();
+      const amount = Number.isFinite(player.resolve)
+        ? Math.min(
+          authoredAmount,
+          Math.max(
+            1,
+            Math.floor(player.maxHp * TOW_COMBAT_BALANCE_POLICY.temporaryMaxHpFraction),
+          ),
+        )
+        : authoredAmount;
       const turns = effect.turns;
       next = {
         ...next,
@@ -1660,7 +1795,10 @@ export function useSkill(state, skillId, targetId = null, actorId = state.player
   const index = build.skills.findIndex((entry) => entry.id === skillId);
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = build.skills[index];
-  const legality = skillLegality(skillState, { turnAvailable: actionsLeftFor(state, actorId) > 0 });
+  const legality = skillLegality(skillState, {
+    turnAvailable: actionsLeftFor(state, actorId) > 0,
+    resolveAvailable: actor.resolve,
+  });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
 
   const definition = getSkill(skillId);
@@ -1674,8 +1812,121 @@ export function useSkill(state, skillId, targetId = null, actorId = state.player
 
   const spentSkills = build.skills.map((entry, at) => (at === index ? spent.state : entry));
   let next = withBuild(state, actorId, { ...build, skills: spentSkills });
+  const cost = Number.isFinite(actor.resolve) ? resolveCost(skillId, skillState.rank) : 0;
+  if (cost > 0) {
+    next = {
+      ...next,
+      actors: {
+        ...next.actors,
+        [actorId]: { ...next.actors[actorId], resolve: next.actors[actorId].resolve - cost },
+      },
+    };
+    next = push(next, "resolve-spent", { actorId, skillId, amount: cost });
+  }
   if (definition.consumesTurn) next = spendAction(next, actorId);
   next = applySkillEffects(next, skillId, skillState.rank, target, actorId);
+  return { ok: true, reason: null, state: settle(next) };
+}
+
+/** Whether one carried combat consumable can be committed by this actor now. */
+export function combatItemLegality(state, itemId, actorId = state.playerId) {
+  if (state.phase !== "player") return { ok: false, reason: "encounter-over" };
+  const actor = state.actors[actorId];
+  if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor" };
+  if (actor.hp <= 0) return { ok: false, reason: "actor-down" };
+  if (isControlled(actor)) return { ok: false, reason: "action-nullified" };
+  if (actionsLeftFor(state, actorId) <= 0) return { ok: false, reason: "turn-already-spent" };
+  const item = getCombatItem(itemId);
+  if (!item) return { ok: false, reason: "unknown-combat-item" };
+  const held = buildFor(state, actorId)?.combatItems?.find((entry) => entry.id === itemId);
+  if (!held || held.quantity <= 0) return { ok: false, reason: "item-spent" };
+  if (item.effect.type === "heal-max-percent" && actor.hp >= actor.maxHp) {
+    return { ok: false, reason: "health-full" };
+  }
+  if (item.effect.type === "restore-resolve"
+    && (!Number.isFinite(actor.resolve) || actor.resolve >= actor.resolveMax)) {
+    return { ok: false, reason: "resolve-full" };
+  }
+  return { ok: true, reason: null };
+}
+
+/** Spend one action and one snapshotted consumable through the authoritative reducer. */
+export function useCombatItem(state, itemId, targetId = null, actorId = state.playerId) {
+  const legality = combatItemLegality(state, itemId, actorId);
+  if (!legality.ok) return { ok: false, reason: legality.reason, state };
+  const item = getCombatItem(itemId);
+  const actor = state.actors[actorId];
+  const target = item.effect.target === "enemy"
+    ? state.actors[targetId || livingEnemies(state)[0]]
+    : actor;
+  if (!target || target.hp <= 0) return { ok: false, reason: "no-target", state };
+
+  let next = updateBuildFor(state, actorId, (build) => ({
+    ...build,
+    combatItems: build.combatItems.flatMap((entry) => {
+      if (entry.id !== itemId) return [entry];
+      return entry.quantity > 1 ? [{ ...entry, quantity: entry.quantity - 1 }] : [];
+    }),
+  }));
+  let amount = 0;
+  let hits = null;
+
+  if (item.effect.type === "heal-max-percent") {
+    amount = Math.min(
+      actor.maxHp - actor.hp,
+      Math.max(1, Math.floor((actor.maxHp * item.effect.percent) / 100)),
+    );
+    next = {
+      ...next,
+      actors: { ...next.actors, [actorId]: { ...next.actors[actorId], hp: actor.hp + amount } },
+    };
+  } else if (item.effect.type === "restore-resolve") {
+    amount = Math.min(item.effect.amount, actor.resolveMax - actor.resolve);
+    next = {
+      ...next,
+      actors: {
+        ...next.actors,
+        [actorId]: { ...next.actors[actorId], resolve: actor.resolve + amount },
+      },
+    };
+  } else if (item.effect.type === "shield-defense-percent") {
+    const raised = Math.max(1, Math.floor((statOf(actor, "defense") * item.effect.percent) / 100));
+    const after = Math.max(actor.shield, raised);
+    amount = Math.max(0, after - actor.shield);
+    next = {
+      ...next,
+      actors: { ...next.actors, [actorId]: { ...next.actors[actorId], shield: after } },
+    };
+  } else if (item.effect.type === "damage-attack-percent") {
+    const damage = Math.max(1, Math.floor((statOf(actor, "attack") * item.effect.percent) / 100));
+    const hit = resolveAttack({
+      attacker: actor,
+      defender: target,
+      attack: { hits: 1, damage },
+      rng: next.rng,
+    });
+    hits = hit.hits;
+    amount = hits.reduce((total, entry) => total + (entry.toHp || 0), 0);
+    next = {
+      ...next,
+      rng: hit.rng,
+      actors: {
+        ...next.actors,
+        [actorId]: hit.attacker,
+        [target.id]: actorWithStatuses(hit.defender, hit.defender.statuses),
+      },
+    };
+  }
+
+  next = push(next, "combat-item-used", {
+    actorId,
+    itemId,
+    effect: item.effect.type,
+    targetId: target.id,
+    amount,
+    ...(hits ? { hits } : {}),
+  });
+  if (item.consumesTurn) next = spendAction(next, actorId);
   return { ok: true, reason: null, state: settle(next) };
 }
 
@@ -1902,7 +2153,11 @@ function useEnemySkill(state, enemyId, skillId, targetId) {
   const index = build?.skills.findIndex((entry) => entry.id === skillId) ?? -1;
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = build.skills[index];
-  const legality = skillLegality(skillState, { turnAvailable: true });
+  const enemy = state.actors[enemyId];
+  const legality = skillLegality(skillState, {
+    turnAvailable: true,
+    resolveAvailable: enemy?.resolve,
+  });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
   const spent = spendSkill(skillState);
   if (!spent.ok) return { ok: false, reason: spent.reason, state };
@@ -1915,6 +2170,17 @@ function useEnemySkill(state, enemyId, skillId, targetId) {
       [enemyId]: { ...build, skills },
     },
   };
+  const cost = Number.isFinite(enemy?.resolve) ? resolveCost(skillId, skillState.rank) : 0;
+  if (cost > 0) {
+    next = {
+      ...next,
+      actors: {
+        ...next.actors,
+        [enemyId]: { ...next.actors[enemyId], resolve: next.actors[enemyId].resolve - cost },
+      },
+    };
+    next = push(next, "resolve-spent", { actorId: enemyId, skillId, amount: cost });
+  }
   next = applySkillEffects(next, skillId, skillState.rank, targetId, enemyId);
   return { ok: true, reason: null, state: settle(next) };
 }
@@ -1938,7 +2204,10 @@ export function endTurn(state) {
       ? enemySkillState(state, enemyId, declared.skillId)
       : null;
     if (!declared || (declared.skillId && (
-      !skillState || !skillLegality(skillState, { turnAvailable: true }).ok
+      !skillState || !skillLegality(skillState, {
+        turnAvailable: true,
+        resolveAvailable: enemy.resolve,
+      }).ok
     ))) {
       return { ok: false, reason: "intent-desync", state };
     }
@@ -2084,7 +2353,7 @@ export function endTurn(state) {
         actors: {
           ...next.actors,
           [enemyId]: resolved.attacker,
-          [defenderId]: resolved.defender,
+          [defenderId]: actorWithStatuses(resolved.defender, resolved.defender.statuses),
         },
       };
       next = push(next, "enemy-attack", {
@@ -2145,8 +2414,10 @@ export function endTurn(state) {
   return { ok: true, reason: null, state: settle(next) };
 }
 
-/** Uses left across the loadout, for a run-level act refill decision. */
+/** Remaining combat resource; legacy encounters still report their captured charge total. */
 export function loadoutUsesRemaining(state) {
+  const player = state.actors?.[state.playerId];
+  if (Number.isFinite(player?.resolve)) return player.resolve;
   return state.build.skills.reduce(
     (total, entry) => (entry.usesRemaining === UNLIMITED_USES ? total : total + entry.usesRemaining),
     0,

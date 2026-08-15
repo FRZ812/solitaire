@@ -18,12 +18,17 @@ import {
   describeCharacterAbilityEffect,
 } from "../../gameplay/tow/character-abilities.js";
 import {
-  createSkillState,
   generalAbilityIds,
   getSkill,
+  resolveCost,
   skillRankForRarity,
   skillRarityChoices,
 } from "../../gameplay/tow/skills.js";
+import {
+  STARTING_COMBAT_ITEMS,
+  describeCombatItemEffect,
+  getCombatItem,
+} from "../../gameplay/tow/combat-items.js";
 import {
   describeTraitAtRank,
   getFusion,
@@ -107,9 +112,9 @@ const PRACTICE_SLOT_LABELS = Object.freeze([
   "Flexible 3",
 ]);
 
-function abilityUsesLabel(definition, rank = 1) {
-  const uses = createSkillState(definition.id, rank).usesRemaining;
-  return uses == null ? "Unlimited" : `${uses} / act`;
+function abilityResolveLabel(definition, rank = 1) {
+  const cost = resolveCost(definition.id, rank);
+  return cost > 0 ? `${cost} Resolve` : "No Resolve";
 }
 
 function AbilitySwapPicker({
@@ -277,7 +282,7 @@ function AbilitySwapPicker({
           </span>
           <span className="ability-swap-picker__trigger-summary">{selectedSummary}</span>
           <span className="ability-swap-picker__trigger-uses">
-            {abilityUsesLabel(selected, selectedRank)}{selected.consumesTurn ? "" : " · swift"}
+            {abilityResolveLabel(selected, selectedRank)}{selected.consumesTurn ? "" : " · swift"}
           </span>
         </span>
         <span className="ability-swap-picker__change" aria-hidden="true">
@@ -376,7 +381,7 @@ function AbilitySwapPicker({
                       </span>
                       <span className="ability-swap-picker__option-summary">{summary}</span>
                       <span className="ability-swap-picker__option-meta">
-                        {abilityUsesLabel(skill, previewRank)}{skill.consumesTurn ? " · uses action" : " · swift action"}
+                        {abilityResolveLabel(skill, previewRank)}{skill.consumesTurn ? " · uses action" : " · swift action"}
                       </span>
                     </span>
                     <span className="ability-swap-picker__availability">
@@ -639,6 +644,8 @@ function CharacterDetails({
   testSkillRarities,
   onTestSkillChange,
   onResetTestSkills,
+  keepsakeId,
+  onKeepsakeChange,
   scenarioId,
   onScenarioChange,
   onPractice,
@@ -690,6 +697,7 @@ function CharacterDetails({
           <section className="character-details__stats" aria-label="Base combat stats">
             {[
               ["HP", selected.baseStats.maxHp],
+              ["RES", selected.baseStats.resolveMax],
               ["ATK", selected.baseStats.attack],
               ["DEF", selected.baseStats.defense],
               ["CRIT", `${selected.baseStats.critRate}%`],
@@ -748,6 +756,28 @@ function CharacterDetails({
                   <div><strong>{item.name}</strong><span>{item.tier.replace(/-/g, " ")}</span></div>
                   <p>{item.passive}</p>
                 </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="character-details__keepsakes">
+            <div className="character-details__section-heading">
+              <span className="character-details__label">Starting keepsake</span>
+              <small>Choose one · consumed in combat</small>
+            </div>
+            <div className="character-details__keepsake-grid" role="radiogroup" aria-label="Starting keepsake">
+              {STARTING_COMBAT_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={item.id === keepsakeId}
+                  className={item.id === keepsakeId ? "is-selected" : ""}
+                  onClick={() => onKeepsakeChange(item.id)}
+                >
+                  <strong>{item.name}</strong>
+                  <span>{describeCombatItemEffect(item)}</span>
+                </button>
               ))}
             </div>
           </section>
@@ -966,6 +996,18 @@ export function QuickStartLane({
                   );
                 })}
               </div>
+              <label className="character-preview__keepsake">
+                <span>Starting keepsake</span>
+                <select
+                  value={normalized.keepsakeId}
+                  onChange={(event) => change({ keepsakeId: event.target.value })}
+                >
+                  {STARTING_COMBAT_ITEMS.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+                <small>{describeCombatItemEffect(getCombatItem(normalized.keepsakeId))}</small>
+              </label>
             </div>
 
             {error ? <p className="character-preview__alert" role="alert">{error}</p> : null}
@@ -978,7 +1020,11 @@ export function QuickStartLane({
                 type="button"
                 className="character-preview__begin"
                 disabled={busy}
-                onClick={() => onBegin?.({ archetypeId: normalized.archetypeId, preview: normalized.preview })}
+                onClick={() => onBegin?.({
+                  archetypeId: normalized.archetypeId,
+                  keepsakeId: normalized.keepsakeId,
+                  preview: true,
+                })}
               >
                 <span>Begin journey</span>
                 <ArrowIcon />
@@ -1041,6 +1087,8 @@ export function QuickStartLane({
           testSkillRarities={testSkillRarities}
           onTestSkillChange={changeTestSkill}
           onResetTestSkills={() => change({ testSkillIds: null, testSkillRarities: null })}
+          keepsakeId={normalized.keepsakeId}
+          onKeepsakeChange={(keepsakeId) => change({ keepsakeId })}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
           onPractice={() => onPractice?.(normalized, scenarioId)}

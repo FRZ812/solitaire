@@ -31,7 +31,7 @@ import { TOW_COMBAT_STATES, TOW_WORLD_FATES } from "./outcomes.js";
 /** A fight that has run this long is a loop, not a fight; pausing beats inventing a winner. */
 export const MAX_TOW_ROUNDS = 2000;
 
-const COMMAND_KEYS = Object.freeze([
+const LEGACY_COMMAND_KEYS = Object.freeze([
   "actorId",
   "eventsFrom",
   "eventsTo",
@@ -44,6 +44,7 @@ const COMMAND_KEYS = Object.freeze([
   "targetId",
   "type",
 ].sort());
+const COMMAND_KEYS = Object.freeze([...LEGACY_COMMAND_KEYS, "itemId"].sort());
 
 const RECEIPT_KEYS = Object.freeze([
   "encounterChecksum",
@@ -106,7 +107,9 @@ function commandLogFailure(session) {
 
   for (let index = 0; index < commands.length; index += 1) {
     const command = commands[index];
-    if (!exactKeys(command, COMMAND_KEYS)) return "invalid-command-record";
+    if (!exactKeys(command, COMMAND_KEYS) && !exactKeys(command, LEGACY_COMMAND_KEYS)) {
+      return "invalid-command-record";
+    }
     if (typeof command.id !== "string" || command.id.length === 0) return "invalid-command-record";
     if (ids.has(command.id)) return "duplicate-command-id";
     ids.add(command.id);
@@ -116,6 +119,7 @@ function commandLogFailure(session) {
     // of commands before it. Any other value means the log was reordered or spliced.
     if (command.expectedRevision !== index) return "command-revision-mismatch";
     if (command.actorId !== null && typeof command.actorId !== "string") return "invalid-command-record";
+    if (command.itemId != null && typeof command.itemId !== "string") return "invalid-command-record";
     if (command.skillId !== null && typeof command.skillId !== "string") return "invalid-command-record";
     if (command.targetId !== null && typeof command.targetId !== "string") return "invalid-command-record";
     if (typeof command.stateChecksum !== "string") return "invalid-command-record";

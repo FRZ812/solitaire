@@ -116,18 +116,9 @@ import {
   renderCombatChronicle,
 } from "./gameplay/tow/chronicle.js";
 import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
+import { combatItemsFromInventory } from "./gameplay/tow/combat-items.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
-import {
-  allyReadinessFromEncounter,
-  emptyReadiness,
-  isCompanionReadiness,
-  isReadiness,
-  pruneReadiness,
-  readinessFromEncounter,
-  restoreReadiness,
-  skillStatesForReadiness,
-} from "./gameplay/tow/readiness.js";
 import {
   createTowSession,
   markTowSessionSettled,
@@ -2434,11 +2425,11 @@ export function Solitaire() {
       return;
     }
     setDeckOpen(false);
-    // A rest the engine actually committed is the only thing that puts skill uses back.
-    // Opening the rest screen does not, and neither does a night the narrator described.
+    // Only a rest the engine actually committed restores Resolve. Opening the rest screen
+    // does not, and neither does a night the narrator merely described.
     setState(withTowMechanics(
       { ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] },
-      { readiness: restoreReadiness(), companionReadiness: {} },
+      { readiness: {}, companionReadiness: {} },
     ));
   }
 
@@ -2457,7 +2448,7 @@ export function Solitaire() {
     }
     setState(withTowMechanics(
       { ...r.state, beats: [...r.state.beats, { id: `camp${Date.now()}`, type: "narration", content: r.summary }] },
-      { readiness: restoreReadiness(), companionReadiness: {} },
+      { readiness: {}, companionReadiness: {} },
     ));
     // The halt still names where the party stands and what lies ahead; what it
     // must stop saying is that they are spent, because they no longer are.
@@ -3018,6 +3009,7 @@ export function Solitaire() {
       receipt: compiled.receipt,
       scenarioId,
       skillRarities: practiceSkillRaritiesForArchetypeDraft(draft),
+      combatItemId: draft.keepsakeId,
     });
   }
 
@@ -3092,9 +3084,8 @@ export function Solitaire() {
       return;
     }
     const player = towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" });
-    // The fight opens with what the last one left. Readiness is baked into genesis, so a
-    // replay reproduces the fight as it was actually fought — including how spent the
-    // player was when it started.
+    // The fight opens with the character's current Resolve baked into genesis, so replay
+    // reproduces exactly how spent every combatant was when the exchange began.
     // New starts own a durable, level-free build. Older campaigns keep their broad-
     // profession fallback until they are explicitly migrated. Worn equipment is folded in
     // only here, so unequipping a relic removes its TOW trait or fusion immediately.
@@ -3106,8 +3097,6 @@ export function Solitaire() {
       wornItemIds(st.character, st.world.codex),
       st.world.codex,
     );
-    const readiness = towReadiness(st);
-    const companionReadiness = towCompanionReadiness(st);
     // Each admitted companion crosses the same bridge the player does and brings their own
     // package, so an ally fights like themselves rather than like a copy of the protagonist.
     let allies;
@@ -3122,13 +3111,9 @@ export function Solitaire() {
         return {
           ...actor,
           statuses: [...actor.statuses, ...openingStatuses],
-          // A companion opens with whatever their own last fight left them, exactly as the
-          // player does. Refilling allies every fight would make bringing someone along a
-          // way to launder the scarcity the whole model exists for.
-          build: {
-            ...build,
-            skills: skillStatesForReadiness(build.skills, companionReadiness[companionId] || {}),
-          },
+          // Resolve comes from the companion actor snapshot, so nobody can launder scarcity
+          // merely by joining another encounter.
+          build,
         };
       });
     } catch (error) {
@@ -3144,7 +3129,7 @@ export function Solitaire() {
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
       build: {
         ...campaignBuild,
-        skills: skillStatesForReadiness(campaignBuild.skills, readiness),
+        combatItems: combatItemsFromInventory(st.character.inventory),
       },
       context: {
         directiveId: context?.directiveId ?? null,
@@ -3225,18 +3210,6 @@ export function Solitaire() {
 
   function withTowCombat(base, session) {
     return withTowMechanics(base, { activeCombat: session });
-  }
-
-  /** What the character has left to spend, or a full pack if nothing is recorded. */
-  function towReadiness(source) {
-    const stored = source?.mechanics?.tow?.readiness;
-    return isReadiness(stored) ? stored : emptyReadiness();
-  }
-
-  /** The same, per companion, keyed by their codex id. */
-  function towCompanionReadiness(source) {
-    const stored = source?.mechanics?.tow?.companionReadiness;
-    return isCompanionReadiness(stored) ? stored : {};
   }
 
   // Discarding an unreadable fight is the player's explicit act, never the engine's quiet
@@ -3519,16 +3492,10 @@ export function Solitaire() {
       epicDeath ? { ...next, ended: true, pendingReward } : { ...next, pendingReward },
       {
         activeCombat: closed.ok ? closed.session : null,
-        // What the fight left is what the next one opens with. The road gives nothing back
-        // on its own — only a completed rest does.
-        readiness: pruneReadiness(readinessFromEncounter(cs), cs.build.skills),
-        companionReadiness: Object.fromEntries(
-          Object.entries(allyReadinessFromEncounter(cs)).map(([allyId, spent]) => [
-            // Stored against the companion, not the actor id the fight gave them.
-            allyId.replace(/^ally-/, ""),
-            pruneReadiness(spent, cs.allyBuilds[allyId].skills),
-          ]),
-        ),
+        // Scarcity is already settled onto each participant's Resolve. Emptying the v1 maps
+        // prevents a migrated campaign from carrying a second, hidden economy.
+        readiness: {},
+        companionReadiness: {},
       },
     );
     // The report the aftermath prompt has always claimed to be narrating from. It is
@@ -3777,7 +3744,7 @@ export function Solitaire() {
     const actorId = input.actorId ?? session.encounter.playerId;
     const result = dispatchTowPlayerAction(session, {
       ...input,
-      id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
+      id: [session.sessionId, session.revision, input.type, actorId, input.skillId, input.itemId]
         .filter((part) => part !== null && part !== undefined)
         .join(":"),
       expectedRevision: session.revision,
@@ -3801,6 +3768,12 @@ export function Solitaire() {
   const onCombatUseSkill = (skillId, targetId, actorId) => dispatchCombatCommand({
     type: "use-skill",
     skillId,
+    targetId: targetId ?? null,
+    actorId: actorId ?? null,
+  });
+  const onCombatUseItem = (itemId, targetId, actorId) => dispatchCombatCommand({
+    type: "use-item",
+    itemId,
     targetId: targetId ?? null,
     actorId: actorId ?? null,
   });
@@ -4383,6 +4356,7 @@ export function Solitaire() {
           receipt={practiceDraft.receipt}
           scenarioId={practiceDraft.scenarioId}
           skillRarities={practiceDraft.skillRarities}
+          combatItemId={practiceDraft.combatItemId}
           onExit={() => setPracticeDraft(null)}
         />
       )}
@@ -4610,6 +4584,7 @@ export function Solitaire() {
             return weaponPresentationForCharacter(companion, state.world.codex);
           }}
           onUseSkill={onCombatUseSkill}
+          onUseItem={onCombatUseItem}
           onStandDown={onCombatStandDown}
           onRetreat={onCombatRetreat}
           onSettle={handleResolveCombat}

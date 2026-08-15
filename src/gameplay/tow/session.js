@@ -530,6 +530,7 @@ export function createTowSession(input = {}) {
         traits: build?.traits || {},
         skills: build?.skills || [],
         runes: build?.runes || [],
+        ...(Object.hasOwn(build || {}, "combatItems") ? { combatItems: build.combatItems || [] } : {}),
         ...(Object.hasOwn(build || {}, "basicAttack") ? { basicAttack: build.basicAttack || null } : {}),
       },
       // Authored per-enemy telegraph rotations. Empty is the normal case: the encounter

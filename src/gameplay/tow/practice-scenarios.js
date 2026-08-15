@@ -27,7 +27,7 @@ import { gameplayChecksum } from "../kernel/replay.js";
 import { isCharacterBootstrapReceipt } from "./character-bootstrap.js";
 import { buildCombatChronicle } from "./chronicle.js";
 import { sealTowTerminalReceipt } from "./outcomes.js";
-import { skillStatesForReadiness } from "./readiness.js";
+import { isStartingCombatItem } from "./combat-items.js";
 import { verifyTowSession } from "./replay.js";
 import { TOW_RULESET_ID, createTowSession } from "./session.js";
 import { getSkill, skillRankForRarity, skillRarityChoices } from "./skills.js";
@@ -44,6 +44,8 @@ function foe(id, name, maxHp, attack, archetypeId) {
     id,
     name,
     maxHp,
+    resolve: archetype.baseStats.resolveMax,
+    resolveMax: archetype.baseStats.resolveMax,
     stats: { attack, defense: attack, critRate: 4, dodgeRate: 3 },
     archetypeId,
     build: Object.freeze({
@@ -134,10 +136,11 @@ function withPracticeSkillRarities(build, sourceSkillIds, skillRarities) {
   };
 }
 
-export function draftHash(receipt, skillRarities = null) {
+export function draftHash(receipt, skillRarities = null, combatItemId = null) {
   if (!isCharacterBootstrapReceipt(receipt)) return null;
   const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
   if (rarities === false) return null;
+  if (combatItemId !== null && !isStartingCombatItem(combatItemId)) return null;
   const archetype = getStartingArchetype(receipt.archetypeId);
   const itemIds = archetype?.gear || [];
   const build = withPracticeSkillRarities(
@@ -150,6 +153,7 @@ export function draftHash(receipt, skillRarities = null) {
     professionId: receipt.professionId,
     build,
     itemIds,
+    combatItemId,
   });
 }
 
@@ -194,6 +198,7 @@ export function practiceActor(receipt) {
   const bonus = towItemActorBonuses(archetype?.gear || []);
   const base = archetype?.baseStats || {
     maxHp: 96,
+    resolveMax: 8,
     attack: 12,
     defense: 12,
     critRate: 5,
@@ -203,6 +208,8 @@ export function practiceActor(receipt) {
     id: "wanderer",
     name: archetype?.character?.name || "You",
     maxHp: base.maxHp + bonus.maxHp,
+    resolve: base.resolveMax,
+    resolveMax: base.resolveMax,
     stats: {
       attack: base.attack + bonus.attack,
       defense: base.defense + bonus.defense,
@@ -227,7 +234,7 @@ export function createPracticeSession(
   receipt,
   scenarioId = DEFAULT_PRACTICE_SCENARIO_ID,
   attemptIndex = 0,
-  { skillRarities = null } = {},
+  { skillRarities = null, combatItemId = null } = {},
 ) {
   if (!isCharacterBootstrapReceipt(receipt)) return rejected("invalid-bootstrap-receipt");
   const scenario = getPracticeScenario(scenarioId);
@@ -235,7 +242,10 @@ export function createPracticeSession(
 
   const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
   if (rarities === false) return rejected("invalid-practice-skill-rarities");
-  const hash = draftHash(receipt, rarities);
+  if (combatItemId !== null && !isStartingCombatItem(combatItemId)) {
+    return rejected("invalid-practice-combat-item");
+  }
+  const hash = draftHash(receipt, rarities, combatItemId);
   const archetype = getStartingArchetype(receipt.archetypeId);
   const effectiveBuild = withPracticeSkillRarities(
     effectiveTowBuild(receipt.build, archetype?.gear || []),
@@ -257,11 +267,11 @@ export function createPracticeSession(
     mode: "practice",
     player: practiceActor(receipt),
     enemies: scenario.enemies.map((enemy) => cloneJsonData(enemy)),
-    // Practice starts from the compiled build's own resources, full, because it is a fresh
-    // expedition rather than a continuation of one.
+    // Practice owns a disposable full Resolve snapshot rather than campaign resources.
     build: {
       ...effectiveBuild,
-      skills: skillStatesForReadiness(effectiveBuild.skills, {}),
+      skills: effectiveBuild.skills,
+      combatItems: combatItemId ? [{ id: combatItemId, quantity: 1 }] : [],
     },
     context: {
       source: { kind: "practice", note: scenario.name },

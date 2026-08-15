@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
 import { Icon } from "../Icon.jsx";
 import {
+  combatItemLegality,
   declaredIntents,
   priorityAdvantageFor,
   retreatOdds,
@@ -12,13 +13,19 @@ import {
 } from "../../gameplay/tow/character-abilities.js";
 import {
   getSkill,
+  resolveCost,
   skillLegality,
   skillRarityAtRank,
-  usesPerAct,
   UNLIMITED_USES,
+  usesPerAct,
 } from "../../gameplay/tow/skills.js";
+import {
+  describeCombatItemEffect,
+  getCombatItem,
+} from "../../gameplay/tow/combat-items.js";
 import { normalizeWeaponPresentation } from "../../gameplay/tow/weapon-presentation.js";
 import { weaponAttackSummary } from "../../gameplay/tow/weapon-techniques.js";
+import { ItemIcon } from "../ItemIcon.jsx";
 import { resolveTowCombatArt } from "./tow-combat-art.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
 import {
@@ -39,6 +46,10 @@ function percent(value, max) {
 const REFUSALS = {
   "on-cooldown": (skill) => `ready in ${skill.cooldownRemaining}`,
   "no-uses-remaining": () => "spent",
+  "insufficient-resolve": () => "not enough Resolve",
+  "item-spent": () => "spent",
+  "health-full": () => "health is already full",
+  "resolve-full": () => "Resolve is already full",
   "turn-already-spent": () => "no action left",
   "action-nullified": () => "control forfeits this turn automatically",
   "priority-preempted": () => "enemy Priority resolves first",
@@ -133,7 +144,8 @@ function SkillDetails({
   weaponPresentation,
   skillState,
   legality,
-  limit,
+  cost,
+  legacyLimit,
   onDismiss,
 }) {
   return (
@@ -154,7 +166,11 @@ function SkillDetails({
         <p>{towSkillDetail(definition, skillState, weaponPresentation)}</p>
         <small>
           {definition.consumesTurn ? "Spends the action" : "Swift · keeps the action"}
-          {limit !== UNLIMITED_USES ? ` · ${skillState.usesRemaining}/${limit} uses` : " · always ready"}
+          {cost !== null
+            ? (cost > 0 ? ` · ${cost} Resolve` : " · no Resolve cost")
+            : legacyLimit !== UNLIMITED_USES
+              ? ` · ${skillState.usesRemaining}/${legacyLimit} legacy uses`
+              : " · always ready"}
         </small>
         {!legality.ok ? <em>{refusalText(legality.reason, skillState)}</em> : null}
       </div>
@@ -168,7 +184,8 @@ function CombatAction({
   displayName,
   art,
   skillState,
-  limit,
+  cost,
+  legacyLimit,
   weaponPresentation,
   legality,
   active,
@@ -183,12 +200,14 @@ function CombatAction({
   const holdTargetRef = useRef(null);
   const heldRef = useRef(false);
   const onCooldown = skillState.cooldownRemaining > 0;
-  const hasLimitedUses = limit !== UNLIMITED_USES;
+  const hasLegacyUses = cost === null && legacyLimit !== UNLIMITED_USES;
   const resourceAnnouncement = onCooldown
     ? `Cooldown, ${skillState.cooldownRemaining} turn${skillState.cooldownRemaining === 1 ? "" : "s"} remaining`
-    : hasLimitedUses
-      ? `${skillState.usesRemaining} of ${limit} uses remaining`
-      : null;
+    : cost !== null && cost > 0
+      ? `${cost} Resolve`
+      : hasLegacyUses
+        ? `${skillState.usesRemaining} of ${legacyLimit} legacy uses remaining`
+        : cost === null ? "Always ready" : "No Resolve cost";
 
   function cancelHold() {
     if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
@@ -260,9 +279,13 @@ function CombatAction({
         <span className="tow-combat__action-cooldown" aria-hidden="true">
           {skillState.cooldownRemaining}
         </span>
-      ) : hasLimitedUses ? (
-        <span className="tow-combat__action-uses" aria-hidden="true">
-          {skillState.usesRemaining}/{limit}
+      ) : cost !== null && cost > 0 ? (
+        <span className="tow-combat__action-cost" aria-hidden="true">
+          <strong>{cost}</strong><small>RP</small>
+        </span>
+      ) : hasLegacyUses ? (
+        <span className="tow-combat__action-cost tow-combat__action-cost--legacy" aria-hidden="true">
+          <strong>{skillState.usesRemaining}</strong><small>/{legacyLimit}</small>
         </span>
       ) : null}
       <span className="tow-combat__sr-only">{displayName}</span>
@@ -539,6 +562,25 @@ function Vitals({ actor, enemy = false, feedbackCues = [], reacting = false }) {
           {presented.shield > 0 ? <em>+{presented.shield} ward</em> : null}
         </span>
       </div>
+      {Number.isFinite(actor.resolve) ? (
+        <div
+          className="tow-combat__bar tow-combat__bar--resolve"
+          role="meter"
+          aria-label={`${actor.name} Resolve`}
+          aria-valuemin="0"
+          aria-valuemax={actor.resolveMax}
+          aria-valuenow={actor.resolve}
+        >
+          <span
+            className="tow-combat__bar-resolve"
+            style={{ width: `${percent(actor.resolve, actor.resolveMax)}%` }}
+          />
+          <span className="tow-combat__bar-value tow-combat__bar-value--resolve">
+            <strong>{actor.resolve}</strong>
+            <span>/ {actor.resolveMax} Resolve</span>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -838,6 +880,7 @@ function CombatDeclarations({ beat, cues, encounter }) {
 export function TowCombatView({
   encounter,
   onUseSkill,
+  onUseItem,
   onStandDown,
   onSettle,
   onRetreat = null,
@@ -922,23 +965,35 @@ export function TowCombatView({
     });
   }
   const commanderWeapon = weaponPresentationFor(activeCommander);
+  const resolveEconomy = Number.isFinite(activeCommander.resolve);
   const skillRows = (commanderBuild?.skills || []).map((skillState) => {
     const definition = getSkill(skillState.id);
     const legality = forcedWindow
       ? { ok: false, reason: forcedWindow.kind === "control" ? "action-nullified" : "priority-preempted" }
       : skillLegality(skillState, {
         turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
+        resolveAvailable: activeCommander.resolve,
       });
     return {
       art: resolveTowAbilityArt(definition, commanderWeapon),
       definition,
       displayName: resolveTowActionName(definition, commanderWeapon),
       legality,
-      limit: usesPerAct(skillState.id, skillState.rank),
+      cost: resolveEconomy ? resolveCost(skillState.id, skillState.rank) : null,
+      legacyLimit: resolveEconomy
+        ? UNLIMITED_USES
+        : usesPerAct(skillState.id, skillState.rank),
       skillState,
       weaponPresentation: commanderWeapon,
     };
   });
+  const combatItemRows = (commanderBuild?.combatItems || []).map((held) => {
+    const item = getCombatItem(held.id);
+    const legality = forcedWindow
+      ? { ok: false, reason: forcedWindow.kind === "control" ? "action-nullified" : "priority-preempted" }
+      : combatItemLegality(encounter, held.id, activeCommander.id);
+    return { item, held, legality };
+  }).filter((row) => row.item);
   const inspectedSkill = skillRows.find(({ skillState }) => skillState.id === inspectedSkillId) || null;
   const declared = terminal ? [] : declaredIntents(encounter);
   const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
@@ -1455,7 +1510,8 @@ export function TowCombatView({
                   displayName={row.displayName}
                   art={row.art}
                   skillState={row.skillState}
-                  limit={row.limit}
+                  cost={row.cost}
+                  legacyLimit={row.legacyLimit}
                   weaponPresentation={row.weaponPresentation}
                   legality={row.legality}
                   active={row.skillState.id === inspectedSkillId}
@@ -1471,6 +1527,29 @@ export function TowCombatView({
                 />
               ))}
             </div>
+
+            {combatItemRows.length > 0 ? (
+              <div className="tow-combat__items" aria-label="Carried combat items">
+                <span className="tow-combat__items-label">Satchel</span>
+                {combatItemRows.map(({ item, held, legality }) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="tow-combat__item"
+                    disabled={presentationLocked || !legality.ok}
+                    aria-label={`${item.name}. ${describeCombatItemEffect(item)}. ${held.quantity} left${legality.ok ? ". Use item" : `. ${refusalText(legality.reason, held)}`}`}
+                    title={`${item.name} · ${describeCombatItemEffect(item)} · ${held.quantity} left`}
+                    onClick={() => onUseItem?.(item.id, activeTarget, activeCommander.id)}
+                  >
+                    <ItemIcon itemId={item.id} size={30} />
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{describeCombatItemEffect(item)} · {held.quantity} left</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             <p className="tow-combat__action-hint">
               {actionBeat

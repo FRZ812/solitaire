@@ -10,7 +10,13 @@ import { getSkill } from "./skills.js";
 import { getFusion, getTrait, TRAIT_CAPACITY, TRAIT_RANK_CAP } from "./traits.js";
 import { weaponAttackSnapshotFromItemIds } from "./weapon-techniques.js";
 
-const EMPTY_STATS = Object.freeze({ attack: 0, defense: 0, maxHp: 0, critRate: 0, dodgeRate: 0 });
+const EMPTY_STATS = Object.freeze({
+  attack: 0,
+  defense: 0,
+  maxHp: 0,
+  critRate: 0,
+  dodgeRate: 0,
+});
 
 function grant(itemId, {
   stats = {},
@@ -33,10 +39,57 @@ function grant(itemId, {
 // passive table. Their names and ownership come from the canonical equipment catalogue;
 // only their TOW-facing grants live here.
 const START_ITEM_GRANTS = Object.freeze(Object.fromEntries([
+  // Common starting equipment is deliberately modest but never inert. The authored body
+  // remains the majority of a character's chassis; gear supplies the margin that changes
+  // whether a risky line survives, and the named relics below carry the stronger traits.
+  grant("arming-sword", {
+    stats: { attack: 2 },
+    passive: "Reliable edge: +2 ATK.",
+  }),
+  grant("chain-shirt", {
+    stats: { defense: 3, maxHp: 6 },
+    passive: "Riveted mail: +3 DEF and +6 max HP.",
+  }),
   grant("round-shield", {
     stats: { defense: 3, maxHp: 4 },
     traits: { aegis: 1 },
     passive: "The first line holds longer: more defence and an extra rank of Aegis.",
+  }),
+  grant("traveling-cloak", {
+    stats: { maxHp: 2, dodgeRate: 1 },
+    passive: "Road-worn composure: +2 max HP and +1% Dodge.",
+  }),
+  grant("marching-boots", {
+    stats: { dodgeRate: 3 },
+    passive: "Sure footing: +3% Dodge.",
+  }),
+  grant("hunting-bow", {
+    stats: { attack: 2, critRate: 2 },
+    passive: "Measured draw: +2 ATK and +2% Critical.",
+  }),
+  grant("leather-jerkin", {
+    stats: { defense: 2, maxHp: 3, dodgeRate: 2 },
+    passive: "Supple protection: +2 DEF, +3 max HP, and +2% Dodge.",
+  }),
+  grant("light-crossbow", {
+    stats: { attack: 3 },
+    passive: "Mechanical leverage: +3 ATK.",
+  }),
+  grant("padded-gambeson", {
+    stats: { defense: 2, maxHp: 4 },
+    passive: "Layered linen: +2 DEF and +4 max HP.",
+  }),
+  grant("leather-bracers", {
+    stats: { defense: 1, critRate: 1 },
+    passive: "Guarded wrists: +1 DEF and +1% Critical.",
+  }),
+  grant("battle-axe", {
+    stats: { attack: 3 },
+    passive: "Heavy bite: +3 ATK.",
+  }),
+  grant("iron-spear", {
+    stats: { attack: 2, defense: 1 },
+    passive: "Reach controls the line: +2 ATK and +1 DEF.",
   }),
   grant("rangers-leathers", {
     stats: { dodgeRate: 8, critRate: 2 },
@@ -47,6 +100,34 @@ const START_ITEM_GRANTS = Object.freeze(Object.fromEntries([
     stats: { attack: 2, critRate: 9 },
     traits: { agility: 1 },
     passive: "Two edges hunt openings: increased critical chance and Agility.",
+  }),
+  grant("quarterstaff", {
+    stats: { attack: 1, defense: 2, dodgeRate: 1 },
+    passive: "Two-ended discipline: +1 ATK, +2 DEF, and +1% Dodge.",
+  }),
+  grant("homespun-robe", {
+    stats: { defense: 1, maxHp: 2, dodgeRate: 2 },
+    passive: "Unencumbered focus: +1 DEF, +2 max HP, and +2% Dodge.",
+  }),
+  grant("war-hammer", {
+    stats: { attack: 3 },
+    passive: "Armour-breaking weight: +3 ATK.",
+  }),
+  grant("iron-longsword", {
+    stats: { attack: 3 },
+    passive: "Reach and leverage: +3 ATK.",
+  }),
+  grant("iron-dagger", {
+    stats: { attack: 1, critRate: 4 },
+    passive: "Close-work point: +1 ATK and +4% Critical.",
+  }),
+  grant("chain-hauberk", {
+    stats: { defense: 5, maxHp: 10 },
+    passive: "Full mail harness: +5 DEF and +10 max HP.",
+  }),
+  grant("iron-helm", {
+    stats: { defense: 2, maxHp: 3 },
+    passive: "Guarded crown: +2 DEF and +3 max HP.",
   }),
   grant("dawnward-mace", {
     stats: { attack: 4, defense: 2 },

@@ -170,11 +170,25 @@ describe("opening a practice fight", () => {
     expect(promoted.session.encounter.build.skills[2]).toMatchObject({
       id: "penetration",
       rank: 5,
-      usesRemaining: 7,
+      usesRemaining: null,
     });
     expect(promoted.seed).not.toBe(
       createPracticeSession(compiled.receipt, "training-yard", 0).seed,
     );
+  });
+
+  it("snapshots the selected keepsake without sharing it with campaign state", () => {
+    const receipt = receiptFor("fighter");
+    const practice = createPracticeSession(receipt, "training-yard", 0, {
+      combatItemId: "fire-pot",
+    });
+    expect(practice.ok).toBe(true);
+    expect(practice.session.encounter.build.combatItems).toEqual([
+      { id: "fire-pot", quantity: 1 },
+    ]);
+    expect(practice.seed).not.toBe(createPracticeSession(receipt, "training-yard", 0).seed);
+    expect(createPracticeSession(receipt, "training-yard", 0, { combatItemId: "bedroll" }))
+      .toMatchObject({ ok: false, reason: "invalid-practice-combat-item" });
   });
 
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {

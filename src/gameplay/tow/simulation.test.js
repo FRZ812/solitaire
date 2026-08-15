@@ -47,6 +47,12 @@ function firstTurnSpendingDecision(opened) {
 }
 
 describe("the harness is deterministic", () => {
+  it("measures the current shared Resolve economy", () => {
+    const player = standardPlayer();
+    expect(player.resolve).toBe(8);
+    expect(player.resolveMax).toBe(8);
+  });
+
   it("reproduces a run exactly from the same inputs", () => {
     const inputs = {
       seed: "determinism",
@@ -164,7 +170,7 @@ describe("no package is locked out", () => {
 
 describe("the fight uses more than one answer", () => {
   it("spends real skills alongside the basic attack", () => {
-    // Strike is unlimited and everything else is rationed, so Strike leading the count is
+    // Strike is Resolve-free and everything else shares Resolve, so Strike leading the count is
     // correct. What would be wrong is a fixture where nothing else is ever worth an action.
     for (const fixture of STANDARD_FIXTURES) {
       const uses = {};
@@ -235,7 +241,9 @@ describe("the informed policy actually reads the declarations", () => {
 
   it("reserves a self-Paralyzing attack for a finishing blow", () => {
     const enemy = STANDARD_FIXTURES[0].enemies[0];
-    const build = towBuildForCharacter({ profession: "barbarian" });
+    // Isolate the future-command tradeoff: the full barbarian package can first stack a
+    // no-turn Strength setup that makes Strike lethal without Mortal Blow.
+    const build = { traits: {}, skills: ["strike", "block", "mortal-blow"] };
     const healthy = createTowEncounter({
       seed: "mortal-restraint",
       player: standardPlayer(),
@@ -249,7 +257,7 @@ describe("the informed policy actually reads the declarations", () => {
       ...healthy,
       actors: {
         ...healthy.actors,
-        "foe-0": { ...healthy.actors["foe-0"], hp: 50 },
+        "foe-0": { ...healthy.actors["foe-0"], hp: 20 },
       },
     };
     expect(firstTurnSpendingDecision(exposed))
