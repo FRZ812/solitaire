@@ -40,6 +40,13 @@ describe("creating an actor", () => {
     expect(actor.statuses).toEqual([{ type: "steelskin", count: 4 }]);
   });
 
+  it("snapshots a current actor's persistent Resolve pool", () => {
+    const actor = createTowActor({ ...knight, resolve: 5, resolveMax: 9 });
+    expect(actor).toMatchObject({ resolve: 5, resolveMax: 9 });
+    expect(isTowActor(actor)).toBe(true);
+    expect(isTowActor(JSON.parse(JSON.stringify(actor)))).toBe(true);
+  });
+
   it("defaults current HP to full and clamps an overfull value", () => {
     expect(createTowActor(knight).hp).toBe(170);
     expect(createTowActor({ ...knight, hp: 999 }).hp).toBe(170);
@@ -62,6 +69,8 @@ describe("creating an actor", () => {
     expect(() => createTowActor({ ...knight, maxHp: -1 })).toThrow(/invalid-max-hp/);
     expect(() => createTowActor({ ...knight, maxHp: 1.5 })).toThrow(/invalid-max-hp/);
     expect(() => createTowActor({ ...knight, shield: -1 })).toThrow(/invalid-shield/);
+    expect(() => createTowActor({ ...knight, resolve: 1 })).toThrow(/invalid-resolve-max/);
+    expect(() => createTowActor({ ...knight, resolve: -1, resolveMax: 8 })).toThrow(/invalid-resolve/);
     expect(() => createTowActor({ ...knight, statuses: [{ type: "burn", count: 0 }] }))
       .toThrow(/invalid-statuses/);
     expect(() => createTowActor({ ...knight, statuses: "none" })).toThrow(/invalid-statuses/);

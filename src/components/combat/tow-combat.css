@@ -394,6 +394,8 @@
 }
 
 .tow-combat__vitals {
+  display: grid;
+  gap: 0.18rem;
   align-self: center;
 }
 
@@ -407,7 +409,8 @@
 }
 
 .tow-combat__bar-hp,
-.tow-combat__bar-shield {
+.tow-combat__bar-shield,
+.tow-combat__bar-resolve {
   position: absolute;
   top: 0;
   left: 0;
@@ -1248,6 +1251,24 @@
   clip-path: circle(46% at 50% 50%);
 }
 
+.tow-combat__bar--resolve {
+  height: 0.62rem;
+  background: rgba(2, 5, 10, 0.72);
+}
+
+.tow-combat__bar-resolve {
+  background: linear-gradient(90deg, #606aae, #9a8bd5 68%, #c7b5f0);
+  box-shadow: 0 0 0.55rem rgba(151, 132, 213, 0.28);
+}
+
+.tow-combat__bar-value--resolve {
+  justify-content: flex-start;
+  font-size: 0.43rem;
+  letter-spacing: 0.035em;
+}
+
+.tow-combat__bar-value--resolve strong { font-size: 0.5rem; }
+
 .tow-combat__effect-outcome {
   z-index: 2;
   inset: -1%;
@@ -1964,8 +1985,8 @@
 .tow-combat__action.is-unavailable .tow-combat__ability-art { filter: grayscale(0.74) brightness(0.46); }
 .tow-combat__action.is-unavailable:hover .tow-combat__ability-art { filter: grayscale(0.58) brightness(0.6); }
 
-/* Finite uses stay peripheral; cooldown is the immediate decision and takes the centre. */
-.tow-combat__action-uses {
+/* Resolve price stays peripheral; cooldown is the immediate decision and takes the centre. */
+.tow-combat__action-cost {
   position: absolute;
   z-index: 6;
   right: 0.18rem;
@@ -1985,6 +2006,26 @@
   text-align: center;
   text-shadow: 0 1px 0.18rem #000;
   pointer-events: none;
+}
+
+.tow-combat__action-cost {
+  display: inline-flex;
+  gap: 0.12rem;
+  align-items: baseline;
+}
+
+.tow-combat__action-cost strong { font-size: inherit; }
+.tow-combat__action-cost small {
+  font-size: 0.4rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #c9baf4;
+}
+
+.tow-combat__action-cost--legacy { min-width: 2.12rem; }
+.tow-combat__action-cost--legacy small {
+  font-size: 0.5rem;
+  letter-spacing: 0;
 }
 
 .tow-combat__action-cooldown {
@@ -2084,6 +2125,63 @@
   text-align: center;
   text-transform: uppercase;
   color: rgba(169,178,172,0.58);
+}
+
+.tow-combat__items {
+  display: flex;
+  gap: 0.38rem;
+  align-items: center;
+  justify-content: center;
+  margin: 0.28rem auto 0;
+  overflow-x: auto;
+  padding: 0.12rem 0.2rem;
+  scrollbar-width: none;
+}
+
+.tow-combat__items::-webkit-scrollbar { display: none; }
+
+.tow-combat__items-label {
+  flex: 0 0 auto;
+  font-size: 0.46rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(213, 188, 139, 0.68);
+}
+
+.tow-combat__item {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.42rem;
+  align-items: center;
+  max-width: 13.5rem;
+  padding: 0.28rem 0.48rem 0.28rem 0.34rem;
+  border: 1px solid rgba(218, 174, 101, 0.24);
+  border-radius: 0.52rem;
+  background: rgba(4, 9, 10, 0.56);
+  color: #f5ead3;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tow-combat__item:disabled {
+  opacity: 0.42;
+  filter: grayscale(0.45);
+}
+
+.tow-combat__item > span:last-child {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.tow-combat__item strong { font-size: 0.59rem; }
+.tow-combat__item small {
+  overflow: hidden;
+  font-size: 0.47rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(193, 202, 196, 0.72);
 }
 
 .tow-combat__skill-details {
@@ -2386,6 +2484,7 @@
   .tow-combat__identity span { font-size: 0.46rem; }
   .tow-combat__identity h2 { font-size: 1rem; }
   .tow-combat__bar { height: 1.05rem; }
+  .tow-combat__bar--resolve { height: 0.54rem; }
   .tow-combat__bar-value { font-size: 0.51rem; }
   .tow-combat__bar-value strong { font-size: 0.62rem; }
   .tow-combat__bar-value em { font-size: 0.43rem; }
@@ -2506,6 +2605,9 @@
   }
 
   .tow-combat__action-hint { margin-top: 0.12rem; font-size: 0.45rem; }
+  .tow-combat__items { justify-content: flex-start; margin-top: 0.16rem; }
+  .tow-combat__items-label { position: sticky; left: 0; padding-right: 0.15rem; background: #081011; }
+  .tow-combat__item { max-width: 11rem; padding-block: 0.22rem; }
   .tow-combat__command-foot { display: none; }
 
   .tow-combat__skill-details {

@@ -247,7 +247,9 @@ describe("practice is reversible and writes nothing", () => {
     expect(restored.querySelectorAll(".character-preview__carousel [role=radio]")[6].getAttribute("aria-checked"))
       .toBe("true");
     expect(restored.querySelector("input")).toBeNull();
-    expect(restored.querySelector("select")).toBeNull();
+    const keepsake = restored.querySelector(".character-preview__keepsake select");
+    expect(keepsake.querySelectorAll("option")).toHaveLength(4);
+    expect(keepsake.value).toBe("crimson-vial");
     expect(JSON.stringify(harness.serverState)).toBe(before);
   }, 30_000);
 });

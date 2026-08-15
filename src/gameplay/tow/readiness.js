@@ -1,19 +1,9 @@
-// What you have left, and when you get it back.
+// Legacy v1 readiness adapter.
 //
-// Tower of Winter rations skills per *act*: Block is thirty uses, Mortal Blow three, and
-// running dry is meant to be a real thing that happens to you partway through. Solitaire has
-// no acts — it has a road, and a character who walks it for a week between one safe night
-// and the next.
-//
-// So the act becomes the expedition. Uses are readiness: they carry across fights, they are
-// spent by fighting, and they come back only when the campaign engine commits a completed
-// rest or camp. Not when a rest screen opens, not when a camp is interrupted, and not
-// because a narrator said the night passed pleasantly.
-//
-// That one change is what makes the rest of the world matter to combat. A second fight
-// before nightfall is fought with what the first one left you. Bedrolls, supplies, daylight,
-// and the decision to walk away from a fight all acquire a mechanical meaning they did not
-// have when every encounter started full.
+// Captured fights and saves from before the Resolve economy recorded Tower of Winter's
+// per-ability allowances here. Current actors carry Resolve instead and current encounter
+// builds normalize those allowances away. Keep this module deterministic so old replays can
+// still be opened, settled, and migrated without silently changing their recorded rules.
 
 import { UNLIMITED_USES, getSkill, usesPerAct } from "./skills.js";
 

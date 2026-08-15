@@ -1,6 +1,7 @@
 // The Tower of Winter actor. Both sides carry the same five stats — the Gatekeeper's
 // stat block lists HP, ATK, crit and dodge exactly as the Arctic Knight's does — plus a
-// shield pool that absorbs before HP and a status stack that most traits write into.
+// shield pool that absorbs before HP, a Resolve pool for committed techniques, and a status
+// stack that most traits write into.
 //
 // This deliberately replaces the older { hp, maxHp, guard, stats:{attack,defense} } shape,
 // which had nowhere for crit, dodge, shield or status counts to live.
@@ -44,6 +45,12 @@ export function createTowActor(input = {}) {
   const hp = Math.min(maxHp, boundedInteger(input.hp ?? maxHp, "hp"));
   const statuses = input.statuses ?? [];
   if (!isStatusStack(statuses)) throw new TypeError("invalid-statuses");
+  const hasResolve = Object.hasOwn(input, "resolve") || Object.hasOwn(input, "resolveMax");
+  const resolveMax = hasResolve ? boundedInteger(input.resolveMax, "resolve-max") : null;
+  if (hasResolve && resolveMax <= 0) throw new TypeError("invalid-resolve-max");
+  const resolve = hasResolve
+    ? Math.min(resolveMax, boundedInteger(input.resolve ?? resolveMax, "resolve"))
+    : null;
   return {
     id,
     name,
@@ -58,13 +65,16 @@ export function createTowActor(input = {}) {
       dodgeRate: boundedRate(input.stats?.dodgeRate ?? 0, "dodge-rate"),
     },
     statuses: statuses.map((entry) => ({ type: entry.type, count: entry.count })),
+    ...(hasResolve ? { resolve, resolveMax } : {}),
   };
 }
 
 export function isTowActor(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const keys = Object.keys(value).sort();
-  const expected = ["hp", "id", "maxHp", "name", "shield", "side", "stats", "statuses"];
+  const legacy = ["hp", "id", "maxHp", "name", "shield", "side", "stats", "statuses"];
+  const current = [...legacy, "resolve", "resolveMax"].sort();
+  const expected = keys.length === legacy.length ? legacy : current;
   if (keys.length !== expected.length || keys.some((key, at) => key !== expected[at])) {
     return false;
   }
@@ -103,6 +113,14 @@ export function isTowActor(value) {
     && Number.isSafeInteger(value.stats.dodgeRate)
     && value.stats.dodgeRate >= 0
     && value.stats.dodgeRate <= 100
+    && (keys.length === legacy.length || (
+      Number.isSafeInteger(value.resolveMax)
+      && value.resolveMax > 0
+      && value.resolveMax <= MAX_ACTOR_VALUE
+      && Number.isSafeInteger(value.resolve)
+      && value.resolve >= 0
+      && value.resolve <= value.resolveMax
+    ))
     && isStatusStack(value.statuses);
 }
 

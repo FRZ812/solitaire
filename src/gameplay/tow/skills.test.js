@@ -10,6 +10,7 @@ import {
   passiveBonuses,
   passiveSkillIds,
   refillForNewAct,
+  resolveCost,
   restoreUses,
   replacementSkillIds,
   replaceableSkillIds,
@@ -57,6 +58,25 @@ describe("the catalogue", () => {
     expect(skillRarityAtRank("assassin-execution", 2)).toBe("mythical");
     expect(skillRarityChoices("assassin-shadow-strike")).toEqual(["mythical"]);
     expect(() => skillRankForRarity("assassin-execution", "rare")).toThrow(/invalid-skill-rarity/);
+  });
+
+  it("promotes every General ability from its authored rarity through Mythical", () => {
+    expect(skillRarityChoices("penetration")).toEqual([
+      "uncommon", "rare", "epic", "legendary", "mythical",
+    ]);
+    expect(skillRankForRarity("penetration", "mythical")).toBe(5);
+    expect(createSkillState("penetration", 5)).toMatchObject({
+      rank: 5,
+      usesRemaining: 7,
+    });
+    // The source capture has one fixed mechanic row, so promotion changes rarity without
+    // manufacturing an unsupported damage value or use-count curve.
+    expect(effectMagnitude("penetration", 0, 5)).toBe(180);
+
+    expect(skillRarityChoices("judge-of-fate")).toEqual(["legendary", "mythical"]);
+    expect(skillRankForRarity("judge-of-fate", "mythical")).toBe(2);
+    expect(generalAbilityIds().every((id) => skillRarityChoices(id).at(-1) === "mythical"))
+      .toBe(true);
   });
 
   it("transcribes per-rank magnitudes verbatim rather than interpolating", () => {
@@ -110,6 +130,40 @@ describe("the catalogue", () => {
     expect([1, 2, 3, 4].map((rank) => usesPerAct("warcry", rank))).toEqual([4, 5, 6, 7]);
   });
 
+  it("prices old allowances into one shared Resolve economy", () => {
+    expect(resolveCost("strike")).toBe(0);
+    expect(resolveCost("block")).toBe(1);
+    expect(resolveCost("defensive-stance", 1)).toBe(5);
+    expect(resolveCost("penetration")).toBe(3);
+    expect(resolveCost("warcry")).toBe(6);
+    expect(resolveCost("mortal-blow")).toBe(4);
+    expect(resolveCost("incineration")).toBe(6);
+    expect(resolveCost("automaton-infinite-power")).toBe(2);
+  });
+
+  it("turns every use-only promotion into a real Resolve discount", () => {
+    expect([1, 2, 3, 4, 5].map((rank) => resolveCost("defensive-stance", rank)))
+      .toEqual([5, 4, 3, 2, 1]);
+    expect([1, 2, 3, 4].map((rank) => resolveCost("warcry", rank)))
+      .toEqual([6, 5, 4, 3]);
+
+    for (const id of skillIds()) {
+      for (let rank = 1; rank <= maxRankOf(id); rank += 1) {
+        const limit = usesPerAct(id, rank);
+        expect(resolveCost(id, rank) === 0).toBe(limit === UNLIMITED_USES);
+        if (rank === 1 || usesPerAct(id, rank - 1) === limit) continue;
+        const definition = getSkill(id);
+        const effectChanged = definition.effects.some((effect, index) => (
+          effectMagnitude(id, index, rank) !== effectMagnitude(id, index, rank - 1)
+          || (effect.turnsByRank
+            && effect.turnsByRank[Math.min(rank - 1, effect.turnsByRank.length - 1)]
+              !== effect.turnsByRank[Math.min(rank - 2, effect.turnsByRank.length - 1)])
+        ));
+        if (!effectChanged) expect(resolveCost(id, rank)).toBeLessThan(resolveCost(id, rank - 1));
+      }
+    }
+  });
+
   it("returns null for unknown ids", () => {
     expect(getSkill("nonsense")).toBeNull();
     expect(getSkill(null)).toBeNull();
@@ -150,6 +204,7 @@ describe("skill state", () => {
     expect(isSkillState({ id: "nonsense", rank: 1, usesRemaining: 1, cooldownRemaining: 0 })).toBe(false);
     expect(isSkillState({ id: "strike", rank: 1, usesRemaining: 5, cooldownRemaining: 0 })).toBe(false);
     expect(isSkillState({ ...createSkillState("block"), extra: 1 })).toBe(false);
+    expect(isSkillState({ ...createSkillState("block"), usesRemaining: UNLIMITED_USES })).toBe(true);
   });
 
   it("refuses state for an unslotted skill", () => {
@@ -193,6 +248,13 @@ describe("using a skill", () => {
     state = spendSkill(state).state;
     expect(state.usesRemaining).toBe(0);
     expect(skillLegality(state)).toEqual({ ok: false, reason: "no-uses-remaining" });
+  });
+
+  it("uses Resolve instead of charges when a current pool is supplied", () => {
+    const spentLegacyState = { ...createSkillState("incineration"), usesRemaining: 0 };
+    expect(skillLegality(spentLegacyState, { resolveAvailable: 6 })).toEqual({ ok: true, reason: null });
+    expect(skillLegality(spentLegacyState, { resolveAvailable: 5 }))
+      .toEqual({ ok: false, reason: "insufficient-resolve" });
   });
 
   it("stays legal after the turn is spent only when it does not consume a turn", () => {
@@ -240,12 +302,13 @@ describe("acquiring skills", () => {
     expect(effectMagnitude("thirst-for-blood", 0, 2)).toBe(20);
   });
 
-  it("refills a skill the wiki records at a single rank without inventing one", () => {
-    // Sleep Grenade has no documented rank progression, so acquiring it again refills
-    // rather than inventing a rank 2 magnitude.
+  it("promotes a General ability while holding its last sourced mechanic value", () => {
+    // Sleep Grenade can advance from Rare to Epic, but its captured duration remains 3.
     const spent = [{ ...createSkillState("sleep-grenade"), usesRemaining: 1, cooldownRemaining: 4 }];
     const result = acquireSkill(spent, "sleep-grenade");
-    expect(result.loadout[0]).toMatchObject({ rank: 1, usesRemaining: 4, cooldownRemaining: 0 });
+    expect(result.loadout[0]).toMatchObject({ rank: 2, usesRemaining: 4, cooldownRemaining: 0 });
+    expect(skillRarityAtRank("sleep-grenade", 2)).toBe("epic");
+    expect(effectMagnitude("sleep-grenade", 0, 2)).toBe(3);
   });
 
   it("stops upgrading at the top rank", () => {

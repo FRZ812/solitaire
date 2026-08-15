@@ -7,7 +7,7 @@
 //
 // This measures that. It exists because the fixture sweep turned up per-package medians as
 // long as forty rounds, and a forty-round fight is an attritional slog in a UI where every
-// round is a couple of clicks — doubly so now that skill uses carry between fights. A number
+// round is a couple of clicks — doubly so now that Resolve carries between fights. A number
 // nobody checks is a number that drifts, so it is checked here.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -15,7 +15,6 @@ import { generateEnemyGroup } from "../../data/bestiary.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
 import { towBuildForCharacter } from "./professions.js";
-import { skillStatesForReadiness } from "./readiness.js";
 import { intentAwarePolicy, legalSkills } from "./simulation.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./solitaire-bridge.js";
 import { createRng } from "../kernel/rng.js";
@@ -63,7 +62,7 @@ function playOut(seed, profession, kind, seedIndex) {
     seed,
     player: towPlayerFromCharacter(character, codex, { id: "wanderer" }),
     enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: `foe-${index}` })),
-    build: { ...build, skills: skillStatesForReadiness(build.skills, {}) },
+    build,
   });
   let rng = createRng(`${seed}::policy`);
   let guard = 0;
@@ -133,7 +132,7 @@ describe("a real fight at the table", () => {
 
   it("is short enough not to become a clicking exercise", () => {
     const runs = fieldRuns();
-    // Every round is a couple of clicks, and skill uses now carry to the next fight, so a
+    // Every round is a couple of clicks, and Resolve now carries to the next fight, so a
     // long fight costs the player twice. This is the bound the fixture sweep flagged; if a
     // balance change pushes real fights past it, that is worth knowing at the time.
     const rounds = runs.map((run) => run.rounds);

@@ -30,6 +30,7 @@ import {
   endTurn as encounterEndTurn,
   playerSideIds,
   skipTurn as encounterSkipTurn,
+  useCombatItem as encounterUseCombatItem,
   useSkill as encounterUseSkill,
 } from "./encounter.js";
 import {
@@ -48,6 +49,7 @@ export const TOW_COMMAND_VERSION = 1;
  */
 export const TOW_COMMAND_TYPES = Object.freeze([
   "use-skill",
+  "use-item",
   "end-turn",
   "stand-down",
   "attempt-retreat",
@@ -56,6 +58,7 @@ export const TOW_COMMAND_TYPES = Object.freeze([
 
 const RESOLVABLE_COMMAND_TYPES = Object.freeze([
   "use-skill",
+  "use-item",
   "end-turn",
   "stand-down",
   "attempt-retreat",
@@ -65,10 +68,14 @@ const COMMAND_INPUT_KEYS = Object.freeze([
   "actorId",
   "expectedRevision",
   "id",
+  "itemId",
   "skillId",
   "targetId",
   "type",
 ].sort());
+const LEGACY_COMMAND_INPUT_KEYS = Object.freeze(
+  COMMAND_INPUT_KEYS.filter((key) => key !== "itemId"),
+);
 
 const MAX_IDENTIFIER_LENGTH = 256;
 
@@ -92,6 +99,7 @@ export function towCommand(input = {}) {
     expectedRevision: input.expectedRevision,
     type: input.type,
     actorId: input.actorId ?? null,
+    itemId: input.itemId ?? null,
     skillId: input.skillId ?? null,
     targetId: input.targetId ?? null,
   };
@@ -100,13 +108,17 @@ export function towCommand(input = {}) {
 function isCommandInput(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const keys = Object.keys(value).sort();
-  if (keys.length !== COMMAND_INPUT_KEYS.length) return false;
-  if (keys.some((key, index) => key !== COMMAND_INPUT_KEYS[index])) return false;
+  const current = keys.length === COMMAND_INPUT_KEYS.length
+    && keys.every((key, index) => key === COMMAND_INPUT_KEYS[index]);
+  const legacy = keys.length === LEGACY_COMMAND_INPUT_KEYS.length
+    && keys.every((key, index) => key === LEGACY_COMMAND_INPUT_KEYS[index]);
+  if (!current && !legacy) return false;
   return identifier(value.id)
     && TOW_COMMAND_TYPES.includes(value.type)
     && Number.isSafeInteger(value.expectedRevision)
     && value.expectedRevision >= 0
     && (value.actorId === null || identifier(value.actorId))
+    && (value.itemId == null || identifier(value.itemId))
     && (value.skillId === null || identifier(value.skillId))
     && (value.targetId === null || identifier(value.targetId));
 }
@@ -149,6 +161,9 @@ export function validateTowCommand(session, command) {
   }
   if (command.type === "use-skill" && !identifier(command.skillId)) {
     return { ok: false, reason: "invalid-skill" };
+  }
+  if (command.type === "use-item" && !identifier(command.itemId)) {
+    return { ok: false, reason: "invalid-combat-item" };
   }
   return { ok: true, reason: null };
 }
@@ -209,6 +224,8 @@ export function resolveTowCommandOnEncounter(before, command) {
   let result;
   if (command.type === "use-skill") {
     result = encounterUseSkill(before, command.skillId, command.targetId, actorId);
+  } else if (command.type === "use-item") {
+    result = encounterUseCombatItem(before, command.itemId, command.targetId, actorId);
   } else if (command.type === "attempt-retreat") {
     result = encounterAttemptRetreat(before, actorId);
   } else if (command.type === "stand-down") {
@@ -336,7 +353,7 @@ export function dispatchTowPlayerAction(session, input) {
   const primary = dispatchTowCommand(session, input);
   const canAutoAdvance = primary.ok
     && !primary.duplicate
-    && ["use-skill", "stand-down", "attempt-retreat"].includes(primary.command?.type)
+    && ["use-skill", "use-item", "stand-down", "attempt-retreat"].includes(primary.command?.type)
     && playerSideIsSpent(primary.session.encounter);
 
   if (!canAutoAdvance) {
@@ -348,6 +365,7 @@ export function dispatchTowPlayerAction(session, input) {
     expectedRevision: primary.session.revision,
     type: "end-turn",
     actorId: null,
+    itemId: null,
     skillId: null,
     targetId: null,
   });

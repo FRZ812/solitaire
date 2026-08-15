@@ -74,8 +74,8 @@ export const NARRATOR_FIELD_INVENTORY = Object.freeze([
     "Health outside combat. Must be bounded by the same rules combat settlement obeys, or a "
     + "story beat becomes a heal button."),
   entry("resolve_change", FIELD_DISPOSITION.INTENT, "campaign/resolve-owner",
-    "The spendable pool. Same argument as vitality, and the reason it is not yet unified "
-    + "with Tower of Winter readiness."),
+    "The spendable pool shared by world actions and Tower combat. Same argument as vitality: "
+    + "only the campaign owner may author or restore it."),
   entry("new_conditions", FIELD_DISPOSITION.INTENT, "campaign/condition-owner",
     "Conditions now have real combat expression through admission, so authoring one is "
     + "authoring a combat modifier. It has to go through a rule that can refuse it."),

@@ -27,6 +27,11 @@ const harness = vi.hoisted(() => ({
   listCampaigns: vi.fn(),
 }));
 
+// These tests drive the full App, persistence, replay, and timed combat presentation. A
+// single fight takes roughly ten seconds in isolation and more while the other browser
+// cohorts transform in parallel, so the engine-wide 15s unit-test ceiling is too narrow.
+const APP_INTEGRATION_TIMEOUT = 45_000;
+
 vi.mock("./engine/api-supabase.js", () => ({
   callNarrator: vi.fn(async () => {
     if (harness.narratorFails) throw new Error("provider unavailable");
@@ -72,6 +77,8 @@ function campaignInAFight({ lethalPolicy = "nonlethal", playerStakes = "survivab
       id: "wanderer",
       name: state.character.name,
       maxHp: 120,
+      resolve: state.character.resolve,
+      resolveMax: state.character.resolveMax,
       stats: { attack: 14, defense: 4, critRate: 0, dodgeRate: 0 },
     },
     enemies: enemies || [{
@@ -203,7 +210,7 @@ afterAll(() => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
-describe("a fight survives a reload", () => {
+describe("a fight survives a reload", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("resumes an admitted fight that has had no commands yet", async () => {
     const mounted = await mountCampaign();
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
@@ -294,12 +301,13 @@ describe("a fight survives a reload", () => {
   });
 });
 
-describe("readiness carries between fights", () => {
-  it("settles what the fight left back into the campaign", async () => {
+describe("Resolve carries between fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
+  it("settles the shared pool the fight left back into the campaign", async () => {
     const mounted = await mountCampaign();
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+    const openingResolve = harness.serverState.character.resolve;
 
-    // Spend a limited-use skill, then finish the fight.
+    // Commit Resolve to a defensive skill, then finish the fight with the free basic.
     const guard = [...dialog.querySelectorAll(".production-combat__action")]
       .find((button) => /block/i.test(button.textContent));
     await click(guard);
@@ -314,14 +322,19 @@ describe("readiness carries between fights", () => {
       .find((button) => !/end turn/i.test(button.textContent));
     await click(settle);
 
-    // The road gives nothing back on its own: what the fight spent is still spent.
-    const readiness = await waitFor(() => harness.serverState?.mechanics?.tow?.readiness);
-    expect(readiness.block).toBeLessThan(30);
-    expect(Object.hasOwn(readiness, "strike")).toBe(false);
+    // The road gives nothing back on its own: what the fight spent is still spent, and the
+    // retired v1 per-ability map remains empty.
+    const remainingResolve = await waitFor(() => (
+      harness.serverState.character.resolve < openingResolve
+        ? harness.serverState.character.resolve
+        : null
+    ));
+    expect(remainingResolve).toBe(openingResolve - 1);
+    expect(harness.serverState.mechanics.tow.readiness).toEqual({});
   });
 });
 
-describe("a companion fights", () => {
+describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("takes the field, acts on the player's command, and settles their own fate", async () => {
     // The gap this closes: a player who recruited someone watched them not turn up.
     const state = makeInitialState();
@@ -419,7 +432,7 @@ describe("a companion fights", () => {
   });
 });
 
-describe("the telegraph reaches a screen reader too", () => {
+describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("names the coming attack in a targetable foe's accessible name", async () => {
     // A foe card becomes a button once there is more than one of them, and a button's
     // aria-label replaces everything inside it. Naming it "Target Wolf 1" would leave a
@@ -447,7 +460,7 @@ describe("the telegraph reaches a screen reader too", () => {
   });
 });
 
-describe("an unreadable saved fight", () => {
+describe("an unreadable saved fight", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("says so and applies nothing until the player discards it", async () => {
     const corrupt = campaignInAFight();
     corrupt.mechanics.tow.activeCombat.checksum = "integrity-v1:0000000000000000";
@@ -466,7 +479,7 @@ describe("an unreadable saved fight", () => {
   });
 });
 
-describe("a win is worth something the build keeps", () => {
+describe("a win is worth something the build keeps", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("offers three choices, and taking one writes it into the durable build", async () => {
     const mounted = await mountCampaign();
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
@@ -525,7 +538,7 @@ describe("a win is worth something the build keeps", () => {
   });
 });
 
-describe("the scene is owed even if the tab dies", () => {
+describe("the scene is owed even if the tab dies", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   async function settleWithFailingNarrator(mounted) {
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
     for (let round = 0; round < 8; round += 1) {
@@ -576,7 +589,7 @@ describe("the scene is owed even if the tab dies", () => {
   });
 });
 
-describe("when the telling fails", () => {
+describe("when the telling fails", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("keeps the settlement, states the facts, and offers to try again", async () => {
     // The plan's stated failure path: if narration fails, show the factual result and a
     // retry. The campaign continues to own the settlement either way.

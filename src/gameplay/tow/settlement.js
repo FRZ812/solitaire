@@ -11,6 +11,7 @@ import { normalizeConditions } from "../../data/conditions.js";
 import { XP } from "../../data/proficiencies.js";
 import { advanceProgression, earnedLevelGrowthText } from "../../engine/progression.js";
 import { cloneJsonData } from "../kernel/json-data.js";
+import { settleCombatItems, spentCombatItems } from "./combat-items.js";
 
 export const MAX_TOW_SETTLEMENT_RECEIPTS = 256;
 
@@ -90,9 +91,19 @@ export function settleTowEncounter(state, encounter, context = {}) {
   const player = encounter.actors[encounter.playerId];
   // A defeat leaves the player alive at one vitality — losing a fight is a setback the
   // story continues from, not a delete. Permanent death stays a separate, deliberate path.
+  const campaignVitalityMax = Math.max(1, Math.round(character.vitalityMax ?? player.maxHp));
+  const mappedVitality = player.hp > 0
+    ? Math.max(1, Math.round(campaignVitalityMax * (player.hp / player.maxHp)))
+    : 0;
   character.vitality = encounter.phase === "defeat"
-    ? Math.max(1, Math.min(character.vitalityMax, Math.round(player.hp)))
-    : Math.max(0, Math.min(character.vitalityMax, Math.round(player.hp)));
+    ? 1
+    : Math.max(0, Math.min(campaignVitalityMax, mappedVitality));
+  if (Number.isFinite(player.resolve)) {
+    const campaignResolveMax = Math.max(0, Math.round(character.resolveMax ?? player.resolveMax));
+    character.resolve = Math.max(0, Math.min(campaignResolveMax, Math.round(player.resolve)));
+  }
+  const combatItemsSpent = spentCombatItems(encounter, encounter.playerId);
+  character.inventory = settleCombatItems(character.inventory, combatItemsSpent);
 
   if (encounter.phase === "defeat") {
     const conditions = new Set((character.conditions || []).map((condition) => (
@@ -133,6 +144,15 @@ export function settleTowEncounter(state, encounter, context = {}) {
     if (!npcId || !characters[npcId]) continue;
     characters[npcId] = {
       ...characters[npcId],
+      ...(Number.isFinite(enemy.resolve) ? {
+        resolve: Math.max(
+          0,
+          Math.min(
+            Math.round(characters[npcId].resolveMax ?? enemy.resolveMax),
+            Math.round(enemy.resolve),
+          ),
+        ),
+      } : {}),
       combatState: {
         health: Math.max(0, Math.ceil(enemy.hp)),
         maxHealth: enemy.maxHp,
@@ -172,6 +192,8 @@ export function settleTowEncounter(state, encounter, context = {}) {
     rounds: encounter.round,
     sequence: encounter.sequence,
     playerHp: player.hp,
+    playerResolve: Number.isFinite(player.resolve) ? player.resolve : null,
+    combatItemsSpent,
     fallen: fallen.length,
     proficiencyGains: gains,
   });

@@ -1,5 +1,6 @@
 import { statusCount } from "../../gameplay/kernel/status-stack.js";
 import { PROVISIONAL_DAMAGE_POLICY } from "../../gameplay/kernel/tow-damage.js";
+import { getCombatItem } from "../../gameplay/tow/combat-items.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
 import { COMBAT_VFX_ASSETS, combatVfxForEvent, combatVfxForStatus } from "./tow-combat-vfx.js";
 
@@ -172,6 +173,35 @@ export function combatEventReceipt(encounter, event, options = {}) {
   }
 
   const actor = actorName(encounter, event.actorId);
+  if (event.type === "resolve-spent") {
+    return {
+      sequence: event.sequence,
+      kind: "resource",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} commits ${event.amount} Resolve.`,
+    };
+  }
+  if (event.type === "skill-resolve-restored") {
+    return {
+      sequence: event.sequence,
+      kind: "resource",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} restores ${event.restored} Resolve.`,
+    };
+  }
+  if (event.type === "combat-item-used") {
+    const item = getCombatItem(event.itemId);
+    const name = item?.name || words(event.itemId);
+    const target = actorName(encounter, event.targetId, "the target");
+    let outcome = `${event.amount} effect`;
+    if (event.effect === "heal-max-percent") outcome = `restores ${event.amount} health`;
+    if (event.effect === "restore-resolve") outcome = `restores ${event.amount} Resolve`;
+    if (event.effect === "shield-defense-percent") outcome = `raises ${event.amount} ward`;
+    if (event.effect === "damage-attack-percent") outcome = `deals ${event.amount} health damage to ${target}`;
+    return {
+      sequence: event.sequence,
+      kind: event.effect === "damage-attack-percent" ? "damage" : "item",
+      text: `${actor} ${actor === "You" ? "use" : "uses"} ${name} and ${outcome}.`,
+    };
+  }
   if (event.type === "skill-shield") {
     const established = Number.isFinite(event.ward) ? event.ward : event.amount;
     const text = event.amount > 0
@@ -466,6 +496,40 @@ export function combatCuesForEvent(encounter, event) {
     return hits.map((hit, index) => hitCue(encounter, event, hit, index, hits.length, visual));
   }
 
+  if (event.type === "combat-item-used") {
+    if (event.effect === "damage-attack-percent") {
+      const visual = combatVfxForEvent(encounter, event);
+      const hits = resolvedHits(event.hits, event.amount);
+      return hits.map((hit, index) => hitCue(encounter, event, hit, index, hits.length, visual));
+    }
+    if (event.effect === "heal-max-percent") {
+      return [simpleCue(encounter, event, {
+        suffix: "item-heal",
+        kind: "heal",
+        label: `+${event.amount}`,
+        kicker: getCombatItem(event.itemId)?.name || "Item",
+        hpChange: event.amount,
+      })];
+    }
+    if (event.effect === "shield-defense-percent") {
+      return [simpleCue(encounter, event, {
+        suffix: "item-ward",
+        kind: "ward",
+        label: `+${event.amount}`,
+        kicker: getCombatItem(event.itemId)?.name || "Item",
+        shieldChange: event.amount,
+      })];
+    }
+    if (event.effect === "restore-resolve") {
+      return [simpleCue(encounter, event, {
+        suffix: "item-resolve",
+        kind: "empower",
+        label: `+${event.amount}`,
+        kicker: "Resolve",
+      })];
+    }
+  }
+
   if (event.type === "skill-shield") {
     const established = Number.isFinite(event.after) ? event.after : event.amount;
     return [simpleCue(encounter, event, {
@@ -635,6 +699,7 @@ function declarationLabel(encounter, event) {
       return words(event.skillId);
     }
   }
+  if (event.itemId) return getCombatItem(event.itemId)?.name || words(event.itemId);
   if (event.type === "tick-damage") {
     const type = ["burn", "doom", "poison", "bleed", "misfortune"]
       .find((candidate) => event[candidate] > 0);

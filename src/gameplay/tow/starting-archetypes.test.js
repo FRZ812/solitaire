@@ -4,6 +4,7 @@ import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
 import { characterAbilitiesFor } from "./character-abilities.js";
+import { STARTING_COMBAT_ITEMS } from "./combat-items.js";
 import { generalAbilityIds, getSkill, skillRarityAtRank } from "./skills.js";
 import { practiceActor } from "./practice-scenarios.js";
 import {
@@ -20,6 +21,7 @@ import {
 } from "./starting-archetypes.js";
 import {
   effectiveTowBuild,
+  getTowStartItemGrant,
   invalidTowStartItemGrants,
   towItemActorBonuses,
 } from "./start-items.js";
@@ -51,6 +53,8 @@ describe("source-roster starting grants", () => {
       const actor = practiceActor(compiled.receipt);
       const bonus = towItemActorBonuses(archetype.gear);
       expect(actor.maxHp, archetype.id).toBe(archetype.baseStats.maxHp + bonus.maxHp);
+      expect(actor.resolveMax, archetype.id).toBe(archetype.baseStats.resolveMax);
+      expect(actor.resolve, archetype.id).toBe(actor.resolveMax);
       expect(actor.stats, archetype.id).toEqual({
         attack: archetype.baseStats.attack + bonus.attack,
         defense: archetype.baseStats.defense + bonus.defense,
@@ -178,6 +182,28 @@ describe("one atomic source-character start", () => {
     });
     expect(built.mechanics.bootstrapOrigin).toBe("archetype");
     expect(built.mechanics.build).toEqual(compiled.receipt.build);
+  });
+
+  it("makes every worn starting item mechanically legible", () => {
+    const allGear = new Set(STARTING_ARCHETYPES.flatMap((archetype) => archetype.gear));
+    for (const itemId of allGear) {
+      const grant = getTowStartItemGrant(itemId);
+      const stats = Object.values(grant.stats).reduce((sum, value) => sum + Math.abs(value), 0);
+      expect(grant.passive, itemId).toEqual(expect.any(String));
+      expect(stats + Object.keys(grant.traits).length + grant.fusions.length, itemId)
+        .toBeGreaterThan(0);
+    }
+  });
+
+  it("adds exactly the selected keepsake as carried, never worn, equipment", () => {
+    const setup = characterSetupForArchetype({
+      archetypeId: "last-assassin",
+      keepsakeId: "lucid-tonic",
+    });
+    expect(setup.items.filter((item) => STARTING_COMBAT_ITEMS.some(({ id }) => id === item.itemId)))
+      .toEqual([{ itemId: "lucid-tonic", quantity: 1, worn: false }]);
+    expect(normalizeArchetypeDraft({ keepsakeId: "bedroll" }).keepsakeId)
+      .toBe(STARTING_COMBAT_ITEMS[0].id);
   });
 
   it("locks all twelve entries to complete identities and five-action source kits", () => {

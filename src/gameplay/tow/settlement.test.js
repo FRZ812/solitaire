@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
-import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
+import { createTowEncounter, endTurn, useCombatItem, useSkill } from "./encounter.js";
 import { settleTowEncounter } from "./settlement.js";
 
 function player(overrides = {}) {
@@ -84,7 +84,37 @@ describe("settling a victory", () => {
     const result = settleTowEncounter(campaign(), encounter, { encounterId: "fight-1" });
     const survived = encounter.actors.wanderer.hp;
     expect(result.state.character.vitality)
-      .toBe(Math.min(result.state.character.vitalityMax, survived));
+      .toBe(Math.max(1, Math.round(
+        result.state.character.vitalityMax * (survived / encounter.actors.wanderer.maxHp),
+      )));
+  });
+
+  it("persists spent Resolve and removes a used combat keepsake", () => {
+    let encounter = createTowEncounter({
+      seed: "settlement-resolve-item",
+      player: player({ resolve: 7, resolveMax: 8 }),
+      enemies: [foe("brigand")],
+      build: {
+        traits: {},
+        skills: ["strike", "block"],
+        combatItems: [{ id: "fire-pot", quantity: 1 }],
+      },
+    });
+    encounter = useSkill(encounter, "block").state;
+    encounter = endTurn(encounter).state;
+    encounter = useCombatItem(encounter, "fire-pot", "brigand").state;
+    expect(encounter.phase).toBe("victory");
+    const before = campaign();
+    before.character.resolve = 7;
+    before.character.resolveMax = 8;
+    before.character.inventory.carried.push({ itemId: "fire-pot", quantity: 1 });
+
+    const result = settleTowEncounter(before, encounter, { encounterId: "fight-item" });
+    expect(result.state.character.resolve).toBe(6);
+    expect(result.state.character.inventory.carried).not.toContainEqual(
+      expect.objectContaining({ itemId: "fire-pot" }),
+    );
+    expect(result.receipt.combatItemsSpent).toEqual({ "fire-pot": 1 });
   });
 
   it("awards proficiency and progression from what was actually done", () => {
@@ -150,7 +180,10 @@ describe("settling a retreat", () => {
     expect(result.ok).toBe(true);
     expect(result.receipt).toMatchObject({ outcome: "retreated", fallen: 0 });
     expect(result.state.character.vitality).toBe(
-      Math.min(before.character.vitalityMax, escaped.actors.wanderer.hp),
+      Math.max(1, Math.round(
+        before.character.vitalityMax
+          * (escaped.actors.wanderer.hp / escaped.actors.wanderer.maxHp),
+      )),
     );
     expect(result.state.character.conditions).toEqual(before.character.conditions);
     expect(result.state.world.codex.characters.brigand.combatState.status).toBe("ok");

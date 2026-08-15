@@ -14,6 +14,7 @@ import {
 } from "./practice-scenarios.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { startingPackageIds } from "./starting-packages.js";
+import { getSkill } from "./skills.js";
 
 // The six the plan names as the field-ready Quick Start cohort, by the profession each maps
 // to. Every one has to complete practice without a blocked capability.
@@ -146,6 +147,48 @@ describe("opening a practice fight", () => {
     expect(createPracticeSession(receipt, "training-yard", 0, {
       skillRarities: ["divine", "uncommon", "mythical", "mythical", "mythical"],
     })).toMatchObject({ ok: false, reason: "invalid-practice-skill-rarities" });
+  });
+
+  it("starts a promoted General ability at Mythical in the production encounter", () => {
+    const archetype = getStartingArchetype("last-assassin");
+    const skillIds = [...archetype.build.skills];
+    skillIds[2] = "penetration";
+    const compiled = compileCharacterBootstrap({
+      archetypeId: archetype.id,
+      origin: "practice",
+      build: { ...archetype.build, skills: skillIds },
+    });
+    expect(compiled.ok).toBe(true);
+
+    const skillRarities = skillIds.map((id) => getSkill(id).rarity);
+    skillRarities[2] = "mythical";
+    const promoted = createPracticeSession(compiled.receipt, "training-yard", 0, {
+      skillRarities,
+    });
+
+    expect(promoted.ok).toBe(true);
+    expect(promoted.session.encounter.build.skills[2]).toMatchObject({
+      id: "penetration",
+      rank: 5,
+      usesRemaining: null,
+    });
+    expect(promoted.seed).not.toBe(
+      createPracticeSession(compiled.receipt, "training-yard", 0).seed,
+    );
+  });
+
+  it("snapshots the selected keepsake without sharing it with campaign state", () => {
+    const receipt = receiptFor("fighter");
+    const practice = createPracticeSession(receipt, "training-yard", 0, {
+      combatItemId: "fire-pot",
+    });
+    expect(practice.ok).toBe(true);
+    expect(practice.session.encounter.build.combatItems).toEqual([
+      { id: "fire-pot", quantity: 1 },
+    ]);
+    expect(practice.seed).not.toBe(createPracticeSession(receipt, "training-yard", 0).seed);
+    expect(createPracticeSession(receipt, "training-yard", 0, { combatItemId: "bedroll" }))
+      .toMatchObject({ ok: false, reason: "invalid-practice-combat-item" });
   });
 
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {

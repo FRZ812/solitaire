@@ -1,14 +1,17 @@
-// The Tower of Winter skill catalogue and its use/cooldown state machine, transcribed
+// The Tower of Winter skill catalogue and its cooldown/resource state machine, transcribed
 // from docs/design/TOW_EVIDENCE.md.
 //
-// Two details separate this from the placeholder it replaces. Uses are bounded **per act**,
-// not per encounter — they refill at the start of an act and from events, items and
-// meditation, and every refill method tops up all skills equally. And a skill can *replace*
-// the basic attack or defence rather than taking a slot, which is what makes Strike and
-// Block slots rather than cards.
+// The source game's per-act use tables remain attached as evidence and as the migration
+// contract for old replay snapshots. New Solitaire encounters translate that scarcity into
+// Resolve: actions that were authored as unlimited remain free, while every formerly limited
+// ability has a Resolve price.
+// This matters because Solitaire has no act boundary and already owns one persistent mental
+// resource. A skill can also *replace* the basic attack or defence rather than taking a slot,
+// which is what makes Strike and Block slots rather than cards.
 //
-// Rank values are quoted verbatim from the wiki rather than interpolated: unlike traits,
-// every skill lists its per-rank magnitudes outright.
+// Rank values are quoted verbatim from the wiki rather than interpolated. Character
+// abilities list every promoted value outright; a General ability whose capture contains
+// one fixed value keeps that value as its rarity rises instead of inventing new scaling.
 
 import {
   FLEXIBLE_CHARACTER_ABILITY_TYPES,
@@ -57,6 +60,41 @@ export const RARITIES = Object.freeze([
 
 export const UNLIMITED_USES = null;
 
+// Resolve prices deliberately fit the campaign's small Mind-driven pool (8 for a typical
+// martial starter, 11 for a dedicated caster). The old use allowance expresses how freely
+// the source expected a technique to be used, so it is the authored signal used to price it:
+// common guards stay affordable while once-per-act conclusions demand most of a small pool.
+// When an ability's ranks changed only that allowance, every promotion becomes a one-point
+// Resolve discount instead. No rank is allowed to become an empty "+uses per act" upgrade,
+// and no replacement charge counter is invented.
+const RESOLVE_COST_BANDS = Object.freeze([
+  Object.freeze({ minimumUses: 20, cost: 1 }),
+  Object.freeze({ minimumUses: 10, cost: 2 }),
+  Object.freeze({ minimumUses: 5, cost: 3 }),
+  Object.freeze({ minimumUses: 3, cost: 4 }),
+  Object.freeze({ minimumUses: 2, cost: 5 }),
+  Object.freeze({ minimumUses: 1, cost: 6 }),
+]);
+
+function resolveBandCost(uses) {
+  return RESOLVE_COST_BANDS.find((band) => uses >= band.minimumUses)?.cost ?? 6;
+}
+
+function isAllowanceOnlyProgression(definition) {
+  if (!definition.usesPerActByRank || definition.rankCount <= 1) return false;
+  return definition.effects.every((effect) => [
+    effect.percentByRank,
+    effect.countByRank,
+    effect.factorByRank,
+    effect.turnsByRank,
+  ].filter(Boolean).every((table) => {
+    const first = table[0];
+    return Array.from({ length: definition.rankCount }, (_, index) => (
+      table[Math.min(index, table.length - 1)]
+    )).every((value) => value === first);
+  }));
+}
+
 function damage(scale, percentByRank, extra = {}) {
   return Object.freeze({ type: "damage", scale, percentByRank: Object.freeze(percentByRank), target: "enemy", ...extra });
 }
@@ -94,8 +132,16 @@ function skill(id, name, {
   source = null,
   note = null,
 }) {
-  const rankCount = usesPerActByRank?.length
+  const sourcedRankCount = usesPerActByRank?.length
     ?? effects.reduce((most, effect) => Math.max(most, (effect.percentByRank || effect.countByRank || []).length), 1);
+  const rarityStart = SKILL_RARITY_PROGRESSION.indexOf(rarity);
+  // General rewards can be promoted all the way to Mythical even when the captured
+  // mechanic has only one value row. Effect and use tables deliberately hold their final
+  // sourced value at those later rarities; progression must never synthesize combat math.
+  const promotedRankCount = abilityType === "general" && rarityStart >= 0
+    ? SKILL_RARITY_PROGRESSION.length - rarityStart
+    : sourcedRankCount;
+  const rankCount = Math.max(sourcedRankCount, promotedRankCount);
   return Object.freeze({
     id,
     name,
@@ -537,7 +583,7 @@ function skillDefinition(skillOrId) {
   return definition;
 }
 
-/** Player-facing rarity states unlocked by this ability's sourced upgrade rows. */
+/** Player-facing rarity states this ability can occupy. */
 export function skillRarityChoices(skillOrId) {
   const definition = skillDefinition(skillOrId);
   const start = SKILL_RARITY_PROGRESSION.indexOf(definition.rarity);
@@ -548,13 +594,13 @@ export function skillRarityChoices(skillOrId) {
   return choices;
 }
 
-/** Translate the engine's compact rank index into the rarity promoted to at that row. */
+/** Translate the engine's compact rank index into its promoted rarity. */
 export function skillRarityAtRank(skillOrId, rank = 1) {
   const definition = skillDefinition(skillOrId);
   return skillRarityChoices(definition)[rankIndex(definition, rank)];
 }
 
-/** Translate a player-selected rarity back to the sourced row used by combat math. */
+/** Translate a player-selected rarity into the compact runtime row. */
 export function skillRankForRarity(skillOrId, rarity) {
   const definition = skillDefinition(skillOrId);
   const index = skillRarityChoices(definition).indexOf(rarity);
@@ -574,8 +620,35 @@ export function usesPerAct(skillId, rank = 1) {
   const definition = getSkill(skillId);
   if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
   const index = rankIndex(definition, rank);
-  if (definition.usesPerActByRank) return definition.usesPerActByRank[index];
+  if (definition.usesPerActByRank) {
+    return definition.usesPerActByRank[Math.min(index, definition.usesPerActByRank.length - 1)];
+  }
   return definition.usesPerAct;
+}
+
+/**
+ * Resolve spent by a current-rules encounter when this ability is committed.
+ *
+ * `usesPerAct` remains source/migration metadata. This is the playable scarcity contract.
+ * A Resolve-restoring ability still has a price, because the current economy has no hidden
+ * exception for an action that used to be limited. Its price is one below its restoration,
+ * making the rare technique a one-point net recovery instead of a free three-point refill.
+ */
+export function resolveCost(skillId, rank = 1) {
+  const definition = getSkill(skillId);
+  if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
+  rankIndex(definition, rank);
+  const restoreIndex = definition.effects.findIndex((effect) => effect.type === "restore-skill-uses");
+  if (restoreIndex >= 0) {
+    return Math.max(1, Math.min(6, effectMagnitude(skillId, restoreIndex, rank) - 1));
+  }
+  const uses = usesPerAct(skillId, rank);
+  if (uses === UNLIMITED_USES) return 0;
+  if (isAllowanceOnlyProgression(definition)) {
+    const finalCost = resolveBandCost(usesPerAct(skillId, definition.rankCount));
+    return finalCost + (definition.rankCount - rank);
+  }
+  return resolveBandCost(uses);
 }
 
 /** The magnitude of one of a skill's effects at a rank. */
@@ -617,11 +690,12 @@ export function isSkillState(value) {
     return false;
   }
   const limit = usesPerAct(value.id, value.rank);
-  const usesValid = limit === UNLIMITED_USES
-    ? value.usesRemaining === UNLIMITED_USES
-    : Number.isSafeInteger(value.usesRemaining)
+  // Current Resolve encounters deliberately normalize every charge counter to the shared
+  // unlimited sentinel. Finite integers remain valid only for captured v1 charge replays.
+  const usesValid = value.usesRemaining === UNLIMITED_USES
+    || (limit !== UNLIMITED_USES && Number.isSafeInteger(value.usesRemaining)
       && value.usesRemaining >= 0
-      && value.usesRemaining <= limit;
+      && value.usesRemaining <= limit);
   return usesValid
     && Number.isSafeInteger(value.cooldownRemaining)
     && value.cooldownRemaining >= 0
@@ -634,18 +708,26 @@ export function isSkillState(value) {
  * `turnAvailable` is false once the turn-consuming action has been spent; a skill that
  * does not consume a turn stays legal.
  */
-export function skillLegality(state, { turnAvailable = true } = {}) {
+export function skillLegality(state, { turnAvailable = true, resolveAvailable = null } = {}) {
   if (!isSkillState(state)) return { ok: false, reason: "invalid-skill-state" };
   const definition = getSkill(state.id);
   if (state.cooldownRemaining > 0) return { ok: false, reason: "on-cooldown" };
-  if (state.usesRemaining !== UNLIMITED_USES && state.usesRemaining <= 0) {
+  // Explicit Resolve marks the current economy. A missing value is a legacy replay/fixture
+  // and continues to obey its captured finite-use state, so already-recorded fights remain
+  // reproducible rather than being silently migrated mid-exchange.
+  if (Number.isFinite(resolveAvailable) && resolveAvailable < resolveCost(state.id, state.rank)) {
+    return { ok: false, reason: "insufficient-resolve" };
+  }
+  if (!Number.isFinite(resolveAvailable)
+    && state.usesRemaining !== UNLIMITED_USES
+    && state.usesRemaining <= 0) {
     return { ok: false, reason: "no-uses-remaining" };
   }
   if (definition.consumesTurn && !turnAvailable) return { ok: false, reason: "turn-already-spent" };
   return { ok: true, reason: null };
 }
 
-/** Spend one use and start the cooldown. Pure. */
+/** Start the cooldown and, for a captured legacy state, spend one recorded charge. Pure. */
 export function spendSkill(state) {
   const legality = skillLegality(state);
   if (!legality.ok) return { ok: false, reason: legality.reason, state: null };

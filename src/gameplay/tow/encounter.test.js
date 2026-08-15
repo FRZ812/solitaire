@@ -9,8 +9,10 @@ import {
   isTowEncounter,
   retreatOdds,
   skipTurn,
+  useCombatItem,
   useSkill,
 } from "./encounter.js";
+import { UNLIMITED_USES } from "./skills.js";
 import { TRAIT_RANK_CAP } from "./traits.js";
 import { weaponAttackSnapshot, weaponTechniqueFromItemIds } from "./weapon-techniques.js";
 
@@ -226,6 +228,114 @@ describe("using skills", () => {
     expect(result.state.build.skills.find((s) => s.id === "block").usesRemaining).toBe(29);
   });
 
+  it("normalizes current abilities to Resolve and spends the shared pool", () => {
+    const state = start({
+      player: { resolve: 8, resolveMax: 8 },
+      build: { skills: ["strike", "block", "incineration"] },
+    });
+    expect(state.build.skills.every((skill) => skill.usesRemaining === UNLIMITED_USES)).toBe(true);
+
+    const blocked = useSkill(state, "block");
+    expect(blocked.ok).toBe(true);
+    expect(blocked.state.actors["arctic-knight"].resolve).toBe(7);
+    expect(blocked.state.build.skills.find((skill) => skill.id === "block").usesRemaining)
+      .toBe(UNLIMITED_USES);
+    expect(blocked.state.events).toContainEqual(expect.objectContaining({
+      type: "resolve-spent", actorId: "arctic-knight", skillId: "block", amount: 1,
+    }));
+  });
+
+  it("keeps free basics available but refuses a technique the remaining Resolve cannot fund", () => {
+    const state = start({
+      player: { resolve: 5, resolveMax: 8 },
+      build: { skills: ["strike", "incineration"] },
+    });
+    expect(useSkill(state, "incineration")).toMatchObject({
+      ok: false, reason: "insufficient-resolve", state,
+    });
+    const strike = useSkill(state, "strike");
+    expect(strike.ok).toBe(true);
+    expect(strike.state.actors["arctic-knight"].resolve).toBe(5);
+  });
+
+  it("caps source-scale direct damage against Solitaire-sized health pools", () => {
+    const state = start({
+      player: {
+        resolve: 8,
+        resolveMax: 8,
+        stats: { attack: 1000, defense: 13, critRate: 0, dodgeRate: 0 },
+      },
+      build: { skills: ["mortal-blow"] },
+    });
+    const result = useSkill(state, "mortal-blow");
+    expect(result.ok).toBe(true);
+    expect(190 - result.state.actors.gatekeeper.hp).toBeLessThanOrEqual(Math.floor(190 * 0.45));
+    expect(result.state.actors.gatekeeper.hp).toBeGreaterThan(0);
+  });
+
+  it("shares the direct-damage cap across every packet of one ability", () => {
+    const state = start({
+      player: {
+        resolve: 8,
+        resolveMax: 8,
+        stats: { attack: 1000, defense: 1000, critRate: 0, dodgeRate: 0 },
+      },
+      build: { skills: ["mage-arrow-of-harmony"] },
+    });
+    const result = useSkill(state, "mage-arrow-of-harmony");
+    expect(result.ok).toBe(true);
+    expect(190 - result.state.actors.gatekeeper.hp).toBeLessThanOrEqual(Math.floor(190 * 0.45));
+    expect(result.state.events.filter((event) => event.type === "skill-damage")).toHaveLength(1);
+  });
+
+  it("caps attack-payload wounds after the shared damage kernel applies them", () => {
+    const state = start({
+      player: {
+        resolve: 8,
+        resolveMax: 8,
+        statuses: [{ type: "doom-atk", count: 500 }],
+      },
+      enemies: [foe({ resolve: 8, resolveMax: 8 })],
+      build: { skills: ["strike"] },
+    });
+    const result = useSkill(state, "strike");
+    expect(result.ok).toBe(true);
+    expect(statusCount(result.state.actors.gatekeeper.statuses, "doom"))
+      .toBe(Math.floor(190 * 0.30));
+  });
+
+  it("rescales boss-sized delayed damage but preserves the authored countdown", () => {
+    const state = start({
+      player: { resolve: 8, resolveMax: 8 },
+      build: { skills: ["witch-limited-life-sentence"] },
+    });
+    const result = useSkill(state, "witch-limited-life-sentence");
+    expect(result.ok).toBe(true);
+    expect(result.state.scheduledEffects).toContainEqual(expect.objectContaining({
+      skillId: "witch-limited-life-sentence",
+      turnsRemaining: 13,
+      amount: Math.floor(190 * 0.65),
+    }));
+
+    const legacy = useSkill(start({
+      build: { skills: ["witch-limited-life-sentence"] },
+    }), "witch-limited-life-sentence");
+    expect(legacy.state.scheduledEffects).toContainEqual(expect.objectContaining({ amount: 666 }));
+  });
+
+  it("keeps temporary health ceilings on the peer-scale ruleset", () => {
+    const state = start({
+      player: { resolve: 8, resolveMax: 8 },
+      build: { skills: ["witch-forbidden-ritual"] },
+    });
+    const result = useSkill(state, "witch-forbidden-ritual");
+    expect(result.ok).toBe(true);
+    expect(result.state.actors["arctic-knight"].maxHp).toBe(255);
+    expect(result.state.scheduledEffects).toContainEqual(expect.objectContaining({
+      type: "fatal", turnsRemaining: 4,
+    }));
+  });
+
   it("meets Steelskin per hit, so the fight reads off the enemy's mitigation", () => {
     const state = start({ enemies: [foe({ statuses: [{ type: "steelskin", count: 4 }] })] });
     const result = useSkill(state, "strike");
@@ -239,6 +349,36 @@ describe("using skills", () => {
     const before = JSON.stringify(state);
     useSkill(state, "strike");
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+describe("using combat items", () => {
+  it("spends one carried vial and the action through the encounter log", () => {
+    const state = start({
+      player: { hp: 100, resolve: 8, resolveMax: 8 },
+      build: { combatItems: [{ id: "crimson-vial", quantity: 1 }] },
+    });
+    const used = useCombatItem(state, "crimson-vial");
+    expect(used.ok).toBe(true);
+    expect(used.state.actors["arctic-knight"].hp).toBe(142);
+    expect(used.state.turn.actionsRemaining).toBe(0);
+    expect(used.state.build.combatItems).toEqual([]);
+    expect(used.state.events).toContainEqual(expect.objectContaining({
+      type: "combat-item-used", itemId: "crimson-vial", amount: 42,
+    }));
+  });
+
+  it("restores Resolve without exceeding its shared maximum", () => {
+    const state = start({
+      player: { resolve: 6, resolveMax: 8 },
+      build: { combatItems: [{ id: "lucid-tonic", quantity: 1 }] },
+    });
+    const used = useCombatItem(state, "lucid-tonic");
+    expect(used.ok).toBe(true);
+    expect(used.state.actors["arctic-knight"].resolve).toBe(8);
+    expect(used.state.events).toContainEqual(expect.objectContaining({
+      type: "combat-item-used", itemId: "lucid-tonic", amount: 2,
+    }));
   });
 });
 

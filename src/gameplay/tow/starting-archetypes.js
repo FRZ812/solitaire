@@ -3,7 +3,13 @@
 // innate trait, five-action kit, portrait, equipment, and history travel together.
 
 import { itemTemplate } from "../../data/catalog.js";
+import { resolvePoolForMind } from "../../engine/attributes.js";
 import { FIXED_CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
+import {
+  STARTING_COMBAT_ITEMS,
+  getCombatItem,
+  isStartingCombatItem,
+} from "./combat-items.js";
 import { SKILL_SLOTS, getSkill, skillRarityChoices } from "./skills.js";
 import { getFusion, getTrait } from "./traits.js";
 import { startingPackage } from "./starting-packages.js";
@@ -70,6 +76,10 @@ function archetype({
   character,
 }) {
   if (!startingPackage(professionId)) throw new TypeError(`unknown-archetype-profession:${professionId}`);
+  const combatStats = {
+    ...baseStats,
+    resolveMax: baseStats.resolveMax ?? resolvePoolForMind(attributes.mind || 0),
+  };
   return Object.freeze({
     id,
     name,
@@ -83,7 +93,7 @@ function archetype({
     portrait: Object.freeze({ scale: 1, x: "50%", y: "100%", ...portrait }),
     character,
     attributes: Object.freeze({ ...attributes }),
-    baseStats: Object.freeze({ ...baseStats }),
+    baseStats: Object.freeze(combatStats),
     gear: Object.freeze([...gear]),
     source: Object.freeze({ page: TOWER_CHARACTER_SOURCE, label: character.sourceName }),
     build: Object.freeze({
@@ -170,7 +180,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     id: "sleepless-one", name: "Ember Warden", role: "Burn attrition", professionId: "druid", traitId: "ignition",
     skills: ["sleepless-swing", "sleepless-hard-scales", "sleepless-entangling-roots", "sleepless-high-speed-flight", "sleepless-fire-essence"],
     tagline: "Sleep belongs to creatures who believe morning is promised.",
-    playstyle: "Hard Scales buys time for Ignition and Fire Essence to build pressure while roots cancel a dangerous tempo swing. High-Speed Flight converts one precious use into four Priority for a decisive sequence.",
+    playstyle: "Hard Scales buys time for Ignition and Fire Essence to build pressure while roots cancel a dangerous tempo swing. High-Speed Flight commits a large share of Resolve for four Priority and a decisive sequence.",
     attention: "High", attributes: { body: 4, reflex: 3, vigor: 5, mind: 3, wit: 3, presence: 2 },
     baseStats: { maxHp: 190, attack: 12, defense: 15, critRate: 3, dodgeRate: 3 },
     gear: ["iron-spear", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#c45e3f",
@@ -319,7 +329,11 @@ export function getStartingArchetype(id) {
 }
 
 export function createDefaultArchetypeDraft() {
-  return { archetypeId: STARTING_ARCHETYPES[0].id, preview: false };
+  return {
+    archetypeId: STARTING_ARCHETYPES[0].id,
+    keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+    preview: false,
+  };
 }
 
 export function isArchetypePracticeLoadout(archetypeId, skillIds) {
@@ -354,7 +368,13 @@ export function isArchetypePracticeSkillRarities(archetypeId, skillIds, skillRar
 
 export function normalizeArchetypeDraft(input = {}) {
   const selected = getStartingArchetype(input.archetypeId) || STARTING_ARCHETYPES[0];
-  const normalized = { archetypeId: selected.id, preview: input.preview === true };
+  const normalized = {
+    archetypeId: selected.id,
+    keepsakeId: isStartingCombatItem(input.keepsakeId)
+      ? input.keepsakeId
+      : STARTING_COMBAT_ITEMS[0].id,
+    preview: input.preview === true,
+  };
   const hasPracticeLoadout = isArchetypePracticeLoadout(selected.id, input.testSkillIds);
   const practiceSkillIds = hasPracticeLoadout ? input.testSkillIds : selected.build.skills;
   if (hasPracticeLoadout
@@ -427,13 +447,17 @@ export function characterSetupForArchetype(draft) {
     base_appearance: character.baseAppearance,
     portraitKey: character.portraitKey,
     abilities: [],
-    items: selected.gear.map((itemId) => ({ itemId, quantity: 1, worn: true })),
+    items: [
+      ...selected.gear.map((itemId) => ({ itemId, quantity: 1, worn: true })),
+      { itemId: normalized.keepsakeId, quantity: 1, worn: false },
+    ],
     coins: { gold: 2, silver: 5 },
     knows: [
       `I am ${character.name}, ${character.epithet}.`,
       character.history,
       `My source identity is ${character.sourceName}.`,
       "My combat kit has one Basic Attack, one Defensive ability, and three exclusive flexible abilities.",
+      `I carry ${getCombatItem(normalized.keepsakeId).name} as my one starting keepsake.`,
     ],
     profile: {
       source: "tow-authored-character-start",
@@ -500,14 +524,15 @@ export function invalidStartingArchetypes() {
       }
     }
     const stats = selected.baseStats;
-    if (!stats || !Number.isInteger(stats.maxHp) || !Number.isInteger(stats.attack)
+    if (!stats || !Number.isInteger(stats.maxHp) || !Number.isInteger(stats.resolveMax)
+      || stats.resolveMax <= 0 || !Number.isInteger(stats.attack)
       || !Number.isInteger(stats.defense) || !Number.isInteger(stats.critRate)
       || !Number.isInteger(stats.dodgeRate)) {
       invalid.push(`${selected.id}:invalid-base-stats`);
     }
     for (const itemId of selected.gear) {
       if (!itemTemplate(itemId)) invalid.push(`${selected.id}:unknown-item:${itemId}`);
-      if (!getTowStartItemGrant(itemId) && itemTemplate(itemId)?.tier !== "common") {
+      if (!getTowStartItemGrant(itemId)) {
         invalid.push(`${selected.id}:unmapped-power-item:${itemId}`);
       }
     }

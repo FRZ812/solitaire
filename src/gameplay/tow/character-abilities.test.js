@@ -119,7 +119,8 @@ describe("source-calibrated character ability catalogue", () => {
       , id, , , , maxHp, attack, defense, critRate, dodgeRate,
     ]) => [id, { maxHp, attack, defense, critRate, dodgeRate }]));
     for (const archetype of STARTING_ARCHETYPES) {
-      expect(archetype.baseStats).toEqual(expected.get(archetype.id));
+      expect(archetype.baseStats).toMatchObject(expected.get(archetype.id));
+      expect(archetype.baseStats.resolveMax).toBeGreaterThan(0);
     }
   });
 
@@ -291,5 +292,23 @@ describe("source-calibrated character ability catalogue", () => {
     expect(result.ok).toBe(true);
     expect(result.state.build.skills.find((entry) => entry.id === "automaton-barrel-cooling").usesRemaining)
       .toBe(3);
+  });
+
+  it("makes Infinite Power a priced net Resolve recovery in current encounters", () => {
+    const legacy = encounterFor("automaton-infinite-power");
+    const state = {
+      ...legacy,
+      actors: {
+        ...legacy.actors,
+        wanderer: { ...legacy.actors.wanderer, resolve: 5, resolveMax: 8 },
+      },
+    };
+    const result = useSkill(state, "automaton-infinite-power", "foe");
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.wanderer.resolve).toBe(6);
+    expect(result.state.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "resolve-spent", amount: 2 }),
+      expect.objectContaining({ type: "skill-resolve-restored", restored: 3 }),
+    ]));
   });
 });
