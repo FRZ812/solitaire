@@ -35,6 +35,7 @@ import {
   recentCombatReceipts,
 } from "./tow-combat-feedback.js";
 import { combatVfxForIntent } from "./tow-combat-vfx.js";
+import { TowCombatVfxCanvas } from "./TowCombatVfxCanvas.jsx";
 import { combatChoreographyForAction } from "./tow-combat-choreography.js";
 import { towStatusPresentation } from "./tow-combat-status.js";
 import "./tow-combat.css";
@@ -696,9 +697,9 @@ function actorFeedbackStyle(actorId, cues) {
 }
 
 function CombatEffects({ cues }) {
-  if (cues.length === 0) return null;
   return (
     <div className="tow-combat__effects" aria-hidden="true">
+      <TowCombatVfxCanvas cues={cues} />
       {cues.map((cue, index) => {
         const lane = cues
           .slice(0, index)
@@ -717,14 +718,15 @@ function CombatEffects({ cues }) {
             data-action-index={cue.actionIndex ?? 0}
             data-effect-lane={lane}
             data-vfx-profile={profile.key || undefined}
-            data-vfx-source={cue.visual?.assetSource || "family"}
+            data-vfx-source={cue.visual?.assetSource || "canvas"}
+            data-vfx-choreography={cue.visual?.choreography || "single-sweep"}
+            data-vfx-signature={cue.visual?.signatureKey || undefined}
             style={{
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,
               "--tow-effect-x": `${laneX}px`,
               "--tow-effect-y": `${laneY}px`,
             }}
           >
-            {cue.visual?.asset ? <img className="tow-combat__effect-asset" src={cue.visual.asset} alt="" /> : null}
             {cue.outcomeAsset && cue.outcomeAsset !== cue.visual?.asset ? (
               <img className="tow-combat__effect-outcome" src={cue.outcomeAsset} alt="" />
             ) : null}

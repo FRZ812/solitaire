@@ -1236,11 +1236,22 @@
   pointer-events: none;
 }
 
+.tow-combat__vfx-canvas {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  contain: strict;
+}
+
 .tow-combat__effect {
   --tow-effect-accent: #f08a72;
-  --tow-vfx-scale: 1;
-  --tow-vfx-rotate: 0deg;
   position: absolute;
+  z-index: 2;
   width: 9.5rem;
   height: 9.5rem;
   opacity: 0;
@@ -1263,7 +1274,6 @@
 .tow-combat__effect--enemy { top: 18%; right: 17%; }
 .tow-combat__effect--player { bottom: 13%; left: 17%; }
 
-.tow-combat__effect-asset,
 .tow-combat__effect-outcome {
   position: absolute;
   inset: -12%;
@@ -1273,7 +1283,7 @@
   object-fit: contain;
   mix-blend-mode: screen;
   filter: drop-shadow(0 0 0.75rem var(--tow-effect-accent));
-  animation: tow-vfx-bloom 820ms cubic-bezier(.15,.82,.2,1) var(--tow-effect-delay, 0ms) both;
+  animation: tow-vfx-outcome 820ms cubic-bezier(.15,.82,.2,1) var(--tow-effect-delay, 0ms) both;
 }
 
 .tow-combat__bar--resolve {
@@ -1299,7 +1309,6 @@
   width: 102%;
   height: 102%;
   opacity: 0.88;
-  animation-name: tow-vfx-outcome;
 }
 
 .tow-combat__effect-particles,
@@ -1385,7 +1394,6 @@
 
 .tow-combat__effect--critical {
   --tow-effect-accent: #ffd36f;
-  --tow-vfx-scale: 1.18;
 }
 .tow-combat__effect--critical b > span { font-size: 2.18rem; color: #fff1ad; }
 .tow-combat__effect--critical::before {
@@ -1420,144 +1428,19 @@
 .tow-combat__effect--vfx-afflict { --tow-effect-accent: #c080ec; }
 .tow-combat__effect--vfx-frost { --tow-effect-accent: #a2edff; }
 .tow-combat__effect--vfx-wind { --tow-effect-accent: #8ce1ce; }
+.tow-combat__effect--vfx-mechanical { --tow-effect-accent: #e0a95a; }
+.tow-combat__effect--vfx-nature { --tow-effect-accent: #78d486; }
+.tow-combat__effect--vfx-radiant { --tow-effect-accent: #ffd76c; }
+.tow-combat__effect--vfx-toxic { --tow-effect-accent: #69d99b; }
+.tow-combat__effect--vfx-void { --tow-effect-accent: #b86cf4; }
 
-.tow-combat__effect--vfx-slash .tow-combat__effect-asset,
-.tow-combat__effect--vfx-gash .tow-combat__effect-asset { animation-name: tow-vfx-cut; }
-.tow-combat__effect--vfx-pierce .tow-combat__effect-asset { animation-name: tow-vfx-pierce; }
-.tow-combat__effect--vfx-impact .tow-combat__effect-asset { animation-name: tow-vfx-impact; }
-.tow-combat__effect--vfx-fire .tow-combat__effect-asset { animation-name: tow-vfx-fire; }
-.tow-combat__effect--vfx-lightning .tow-combat__effect-asset { animation-name: tow-vfx-lightning; }
-.tow-combat__effect--vfx-arcane .tow-combat__effect-asset,
-.tow-combat__effect--vfx-afflict .tow-combat__effect-asset { animation-name: tow-vfx-sigil; }
-.tow-combat__effect--vfx-ward .tow-combat__effect-asset { animation-name: tow-vfx-ward; }
-.tow-combat__effect--vfx-evade .tow-combat__effect-asset { animation-name: tow-vfx-evade; }
-.tow-combat__effect--vfx-heal .tow-combat__effect-asset { animation-name: tow-vfx-heal; }
-.tow-combat__effect--vfx-frost .tow-combat__effect-asset { animation-name: tow-vfx-frost; }
-.tow-combat__effect--vfx-wind .tow-combat__effect-asset { animation-name: tow-vfx-whirlwind; }
-
-/* Ability-specific motion identities: the data-vfx variant stays authored per skill/form,
-   while these motion roles control the weight of its dedicated effect family. */
-.tow-combat__effect:is(.tow-combat__effect--motion-heavy, .tow-combat__effect--motion-quake, .tow-combat__effect--motion-execution) {
-  --tow-vfx-scale: 1.3;
-}
-.tow-combat__effect--motion-rapid,
-.tow-combat__effect--motion-flurry,
-.tow-combat__effect--motion-shadow-flurry { --tow-vfx-scale: 0.92; }
-.tow-combat__effect--motion-inferno .tow-combat__effect-asset { filter: drop-shadow(0 0 1.2rem #ff4a18) saturate(1.45); }
-.tow-combat__effect--motion-radiant .tow-combat__effect-asset { filter: drop-shadow(0 0 1.15rem #ffe49a) brightness(1.25); }
-.tow-combat__effect--motion-shadow .tow-combat__effect-asset,
-.tow-combat__effect--motion-shadow-flurry .tow-combat__effect-asset { filter: drop-shadow(0 0 1rem #9a54d7) hue-rotate(225deg); }
-.tow-combat__effect--motion-void .tow-combat__effect-asset { filter: drop-shadow(0 0 1rem #b55fe8) saturate(1.35); }
-.tow-combat__effect:is(.tow-combat__effect--motion-projectile, .tow-combat__effect--motion-pin, .tow-combat__effect--motion-bolt) {
-  --tow-vfx-scale: 0.86;
-  --tow-vfx-rotate: -9deg;
-}
-.tow-combat__effect:is(.tow-combat__effect--motion-projectile, .tow-combat__effect--motion-pin, .tow-combat__effect--motion-bolt) .tow-combat__effect-asset {
-  animation-duration: 690ms;
-}
-.tow-combat__effect:is(.tow-combat__effect--motion-volley, .tow-combat__effect--motion-barrage) {
-  --tow-vfx-scale: 1.12;
-}
-.tow-combat__effect:is(.tow-combat__effect--motion-volley, .tow-combat__effect--motion-barrage) .tow-combat__effect-particles i::before {
-  height: 2.1rem;
-  animation-duration: 900ms;
-}
-.tow-combat__effect--motion-cyclone .tow-combat__effect-asset { animation-name: tow-vfx-whirlwind; }
-.tow-combat__effect:is(.tow-combat__effect--motion-charge, .tow-combat__effect--motion-flash, .tow-combat__effect--motion-snap) .tow-combat__effect-asset {
-  animation-duration: 610ms;
-  filter: drop-shadow(0 0 1.15rem var(--tow-effect-accent)) brightness(1.28);
-}
-.tow-combat__effect:is(.tow-combat__effect--motion-brace, .tow-combat__effect--motion-fortress, .tow-combat__effect--motion-curtain) {
-  --tow-vfx-scale: 1.18;
-}
-.tow-combat__effect:is(.tow-combat__effect--motion-bind, .tow-combat__effect--motion-summon, .tow-combat__effect--motion-ascend) .tow-combat__effect-asset {
-  animation-duration: 1040ms;
-}
-.tow-combat__effect--motion-siphon .tow-combat__effect-asset { filter: drop-shadow(0 0 1.1rem #d44f78) hue-rotate(305deg); }
+/* Choreography, scale, and directional timing now live in the high-DPI Canvas renderer.
+   These DOM effects are intentionally limited to readable outcomes and contact receipts. */
 
 @keyframes tow-effect-life {
   0% { opacity: 0; }
   8%, 72% { opacity: 1; }
   100% { opacity: 0; }
-}
-
-@keyframes tow-vfx-bloom {
-  0% { opacity: 0; transform: scale(0.28) rotate(-12deg); filter: blur(0.55rem) drop-shadow(0 0 0 var(--tow-effect-accent)); }
-  25% { opacity: 1; transform: scale(calc(var(--tow-vfx-scale) * 1.08)) rotate(var(--tow-vfx-rotate)); filter: blur(0) drop-shadow(0 0 0.9rem var(--tow-effect-accent)); }
-  72% { opacity: 0.8; }
-  100% { opacity: 0; transform: scale(calc(var(--tow-vfx-scale) * 1.35)) rotate(calc(var(--tow-vfx-rotate) + 5deg)); }
-}
-
-@keyframes tow-vfx-whirlwind {
-  0% { opacity: 0; transform: translateY(16%) scale(0.42); filter: blur(0.55rem); }
-  24% { opacity: 1; transform: translateY(0) scale(0.96); filter: blur(0) drop-shadow(0 0 0.9rem var(--tow-effect-accent)); }
-  64% { opacity: 0.9; transform: translateY(-4%) scale(1.12); }
-  100% { opacity: 0; transform: translateY(-12%) scale(1.38); filter: blur(0.14rem) drop-shadow(0 0 1.15rem var(--tow-effect-accent)); }
-}
-
-@keyframes tow-vfx-cut {
-  0% { opacity: 0; transform: translate(-42%, 34%) scale(0.35) rotate(-18deg); filter: blur(0.55rem); }
-  22% { opacity: 1; transform: translate(0, 0) scale(var(--tow-vfx-scale)) rotate(0); filter: blur(0) drop-shadow(0 0 0.9rem var(--tow-effect-accent)); }
-  62% { opacity: 0.92; }
-  100% { opacity: 0; transform: translate(20%, -17%) scale(calc(var(--tow-vfx-scale) * 1.17)) rotate(4deg); }
-}
-
-@keyframes tow-vfx-pierce {
-  0% { opacity: 0; transform: translate(-62%, 23%) scale(0.24) rotate(-8deg); filter: blur(0.6rem); }
-  18% { opacity: 1; transform: translate(5%, -2%) scale(calc(var(--tow-vfx-scale) * 1.12)) rotate(0); filter: blur(0) drop-shadow(0 0 1rem var(--tow-effect-accent)); }
-  45% { opacity: 0.96; }
-  100% { opacity: 0; transform: translate(34%, -14%) scale(calc(var(--tow-vfx-scale) * 0.92)); }
-}
-
-@keyframes tow-vfx-impact {
-  0% { opacity: 0; transform: scale(1.8); filter: blur(0.7rem); }
-  17% { opacity: 1; transform: scale(calc(var(--tow-vfx-scale) * 0.72)); filter: blur(0) drop-shadow(0 0 1.1rem var(--tow-effect-accent)); }
-  35% { transform: scale(calc(var(--tow-vfx-scale) * 1.17)); }
-  100% { opacity: 0; transform: scale(calc(var(--tow-vfx-scale) * 1.45)); }
-}
-
-@keyframes tow-vfx-fire {
-  0% { opacity: 0; transform: translateY(34%) scale(0.52); filter: blur(0.6rem); }
-  24% { opacity: 1; transform: translateY(0) scale(var(--tow-vfx-scale)); filter: blur(0) drop-shadow(0 0 1.1rem var(--tow-effect-accent)); }
-  100% { opacity: 0; transform: translateY(-27%) scale(calc(var(--tow-vfx-scale) * 1.22)); filter: blur(0.12rem); }
-}
-
-@keyframes tow-vfx-lightning {
-  0%, 11%, 31%, 47% { opacity: 0; transform: scale(1.12) translateX(-4%); }
-  8%, 18%, 38% { opacity: 1; transform: scale(var(--tow-vfx-scale)) translateX(3%); filter: brightness(1.65) drop-shadow(0 0 1rem var(--tow-effect-accent)); }
-  100% { opacity: 0; transform: scale(1.3); }
-}
-
-@keyframes tow-vfx-sigil {
-  0% { opacity: 0; transform: scale(0.2) rotate(-80deg); filter: blur(0.5rem); }
-  28% { opacity: 1; transform: scale(var(--tow-vfx-scale)) rotate(0); filter: blur(0) drop-shadow(0 0 1rem var(--tow-effect-accent)); }
-  100% { opacity: 0; transform: scale(1.25) rotate(36deg); }
-}
-
-@keyframes tow-vfx-ward {
-  0% { opacity: 0; transform: scale(0.45); }
-  23% { opacity: 1; transform: scale(calc(var(--tow-vfx-scale) * 1.08)); filter: drop-shadow(0 0 1.25rem var(--tow-effect-accent)); }
-  54% { transform: scale(var(--tow-vfx-scale)); }
-  100% { opacity: 0; transform: scale(1.22); }
-}
-
-@keyframes tow-vfx-evade {
-  0% { opacity: 0; transform: translateX(33%) skewX(-13deg); filter: blur(0.55rem); }
-  23% { opacity: 1; transform: translateX(-8%) skewX(-5deg); filter: blur(0) drop-shadow(0 0 0.8rem var(--tow-effect-accent)); }
-  100% { opacity: 0; transform: translateX(-47%) skewX(-13deg); filter: blur(0.24rem); }
-}
-
-@keyframes tow-vfx-heal {
-  0% { opacity: 0; transform: translateY(24%) scale(0.55); }
-  28% { opacity: 1; transform: translateY(0) scale(var(--tow-vfx-scale)); filter: drop-shadow(0 0 1rem var(--tow-effect-accent)); }
-  100% { opacity: 0; transform: translateY(-28%) scale(1.18); }
-}
-
-@keyframes tow-vfx-frost {
-  0% { opacity: 0; transform: scale(0.18) rotate(-32deg); filter: blur(0.45rem); }
-  26% { opacity: 1; transform: scale(var(--tow-vfx-scale)) rotate(0); filter: brightness(1.3) drop-shadow(0 0 1rem var(--tow-effect-accent)); }
-  68% { opacity: 0.9; transform: scale(1.06) rotate(8deg); }
-  100% { opacity: 0; transform: scale(1.34) rotate(18deg); }
 }
 
 @keyframes tow-vfx-outcome {
