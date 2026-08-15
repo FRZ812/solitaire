@@ -718,7 +718,10 @@ function CombatEffects({ cues }) {
             data-action-index={cue.actionIndex ?? 0}
             data-effect-lane={lane}
             data-vfx-profile={profile.key || undefined}
-            data-vfx-source={cue.visual?.assetSource || "canvas"}
+            data-vfx-source={cue.visual?.assetSource || "none"}
+            data-vfx-atlas={cue.visual?.flipbook?.id || undefined}
+            data-vfx-frames={cue.visual?.flipbook?.frameCount || undefined}
+            data-vfx-frame-range={cue.visual?.flipbook?.frameRange?.join("-") || undefined}
             data-vfx-choreography={cue.visual?.choreography || "single-sweep"}
             data-vfx-signature={cue.visual?.signatureKey || undefined}
             style={{

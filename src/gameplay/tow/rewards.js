@@ -132,7 +132,7 @@ function describe(candidate, build) {
     kind: "skill",
     id: candidate.id,
     name: skill.name,
-    detail: `${skill.rarity} ${skill.abilityType === "general" ? "general ability" : skill.exclusiveTo ? "exclusive ability" : "action"}${
+    detail: `${skill.rarity} ${skill.abilityType === "general" ? "general ability" : skill.exclusiveTo ? "archetype ability" : "action"}${
       skill.consumesTurn ? "" : ", keeps action"
     }${requiresReplacement ? ` · replaces the ${family} slot` : ""}`,
     requiresReplacement,

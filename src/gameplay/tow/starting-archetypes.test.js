@@ -149,8 +149,8 @@ describe("disposable practice loadouts", () => {
   });
 });
 
-describe("one atomic source-character start", () => {
-  it("creates identity, source stats, portrait, equipment, and durable build without limbo", () => {
+describe("one atomic modular-archetype start", () => {
+  it("creates representative identity, source stats, portrait, equipment, and durable build without limbo", () => {
     const state = makeInitialState();
     const archetype = getStartingArchetype("forsaken-automaton");
     const setup = characterSetupForArchetype({ archetypeId: archetype.id });
@@ -211,7 +211,7 @@ describe("one atomic source-character start", () => {
       .toBe(DEFAULT_STARTING_KEEPSAKE_ID);
   });
 
-  it("locks all twelve entries to complete identities and five-action source kits", () => {
+  it("keeps all twelve modular kits complete without restoring source protagonists", () => {
     expect(STARTING_ARCHETYPES).toHaveLength(TOWER_ROSTER_SIZE);
     const names = new Set();
     for (const archetype of STARTING_ARCHETYPES) {
@@ -223,10 +223,11 @@ describe("one atomic source-character start", () => {
       expect(setup.name).toBe(archetype.character.name);
       expect(setup.portraitKey).toBe(archetype.character.portraitKey);
       expect(setup.profile).toMatchObject({
-        source: "tow-authored-character-start",
-        sourceName: archetype.character.sourceName,
-        characterId: archetype.character.id,
+        source: "tow-modular-archetype-start",
+        identityMode: "modular-archetype",
         characterName: archetype.character.name,
+        archetypeId: archetype.id,
+        legacyArchetypeId: archetype.legacyId,
       });
       expect(setup).not.toHaveProperty("templateId");
       expect(setup.level).toBe(1);
@@ -239,5 +240,35 @@ describe("one atomic source-character start", () => {
       names.add(setup.name);
     }
     expect(names.size).toBe(TOWER_ROSTER_SIZE);
+  });
+
+  it("migrates legacy ids while allowing authored identity to remain independent", () => {
+    const normalized = normalizeArchetypeDraft({
+      archetypeId: "demon-slayer",
+      identity: {
+        name: "Tala Reed",
+        race: "human",
+        origin: "west",
+        gender: "female",
+        age: 36,
+        appearance: { hair: "close-cropped black" },
+        baseAppearance: "A weathered ranger carrying a compact field bow.",
+      },
+    });
+    expect(normalized.archetypeId).toBe("ranger");
+    const setup = characterSetupForArchetype(normalized);
+    expect(setup).toMatchObject({
+      name: "Tala Reed",
+      archetype: "ranger",
+      combatArchetypeId: "ranger",
+      profession: "ranger",
+      race: "human",
+      origin: "west",
+      gender: "female",
+      age: 36,
+      portraitKey: "tow:ranger",
+    });
+    expect(setup.appearance.hair).toBe("close-cropped black");
+    expect(getStartingArchetype("demon-slayer")).toBe(getStartingArchetype("ranger"));
   });
 });

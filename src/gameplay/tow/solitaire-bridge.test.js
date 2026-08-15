@@ -132,7 +132,7 @@ describe("bestiary enemies cross the bridge", () => {
     expect(actor.hp).toBe(18);
     expect(actor.maxHp).toBe(24);
     expect(actor.stats).toEqual({ attack: 5, defense: 3, critRate: 0, dodgeRate: 5 });
-    expect(archetypeId).toBe("arctic-knight");
+    expect(archetypeId).toBe("knight");
     expect(build).toEqual(getStartingArchetype(archetypeId).build);
   });
 

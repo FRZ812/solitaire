@@ -1,9 +1,14 @@
-// The complete playable Tower of Winter roster, translated into Solitaire's authored
-// character-start contract. Selection chooses a whole person: source identity, base stats,
-// innate trait, five-action kit, portrait, equipment, and history travel together.
+// The complete Tower of Winter rules roster, rebuilt as reusable Solitaire archetypes.
+// A selection chooses a combat chassis, trait, five-action kit, equipment package, and
+// representative portrait. It does not choose a prewritten protagonist. Source ids remain
+// migration aliases so existing saves and replays continue to resolve the same mechanics.
 
 import { itemTemplate } from "../../data/catalog.js";
 import { resolvePoolForMind } from "../../engine/attributes.js";
+import {
+  getTowArchetypeIdentity,
+  sameTowArchetype,
+} from "./archetype-identities.js";
 import { FIXED_CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
 import {
   DEFAULT_STARTING_KEEPSAKE_ID,
@@ -18,49 +23,36 @@ import { describeTowItems, getTowStartItemGrant } from "./start-items.js";
 export const TOWER_CHARACTER_SOURCE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91/%EC%BA%90%EB%A6%AD%ED%84%B0";
 export const TOWER_ROSTER_SIZE = 12;
 
-function authoredCharacter({
-  id,
-  name,
-  sourceName,
-  epithet,
-  summary,
-  history,
-  race,
-  kindLabel = null,
-  origin,
-  gender,
-  age,
-  agingMode = "mortal",
-  lifespanMultiplier = 1,
-  appearance,
-  baseAppearance,
-}) {
+function archetypeRepresentative(identity) {
+  const defaults = identity.defaults;
   return Object.freeze({
-    id,
-    name,
-    sourceName,
-    epithet,
-    summary,
-    history,
-    portraitKey: `tow:${id}`,
-    race,
-    subrace: null,
-    kindLabel,
-    origin,
-    gender,
-    age,
-    agingMode,
-    lifespanMultiplier,
-    appearance: Object.freeze({ ...appearance }),
-    baseAppearance,
-    source: Object.freeze({ page: TOWER_CHARACTER_SOURCE, label: sourceName }),
+    id: identity.id,
+    name: identity.name,
+    sourceName: identity.name,
+    epithet: identity.descriptor,
+    summary: identity.summary,
+    history: identity.design,
+    portraitKey: `tow:${identity.id}`,
+    race: defaults.race,
+    subrace: defaults.subrace || null,
+    kindLabel: defaults.kindLabel || null,
+    origin: defaults.origin,
+    gender: defaults.gender,
+    age: defaults.age,
+    agingMode: defaults.agingMode,
+    lifespanMultiplier: defaults.lifespanMultiplier,
+    appearance: defaults.appearance,
+    baseAppearance: identity.portraitDirection,
+    source: Object.freeze({
+      page: TOWER_CHARACTER_SOURCE,
+      label: identity.name,
+      legacyId: identity.legacyId,
+    }),
   });
 }
 
 function archetype({
   id,
-  name,
-  role,
   professionId,
   traitId,
   traitRank = 3,
@@ -73,17 +65,27 @@ function archetype({
   gear,
   color,
   portrait = {},
-  character,
 }) {
+  const identity = getTowArchetypeIdentity(id);
+  if (!identity) throw new TypeError(`unknown-archetype-identity:${id}`);
   if (!startingPackage(professionId)) throw new TypeError(`unknown-archetype-profession:${professionId}`);
   const combatStats = {
     ...baseStats,
     resolveMax: baseStats.resolveMax ?? resolvePoolForMind(attributes.mind || 0),
   };
+  const representative = archetypeRepresentative(identity);
   return Object.freeze({
-    id,
-    name,
-    role,
+    id: identity.id,
+    legacyId: identity.legacyId,
+    mechanicsId: identity.legacyId,
+    name: identity.name,
+    role: identity.role,
+    descriptor: identity.descriptor,
+    summary: identity.summary,
+    design: identity.design,
+    palette: identity.palette,
+    materials: identity.materials,
+    vfxTheme: identity.vfxTheme,
     power: "Expedition",
     professionId,
     tagline,
@@ -91,11 +93,18 @@ function archetype({
     attention,
     color,
     portrait: Object.freeze({ scale: 1, x: "50%", y: "100%", ...portrait }),
-    character,
+    // Compatibility name for creation surfaces that already consume `character`; this is
+    // an archetype representative, never a canonical person or source protagonist.
+    character: representative,
+    representative,
     attributes: Object.freeze({ ...attributes }),
     baseStats: Object.freeze(combatStats),
     gear: Object.freeze([...gear]),
-    source: Object.freeze({ page: TOWER_CHARACTER_SOURCE, label: character.sourceName }),
+    source: Object.freeze({
+      page: TOWER_CHARACTER_SOURCE,
+      label: identity.name,
+      legacyId: identity.legacyId,
+    }),
     build: Object.freeze({
       traits: Object.freeze({ [traitId]: traitRank }),
       skills: Object.freeze([...skills]),
@@ -106,223 +115,130 @@ function archetype({
 
 export const STARTING_ARCHETYPES = Object.freeze([
   archetype({
-    id: "arctic-knight", name: "Shield Vanguard", role: "Ward and retaliation", professionId: "fighter", traitId: "ironclad",
+    id: "knight", professionId: "fighter", traitId: "ironclad",
     skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration", "arctic-mortal-blow"],
-    tagline: "Stand between the expedition and the end of the world.",
+    tagline: "Hold the line, create the opening, answer with steel.",
     playstyle: "The most forgiving front-line kit: absorb a declared attack, answer without surrendering defence, then accept Incineration's dangerous recoil to end a crisis.",
     attention: "Low", attributes: { body: 4, reflex: 3, vigor: 4, mind: 2, wit: 3, presence: 3 },
     baseStats: { maxHp: 170, attack: 12, defense: 13, critRate: 9, dodgeRate: 4 },
-    gear: ["arming-sword", "chain-shirt", "round-shield", "traveling-cloak", "marching-boots"], color: "#c89a58",
-    character: authoredCharacter({
-      id: "arctic-knight", name: "Arctic Knight", sourceName: "극지의 기사", epithet: "The Last Shield",
-      summary: "A weathered northern veteran who treats survival as a duty owed to everyone behind the shield.",
-      history: "The Arctic Knight has watched expedition after expedition disappear into the white. He returns not because he expects glory, but because someone must remember how the dead fought and carry that knowledge one floor farther.",
-      race: "human", origin: "north", gender: "male", age: 43,
-      appearance: { skin: "weathered fair", hair: "iron-grey", eyes: "pale blue", build: "broad and battle-scarred", marks: "an old scar crossing one eye" },
-      baseAppearance: "A broad northern veteran in fur-lined plate, one pale eye watchful above a scar, sword and heavy shield worn by long campaigns.",
-    }),
+    gear: ["arming-sword", "chain-shirt", "round-shield", "traveling-cloak", "marching-boots"], color: "#8293a8",
   }),
   archetype({
-    id: "demon-slayer", name: "Venom Hunter", role: "Ranged control", professionId: "ranger", traitId: "quickness",
+    id: "ranger", professionId: "ranger", traitId: "quickness",
     skills: ["demon-shoot", "demon-evasion", "demon-kick", "demon-arrow-rain", "demon-trackers-net"],
-    tagline: "Every monster leaves a trail. Every trail ends.",
-    playstyle: "Open at range, deny a lethal turn with Evasion or Kick, then let Arrow Rain turn every on-hit poison effect into a storm.",
+    tagline: "Read the ground, control the range, choose the shot.",
+    playstyle: "Open at range, deny a lethal turn with Evasion or Kick, then let Rain of Arrows turn every prepared on-hit effect into a storm.",
     attention: "Medium", attributes: { body: 2, reflex: 5, vigor: 3, mind: 2, wit: 4, presence: 3 },
     baseStats: { maxHp: 160, attack: 13, defense: 12, critRate: 9, dodgeRate: 5 },
-    gear: ["hunting-bow", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#9eaa62",
+    gear: ["hunting-bow", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#758a58",
     portrait: { scale: 1.04, x: "48%" },
-    character: authoredCharacter({
-      id: "demon-slayer", name: "Demon Slayer", sourceName: "악마 살육자", epithet: "The Relentless Quarry",
-      summary: "A bounty hunter whose caution was forged by grief and whose arrows are prepared for things that refuse to die.",
-      history: "She learned the bow as a child and later hunted criminals to support her younger sister. When cultists turned that sister's expedition into a nightmare, the hunter followed their trail north and stopped taking contracts she did not choose herself.",
-      race: "human", origin: "east", gender: "female", age: 31,
-      appearance: { skin: "winter-pale", hair: "dark auburn", eyes: "hazel", build: "compact and athletic", marks: "poison burns along two fingers" },
-      baseAppearance: "A compact winter hunter in layered furs, bow and crossbow tools close at hand, poison vials secured against the cold.",
-    }),
   }),
   archetype({
-    id: "owner-of-clocktower", name: "Clockwork Savant", role: "Free-action controller", professionId: "artificer", traitId: "innovation",
+    id: "artificer", professionId: "artificer", traitId: "innovation",
     skills: ["clocktower-fire", "clocktower-suppressive-shot", "clocktower-missile-support", "clocktower-redesign", "clocktower-improvement"],
-    tagline: "A perfect design is merely the next failed design, corrected.",
+    tagline: "Measure the fault, build the answer, recalibrate under fire.",
     playstyle: "Suppress incoming pressure, layer a free missile strike over the main action, and Redesign ATK and DEF into exactly the buffs the next turn needs.",
     attention: "High", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 5, presence: 3 },
     baseStats: { maxHp: 150, attack: 14, defense: 14, critRate: 9, dodgeRate: 4 },
-    gear: ["light-crossbow", "padded-gambeson", "leather-bracers", "traveling-cloak"], color: "#62a8ad",
+    gear: ["light-crossbow", "padded-gambeson", "leather-bracers", "traveling-cloak"], color: "#5b9296",
     portrait: { scale: 1.02, x: "52%" },
-    character: authoredCharacter({
-      id: "owner-of-clocktower", name: "Owner of Clocktower", sourceName: "시계탑의 주인", epithet: "The Youngest Master",
-      summary: "A prodigious engineer who records every failure and trusts a mechanism only after surviving its worst possibility.",
-      history: "The Clocktower chose its youngest master while other scholars still called her a student. When missing researchers sent a signal from the north and politics divided her order, she packed the designs no committee would approve and answered it herself.",
-      race: "human", origin: "central", gender: "female", age: 21,
-      appearance: { skin: "warm ivory", hair: "black, cut to the jaw", eyes: "grey", build: "slight", marks: "copper-lensed workshop goggles" },
-      baseAppearance: "A young magitech engineer with a precision weapon, brass mechanisms, barrier emitters, and the composed stare of a practiced lecturer.",
-    }),
   }),
   archetype({
-    id: "old-king-of-northland", name: "Storm Tyrant", role: "Axe sustain", professionId: "barbarian", traitId: "valiancy",
+    id: "berserker", professionId: "barbarian", traitId: "valiancy",
     skills: ["north-king-cleave", "north-king-vitality", "north-king-whirlwind", "north-king-earthquake", "north-king-neutralizing-blow"],
-    tagline: "A crown can be taken. A king's weight cannot.",
-    playstyle: "Every repeated hit compounds Valiancy. Whirlwind erodes the foe, Vitality erases attrition, and Earthquake ends the argument with overwhelming scale.",
+    tagline: "Momentum is armour when the pressure never breaks.",
+    playstyle: "Every repeated hit compounds Valiancy. Whirlwind erodes the foe, Vitality erases attrition, and Earthquake ends the exchange with overwhelming scale.",
     attention: "Medium", attributes: { body: 5, reflex: 2, vigor: 4, mind: 2, wit: 3, presence: 5 },
     baseStats: { maxHp: 180, attack: 13, defense: 13, critRate: 6, dodgeRate: 4 },
-    gear: ["battle-axe", "chain-shirt", "traveling-cloak", "marching-boots"], color: "#b66e4a",
+    gear: ["battle-axe", "chain-shirt", "traveling-cloak", "marching-boots"], color: "#a45d43",
     portrait: { scale: 1.07, x: "49%" },
-    character: authoredCharacter({
-      id: "old-king-of-northland", name: "Old King of Northland", sourceName: "북부의 옛 왕", epithet: "The Uncrowned Avalanche",
-      summary: "A defeated northern ruler whose prison could contain his body but never convince him that the war was over.",
-      history: "After his realm fell, the old king traded court for a prison yard and made an unlikely ally of its warden. The dead rose beneath their feet; he killed them, surrendered the credit, and walked out toward the Tower with one last campaign left in him.",
-      race: "human", origin: "north", gender: "male", age: 61,
-      appearance: { skin: "ruddy and scarred", hair: "white", eyes: "ice blue", build: "massive", facial_hair: "heavy white beard" },
-      baseAppearance: "A massive elderly warrior in bear-marked northern furs, white beard wind-torn, both hands resting on a brutal axe.",
-    }),
   }),
   archetype({
-    id: "sleepless-one", name: "Ember Warden", role: "Burn attrition", professionId: "druid", traitId: "ignition",
+    id: "sorcerer", professionId: "druid", traitId: "ignition",
     skills: ["sleepless-swing", "sleepless-hard-scales", "sleepless-entangling-roots", "sleepless-high-speed-flight", "sleepless-fire-essence"],
-    tagline: "Sleep belongs to creatures who believe morning is promised.",
-    playstyle: "Hard Scales buys time for Ignition and Fire Essence to build pressure while roots cancel a dangerous tempo swing. High-Speed Flight commits a large share of Resolve for four Priority and a decisive sequence.",
+    tagline: "Shape the element before it shapes the battlefield.",
+    playstyle: "Arcane Ward buys time for Ignition and Fire Essence to build pressure while binding growth cancels a dangerous tempo swing. Arcane Flight commits Resolve for four Priority and a decisive sequence.",
     attention: "High", attributes: { body: 4, reflex: 3, vigor: 5, mind: 3, wit: 3, presence: 2 },
     baseStats: { maxHp: 190, attack: 12, defense: 15, critRate: 3, dodgeRate: 3 },
-    gear: ["iron-spear", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#c45e3f",
+    gear: ["iron-spear", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#b95e46",
     portrait: { scale: 1.08, y: "102%" },
-    character: authoredCharacter({
-      id: "sleepless-one", name: "Sleepless One", sourceName: "잠 못드는 자", epithet: "The Last Warm Scale",
-      summary: "A cold-blooded guardian carrying a living ember through a winter that has erased every natural season.",
-      history: "The Sleepless One remembers wetlands before the ice and nests that no longer hatch. Fire is not rage to this survivor; it is memory, shelter, and the promise that the world can still be made habitable.",
-      race: "drakeborn", kindLabel: "Reptilian", origin: "far-wild", gender: "male", age: 47, lifespanMultiplier: 1.7,
-      appearance: { skin: "charcoal scales", hair: "none", eyes: "ember orange", build: "heavy and long-limbed", marks: "a fire-bright throat frill" },
-      baseAppearance: "A heavy reptilian warrior with charcoal scales, ember-bright eyes, a tribal spear, and heat shimmering along the throat and claws.",
-    }),
   }),
   archetype({
-    id: "last-assassin", name: "Crumble Executioner", role: "Multi-hit finisher", professionId: "rogue", traitId: "assassin",
+    id: "rogue", professionId: "rogue", traitId: "assassin",
     skills: ["assassin-flurry", "assassin-deflect", "assassin-flash-bomb", "assassin-execution", "assassin-storm-of-knives"],
-    tagline: "One opening is enough. Two blades make certain.",
-    playstyle: "Chain Slash turns Assassin's Eviscerate into permanent Limp. Parrying answers multi-hit intent, Flashbang steals a command, and Behead converts the opening into a heavy strike that clears the enemy's Limp.",
+    tagline: "Create one opening, then make it decisive.",
+    playstyle: "Chain Slash turns Eviscerate into permanent Limp. Parrying answers multi-hit intent, Flashbang steals a command, and Execution converts the opening into a heavy finishing strike.",
     attention: "High", attributes: { body: 3, reflex: 5, vigor: 3, mind: 2, wit: 5, presence: 2 },
     baseStats: { maxHp: 160, attack: 14, defense: 11, critRate: 12, dodgeRate: 5 },
-    gear: ["twin-daggers", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#8b78a8",
+    gear: ["twin-daggers", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#756686",
     portrait: { scale: 1.03, x: "47%" },
-    character: authoredCharacter({
-      id: "last-assassin", name: "Last Assassin", sourceName: "최후의 암살자", epithet: "The Final Footstep",
-      summary: "The sole surviving practitioner of a school whose techniques now exist only when this killer moves.",
-      history: "Names, masters, and safe houses vanished one by one until only a sequence of footsteps remained. The Last Assassin follows that sequence into the Tower, hunting the hand that knew where every hidden door was.",
-      race: "human", origin: "east", gender: "male", age: 28,
-      appearance: { skin: "olive", hair: "black, bound close", eyes: "dark brown", build: "lean", marks: "a cut through the lower lip" },
-      baseAppearance: "A lean assassin in a close dark winter cloak, paired blades low at the hips and a flash charge hidden in one gloved palm.",
-    }),
   }),
   archetype({
-    id: "witch-of-eternity", name: "Bone Sovereign", role: "Army and burst", professionId: "warlock", traitId: "necromancy",
+    id: "warlock", professionId: "warlock", traitId: "necromancy",
     skills: ["witch-attack", "witch-bone-shield", "witch-skeleton-summon", "witch-all-out-attack", "witch-mirror-image"],
-    tagline: "Nothing is gone while the bones still answer.",
-    playstyle: "Accumulate Skeletons passively and actively, weather pressure with Bone Shield, then direct five rapid attacks through the opening.",
+    tagline: "Every pact has a price; make the enemy pay first.",
+    playstyle: "Accumulate summoned remnants passively and actively, weather pressure with Bone Shield, then direct five rapid attacks through the opening.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 4, presence: 4 },
     baseStats: { maxHp: 150, attack: 10, defense: 16, critRate: 12, dodgeRate: 5 },
-    gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#8f769e",
+    gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#80698e",
     portrait: { scale: 1.06, x: "51%" },
-    character: authoredCharacter({
-      id: "witch-of-eternity", name: "Witch of Eternity", sourceName: "영겁의 마녀", epithet: "Keeper of the Unquiet Host",
-      summary: "An ancient necromancer who remembers the dead as individuals even while commanding them as an army.",
-      history: "Centuries of winter have filled the roads with unburied stories. The Witch gathers their bones, speaks the names that remain, and promises the host one final march toward the thing that stole their spring.",
-      race: "human", origin: "central", gender: "female", age: 78, agingMode: "ageless", lifespanMultiplier: 5,
-      appearance: { skin: "ashen", hair: "white, floor-length", eyes: "violet", build: "willowy", marks: "bone charms braided through the hair" },
-      baseAppearance: "A willowy ancient witch framed by skulls and a hovering bone shield, white hair threaded with charms and violet grave-light.",
-    }),
   }),
   archetype({
-    id: "tenacious-mage", name: "Ruin Scholar", role: "Charge artillery", professionId: "wizard", traitId: "charge",
+    id: "wizard", professionId: "wizard", traitId: "charge",
     skills: ["mage-magic-arrow", "mage-barrier", "mage-flame-storm", "mage-amplification", "mage-god-slaying-spear"],
-    tagline: "A failed theorem is only a weapon whose conditions are not yet met.",
-    playstyle: "Barrier buys time for Charge to mature. Flame Storm supplies attrition; Amplification converts the current ATK line into a turn of explosive scaling.",
+    tagline: "Prepare the field, complete the formula, release the result.",
+    playstyle: "Mana Shield buys time for Charge to mature. Flame Storm supplies attrition; Amplification converts the current ATK line into a turn of exacting burst damage.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 5, presence: 2 },
     baseStats: { maxHp: 160, attack: 15, defense: 12, critRate: 6, dodgeRate: 5 },
-    gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#b95e58",
+    gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#795f9b",
     portrait: { scale: 1.04, x: "49%" },
-    character: authoredCharacter({
-      id: "tenacious-mage", name: "Tenacious Mage", sourceName: "집념의 마도사", epithet: "The Unfinished Theorem",
-      summary: "An obsessive scholar who has survived every failed spell by writing down exactly why it almost worked.",
-      history: "The Mage has spent a lifetime proving that impossible magic is only expensive magic. With the cold swallowing laboratories and libraries alike, the final experiment requires a sample taken from the heart of the Tower.",
-      race: "human", origin: "central", gender: "male", age: 67,
-      appearance: { skin: "weathered brown", hair: "silver, swept back", eyes: "amber", build: "spare", facial_hair: "trim silver beard", marks: "rune burns across both hands" },
-      baseAppearance: "A spare elder scholar with silver hair, rune-burned hands, brass instruments, and fire coiling around a travel-worn spellstaff.",
-    }),
   }),
   archetype({
-    id: "exiled-priestess", name: "Justice Martyr", role: "Missing-health verdict", professionId: "cleric", traitId: "judgment",
+    id: "paladin", professionId: "cleric", traitId: "judgment",
     skills: ["priestess-crush", "priestess-block", "priestess-wrath-of-heaven", "priestess-doom", "priestess-immediate-judgment"],
-    tagline: "If heaven will not answer, I will deliver the verdict myself.",
-    playstyle: "Judgment builds naturally. Block keeps the Priestess alive at a dangerous health line, Wrath weaponizes what is missing, and Doom magnifies every lingering wound.",
+    tagline: "Hold to the oath when certainty and safety fail.",
+    playstyle: "Judgment builds naturally. Block keeps the Paladin alive at a dangerous health line, Sacred Verdict weaponizes what is missing, and Condemnation magnifies every lingering wound.",
     attention: "High", attributes: { body: 4, reflex: 2, vigor: 4, mind: 3, wit: 2, presence: 5 },
     baseStats: { maxHp: 170, attack: 11, defense: 16, critRate: 6, dodgeRate: 4 },
-    gear: ["war-hammer", "chain-shirt", "round-shield", "traveling-cloak"], color: "#d2b05e",
+    gear: ["war-hammer", "chain-shirt", "round-shield", "traveling-cloak"], color: "#c2a257",
     portrait: { scale: 1.08, x: "50%" },
-    character: authoredCharacter({
-      id: "exiled-priestess", name: "Exiled Priestess", sourceName: "추방된 성녀", epithet: "The Broken Halo",
-      summary: "A holy warrior cast out for passing judgment where her order demanded silence.",
-      history: "Her sanctuary called obedience a virtue even when obedience protected cruelty. She broke its seal, carried the condemned out, and accepted exile. The fractured halo she wears now marks a vow no institution can revoke.",
-      race: "human", origin: "south", gender: "female", age: 34,
-      appearance: { skin: "deep brown", hair: "black, braided", eyes: "gold-brown", build: "powerful", marks: "a broken sun brand at the brow" },
-      baseAppearance: "A powerful exiled holy warrior with a massive hammer, weathered gold-white vestments, and a halo emblem deliberately broken through its center.",
-    }),
   }),
   archetype({
-    id: "wandering-blade", name: "Gale Duelist", role: "Initiative tempo", professionId: "monk", traitId: "gale",
+    id: "blademaster", professionId: "monk", traitId: "gale",
     skills: ["blade-slash", "blade-barrier", "blade-chi-liberation", "blade-one-flash", "blade-katana-dance"],
-    tagline: "The road ends wherever the blade becomes still.",
-    playstyle: "Slash and Gale build Initiative toward extra actions. Blade Barrier protects the tempo line, Chi Liberation accelerates it, and One Flash cashes it out.",
+    tagline: "Timing, distance, and edge become one discipline.",
+    playstyle: "Measured Slash and Gale build Initiative toward extra actions. Blade Barrier protects the tempo line, Chi Liberation accelerates it, and Final Flash cashes it out.",
     attention: "Medium", attributes: { body: 3, reflex: 5, vigor: 3, mind: 3, wit: 4, presence: 3 },
     baseStats: { maxHp: 160, attack: 14, defense: 12, critRate: 9, dodgeRate: 5 },
-    gear: ["iron-longsword", "padded-gambeson", "traveling-cloak", "marching-boots"], color: "#76a6ad",
+    gear: ["iron-longsword", "padded-gambeson", "traveling-cloak", "marching-boots"], color: "#6e9ca5",
     portrait: { scale: 1.07, x: "52%" },
-    character: authoredCharacter({
-      id: "wandering-blade", name: "Wandering Blade", sourceName: "방랑하는 검", epithet: "The Road Between Heartbeats",
-      summary: "A swordswoman who measures distance in breaths and never draws without already knowing where the cut will end.",
-      history: "She left a celebrated school when its masters began teaching victory without responsibility. The wandering years stripped every ornament from her technique; the Tower is the first opponent vast enough to demand all that remains.",
-      race: "human", origin: "east", gender: "female", age: 29,
-      appearance: { skin: "light olive", hair: "black, long and tied high", eyes: "dark grey", build: "lean", marks: "callused sword hand" },
-      baseAppearance: "An eastern wandering swordswoman in layered travel cloth, long blade half-drawn, wind trails and restrained chi gathering along the edge.",
-    }),
   }),
   archetype({
-    id: "desolate-vampire", name: "Crimson Survivor", role: "Blood sustain", professionId: "rogue", traitId: "bloodsuck",
+    id: "vampire", professionId: "rogue", traitId: "bloodsuck",
     skills: ["vampire-claw", "vampire-blood-thirst", "vampire-heart-destroyer", "vampire-rampage", "vampire-bloodflow-absorption"],
-    tagline: "Hunger is not a master. It is a debt I choose how to pay.",
-    playstyle: "Every damaging action becomes sustain through Bloodsuck. Blood Thirst recovers without a target, Heart Destroyer opens a wound, and Rampage turns four hits into a violent recovery sequence.",
+    tagline: "Control the hunger and turn every wound into momentum.",
+    playstyle: "Every damaging action becomes sustain through Bloodsuck. Blood Thirst recovers without a target, Heartbreaker opens a wound, and Rampage turns repeated hits into a violent recovery sequence.",
     attention: "Medium", attributes: { body: 4, reflex: 4, vigor: 4, mind: 3, wit: 4, presence: 4 },
     baseStats: { maxHp: 170, attack: 13, defense: 13, critRate: 9, dodgeRate: 4 },
-    gear: ["iron-dagger", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#a84c58",
+    gear: ["iron-dagger", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#984653",
     portrait: { scale: 1.06, x: "48%" },
-    character: authoredCharacter({
-      id: "desolate-vampire", name: "Desolate Vampire", sourceName: "비탄의 흡혈귀", epithet: "The Thirst That Mourns",
-      summary: "An immortal duelist who remembers every life taken by hunger and refuses to let those deaths become meaningless.",
-      history: "The Vampire once mistook restraint for isolation and lost the one household that still welcomed him. He goes north carrying their names, choosing monsters as prey and treating every recovered heartbeat as borrowed time.",
-      race: "vampire", origin: "west", gender: "male", age: 146, agingMode: "ageless", lifespanMultiplier: 8,
-      appearance: { skin: "pale grey", hair: "black with a white forelock", eyes: "crimson", build: "tall and elegant", marks: "old bite scars at one wrist" },
-      baseAppearance: "A tall tragic vampire in elegant but worn winter attire, clawed hand wreathed in controlled crimson blood magic.",
-    }),
   }),
   archetype({
-    id: "forsaken-automaton", name: "Overheat Engine", role: "Risk artillery", professionId: "artificer", traitId: "overheat",
+    id: "automaton", professionId: "artificer", traitId: "overheat",
     skills: ["automaton-bombardment", "automaton-repair", "automaton-emergency-cooling", "automaton-fate-manipulator", "automaton-final-counter"],
-    tagline: "Directive lost. Purpose chosen.",
-    playstyle: "Overheat makes both sides progressively more vulnerable. Repair holds the chassis together, Cooling vents the worst self-pressure, and Fate Manipulator buys an explosive action sequence at a severe cost.",
+    tagline: "Balance heat, calibration, and force until the target fails.",
+    playstyle: "Overheat makes both sides progressively more vulnerable. Repair holds the chassis together, Cooling vents the worst pressure, and Fate Manipulator buys an explosive action sequence at severe cost.",
     attention: "High", attributes: { body: 5, reflex: 2, vigor: 5, mind: 4, wit: 3, presence: 1 },
     baseStats: { maxHp: 200, attack: 15, defense: 10, critRate: 6, dodgeRate: 3 },
-    gear: ["light-crossbow", "chain-hauberk", "iron-helm"], color: "#b57744",
+    gear: ["light-crossbow", "chain-hauberk", "iron-helm"], color: "#a36b3f",
     portrait: { scale: 1.12, y: "104%" },
-    character: authoredCharacter({
-      id: "forsaken-automaton", name: "Forsaken Automaton", sourceName: "남겨진 자동인형", epithet: "The Abandoned Law",
-      summary: "A war machine left without orders, climbing to discover whether a chosen purpose can be more binding than a command.",
-      history: "Its cohort was recalled; this unit was not. Years beneath the snow degraded the old directive but preserved a final observation: humans kept walking north without being ordered. The Automaton repaired itself and followed.",
-      race: "human", kindLabel: "Automaton", origin: "central", gender: "nonbinary", age: 38, agingMode: "ageless", lifespanMultiplier: 10,
-      appearance: { skin: "brass and blackened steel", hair: "none", eyes: "furnace orange", build: "massive mechanical frame", marks: "an exposed, cracked heat core" },
-      baseAppearance: "A massive brass-and-steel war automaton with a cannon arm, exposed orange heat core, cooling vents, and a silhouette built to survive artillery.",
-    }),
   }),
 ]);
 
-const ARCHETYPE_BY_ID = new Map(STARTING_ARCHETYPES.map((entry) => [entry.id, entry]));
+const ARCHETYPE_BY_ID = new Map(STARTING_ARCHETYPES.flatMap((entry) => [
+  [entry.id, entry],
+  [entry.legacyId, entry],
+]));
 
 export function getStartingArchetype(id) {
   return typeof id === "string" ? ARCHETYPE_BY_ID.get(id) || null : null;
@@ -336,6 +252,10 @@ export function createDefaultArchetypeDraft() {
   };
 }
 
+function ownedBySelected(skillOrTrait, selected) {
+  return !skillOrTrait?.exclusiveTo || sameTowArchetype(skillOrTrait.exclusiveTo, selected.id);
+}
+
 export function isArchetypePracticeLoadout(archetypeId, skillIds) {
   const selected = getStartingArchetype(archetypeId);
   if (!selected || !Array.isArray(skillIds) || skillIds.length !== SKILL_SLOTS) return false;
@@ -344,10 +264,10 @@ export function isArchetypePracticeLoadout(archetypeId, skillIds) {
   const skills = skillIds.map((id) => getSkill(id));
   if (skills.some((skill) => !skill || skill.slot !== "slotted")) return false;
   const ownedFixedAbility = (skill, abilityType) => (
-    skill.abilityType === abilityType && skill.exclusiveTo === selected.id
+    skill.abilityType === abilityType && ownedBySelected(skill, selected)
   );
   const legalFlexibleAbility = (skill) => (
-    (skill.abilityType === "archetype" && skill.exclusiveTo === selected.id)
+    (skill.abilityType === "archetype" && ownedBySelected(skill, selected))
     || (skill.abilityType === "general" && skill.exclusiveTo === null)
   );
 
@@ -366,6 +286,26 @@ export function isArchetypePracticeSkillRarities(archetypeId, skillIds, skillRar
     });
 }
 
+function normalizeIdentityOverride(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const name = typeof value.name === "string" ? value.name.trim().slice(0, 80) : "";
+  if (!name) return null;
+  const normalized = { name };
+  for (const key of ["race", "origin", "gender"]) {
+    if (typeof value[key] === "string" && value[key].trim()) normalized[key] = value[key].trim().slice(0, 80);
+  }
+  if (Number.isSafeInteger(value.age) && value.age > 0 && value.age <= 10000) normalized.age = value.age;
+  if (value.appearance && typeof value.appearance === "object" && !Array.isArray(value.appearance)) {
+    normalized.appearance = Object.fromEntries(Object.entries(value.appearance)
+      .filter(([, entry]) => typeof entry === "string")
+      .map(([key, entry]) => [key, entry.trim().slice(0, 240)]));
+  }
+  if (typeof value.baseAppearance === "string" && value.baseAppearance.trim()) {
+    normalized.baseAppearance = value.baseAppearance.trim().slice(0, 1000);
+  }
+  return normalized;
+}
+
 export function normalizeArchetypeDraft(input = {}) {
   const selected = getStartingArchetype(input.archetypeId) || STARTING_ARCHETYPES[0];
   const normalized = {
@@ -375,6 +315,8 @@ export function normalizeArchetypeDraft(input = {}) {
       : DEFAULT_STARTING_KEEPSAKE_ID,
     preview: input.preview === true,
   };
+  const identity = normalizeIdentityOverride(input.identity);
+  if (identity) normalized.identity = identity;
   const hasPracticeLoadout = isArchetypePracticeLoadout(selected.id, input.testSkillIds);
   const practiceSkillIds = hasPracticeLoadout ? input.testSkillIds : selected.build.skills;
   if (hasPracticeLoadout
@@ -423,30 +365,41 @@ export function archetypeFusionIds(archetypeId) {
 export function characterSetupForArchetype(draft) {
   const normalized = normalizeArchetypeDraft(draft);
   const selected = getStartingArchetype(normalized.archetypeId);
-  const character = selected?.character;
+  const representative = selected?.representative;
   const keepsake = getStartingKeepsake(normalized.keepsakeId);
-  if (!selected || !character || !keepsake) return null;
+  if (!selected || !representative || !keepsake) return null;
+
+  const override = normalized.identity || {};
+  const identity = {
+    name: override.name || selected.name,
+    race: override.race || representative.race,
+    origin: override.origin || representative.origin,
+    gender: override.gender || representative.gender,
+    age: override.age || representative.age,
+    appearance: { ...representative.appearance, ...(override.appearance || {}) },
+    baseAppearance: override.baseAppearance || representative.baseAppearance,
+  };
 
   return {
-    name: character.name,
+    name: identity.name,
     bond: selected.tagline,
     profession: selected.professionId,
     archetype: selected.id,
     combatArchetypeId: selected.id,
     progressionModel: "tow-archetype",
     towBaseStats: { ...selected.baseStats },
-    race: character.race,
-    subrace: character.subrace,
-    origin: character.origin,
-    gender: character.gender,
-    age: character.age,
-    agingMode: character.agingMode,
-    lifespanMultiplier: character.lifespanMultiplier,
+    race: identity.race,
+    subrace: representative.subrace,
+    origin: identity.origin,
+    gender: identity.gender,
+    age: identity.age,
+    agingMode: representative.agingMode,
+    lifespanMultiplier: representative.lifespanMultiplier,
     attractiveness: 6,
     attributes: { ...selected.attributes },
-    appearance: { ...character.appearance },
-    base_appearance: character.baseAppearance,
-    portraitKey: character.portraitKey,
+    appearance: identity.appearance,
+    base_appearance: identity.baseAppearance,
+    portraitKey: representative.portraitKey,
     abilities: [],
     items: [
       ...selected.gear.map((itemId) => ({ itemId, quantity: 1, worn: true })),
@@ -454,56 +407,55 @@ export function characterSetupForArchetype(draft) {
     ],
     coins: { gold: 2, silver: 5 },
     knows: [
-      `I am ${character.name}, ${character.epithet}.`,
-      character.history,
-      `My source identity is ${character.sourceName}.`,
-      "My combat kit has one Basic Attack, one Defensive ability, and three exclusive flexible abilities.",
+      `I fight as a ${selected.name}.`,
+      selected.summary,
+      selected.design,
+      "My combat kit has one Basic Attack, one Defensive ability, and three flexible archetype abilities.",
       `I carry ${keepsake.name} as my one starting keepsake.`,
     ],
     profile: {
-      source: "tow-authored-character-start",
+      source: "tow-modular-archetype-start",
       sourcePage: TOWER_CHARACTER_SOURCE,
-      sourceName: character.sourceName,
-      characterId: character.id,
-      characterName: character.name,
-      epithet: character.epithet,
+      identityMode: "modular-archetype",
+      characterName: identity.name,
       archetypeId: selected.id,
       archetypeName: selected.name,
+      legacyArchetypeId: selected.legacyId,
       power: selected.power,
       role: selected.role,
       keepsakeId: keepsake.id,
       keepsakeFamily: keepsake.family,
       keepsakeRarity: keepsake.rarity,
     },
-    // World progression remains a compatibility shell. Combat power comes from the source
-    // base-stat chassis, the five-action build, and equipment rather than character level.
+    // World progression remains a compatibility shell. Combat power comes from the
+    // base-stat chassis, five-action build, and equipment rather than character level.
     level: 1,
   };
 }
 
 export function invalidStartingArchetypes() {
   const invalid = [];
-  const characterIds = new Set();
-  const characterNames = new Set();
+  const ids = new Set();
+  const legacyIds = new Set();
   const portraitKeys = new Set();
   for (const selected of STARTING_ARCHETYPES) {
-    const character = selected.character;
-    if (!character?.id || !character?.name || !character?.portraitKey || !character?.sourceName) {
-      invalid.push(`${selected.id}:incomplete-character`);
+    const representative = selected.representative;
+    if (!representative?.id || !representative?.name || !representative?.portraitKey) {
+      invalid.push(`${selected.id}:incomplete-representative`);
     }
-    if (characterIds.has(character?.id)) invalid.push(`${selected.id}:duplicate-character-id`);
-    if (characterNames.has(character?.name)) invalid.push(`${selected.id}:duplicate-character-name`);
-    if (portraitKeys.has(character?.portraitKey)) invalid.push(`${selected.id}:duplicate-portrait-key`);
-    characterIds.add(character?.id);
-    characterNames.add(character?.name);
-    portraitKeys.add(character?.portraitKey);
+    if (ids.has(selected.id)) invalid.push(`${selected.id}:duplicate-archetype-id`);
+    if (legacyIds.has(selected.legacyId)) invalid.push(`${selected.id}:duplicate-legacy-id`);
+    if (portraitKeys.has(representative?.portraitKey)) invalid.push(`${selected.id}:duplicate-portrait-key`);
+    ids.add(selected.id);
+    legacyIds.add(selected.legacyId);
+    portraitKeys.add(representative?.portraitKey);
     if (!startingPackage(selected.professionId)) invalid.push(`${selected.id}:unknown-profession`);
     for (const [traitId, rank] of Object.entries(selected.build.traits)) {
       const trait = getTrait(traitId);
       if (!trait || !Number.isInteger(rank) || rank < 1 || rank > 7) {
         invalid.push(`${selected.id}:invalid-trait:${traitId}`);
       }
-      if (trait?.exclusiveTo && trait.exclusiveTo !== selected.id) {
+      if (trait?.exclusiveTo && !sameTowArchetype(trait.exclusiveTo, selected.id)) {
         invalid.push(`${selected.id}:foreign-trait:${traitId}`);
       }
     }
@@ -523,7 +475,7 @@ export function invalidStartingArchetypes() {
         invalid.push(`${selected.id}:invalid-ability-types`);
       }
       for (const skill of skills) {
-        if (skill.exclusiveTo !== selected.id) invalid.push(`${selected.id}:foreign-skill:${skill.id}`);
+        if (!sameTowArchetype(skill.exclusiveTo, selected.id)) invalid.push(`${selected.id}:foreign-skill:${skill.id}`);
         if (!skill.source?.page || !skill.source?.sourceName) invalid.push(`${selected.id}:unsourced-skill:${skill.id}`);
       }
     }
@@ -536,9 +488,7 @@ export function invalidStartingArchetypes() {
     }
     for (const itemId of selected.gear) {
       if (!itemTemplate(itemId)) invalid.push(`${selected.id}:unknown-item:${itemId}`);
-      if (!getTowStartItemGrant(itemId)) {
-        invalid.push(`${selected.id}:unmapped-power-item:${itemId}`);
-      }
+      if (!getTowStartItemGrant(itemId)) invalid.push(`${selected.id}:unmapped-power-item:${itemId}`);
     }
   }
   if (STARTING_ARCHETYPES.length !== TOWER_ROSTER_SIZE) invalid.push("roster:wrong-size");

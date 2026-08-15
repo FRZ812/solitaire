@@ -276,22 +276,34 @@ describe("authored character templates", () => {
     expect(sellsword.setup.proficiencies?.spellcasting).toBeUndefined();
   });
 
-  it("never aliases one generated portrait to a different authored character", () => {
+  it("keeps template portraits unique and limits aliases to the same combat archetype", () => {
     const generated = Object.values(CHARACTER_PORTRAITS);
-    expect(generated).toHaveLength(39);
-    expect(new Set(generated).size).toBe(generated.length);
+    expect(generated).toHaveLength(51);
+    expect(new Set(generated).size).toBe(39);
     expect(CHARACTER_PORTRAITS["dragon-hunter"]).toContain("dragon-hunter-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["high-sorcerer"]).toContain("high-sorcerer-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["court-envoy"]).toContain("court-envoy-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["confidence-artist"]).toContain("confidence-artist-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["guild-advocate"]).toContain("guild-advocate-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["velvet-courtier"]).toContain("velvet-courtier-grounded-v3.webp");
-    for (const id of [
-      "arctic-knight", "demon-slayer", "owner-of-clocktower", "old-king-of-northland",
-      "sleepless-one", "last-assassin", "witch-of-eternity", "tenacious-mage",
-      "exiled-priestess", "wandering-blade", "desolate-vampire", "forsaken-automaton",
-    ]) {
-      expect(CHARACTER_PORTRAITS[id]).toContain(`${id}-cutout-v1.png`);
+    const aliases = {
+      knight: "arctic-knight",
+      ranger: "demon-slayer",
+      artificer: "owner-of-clocktower",
+      berserker: "old-king-of-northland",
+      sorcerer: "sleepless-one",
+      rogue: "last-assassin",
+      warlock: "witch-of-eternity",
+      wizard: "tenacious-mage",
+      paladin: "exiled-priestess",
+      blademaster: "wandering-blade",
+      vampire: "desolate-vampire",
+      automaton: "forsaken-automaton",
+    };
+    const archetypePortraits = Object.keys(aliases).map((id) => CHARACTER_PORTRAITS[`tow:${id}`]);
+    expect(new Set(archetypePortraits).size).toBe(archetypePortraits.length);
+    for (const [id, legacyId] of Object.entries(aliases)) {
+      expect(CHARACTER_PORTRAITS[`tow:${legacyId}`]).toBe(CHARACTER_PORTRAITS[`tow:${id}`]);
     }
   });
 });

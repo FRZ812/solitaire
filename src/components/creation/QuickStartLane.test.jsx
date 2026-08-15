@@ -180,7 +180,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.textContent).toContain("Starting equipment");
     expect(details.textContent).toContain("Starting fusions");
     expect(details.textContent).toContain("Select loadout");
-    expect(details.textContent).toContain("Source identity");
+    expect(details.textContent).toContain("Reusable combat kit");
     expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(6);
     expect(details.textContent).not.toContain("Possible refinement");
     expect(details.textContent).toContain("Passive trait");
@@ -227,7 +227,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(picker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
   });
 
-  it("describes the Last Assassin loadout from its real damage and status effects", async () => {
+  it("describes the Rogue loadout from its real damage and status effects", async () => {
     const mounted = await render(<ControlledStart />);
     await click(mounted.querySelectorAll(".character-choice-card")[5]);
     await click(mounted.querySelector(".character-preview__details-button"));
@@ -395,7 +395,7 @@ describe("the simple grid-to-preview flow", () => {
     }]);
   });
 
-  it("starts the selected authored character without asking for a name or face", async () => {
+  it("starts the selected archetype representative without asking for a name or face", async () => {
     const begun = [];
     const mounted = await render(<ControlledStart onBegin={(draft) => begun.push(draft)} />);
     await click(mounted.querySelectorAll(".character-choice-card")[4]);

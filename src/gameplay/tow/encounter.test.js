@@ -1109,7 +1109,7 @@ describe("telegraphed enemy turns", () => {
     });
     const promised = declaredIntents(state)[0];
     const after = endTurn(state).state;
-    expect(promised).toMatchObject({ skillId: "blade-slash", name: "Katana Strike", kind: "damage" });
+    expect(promised).toMatchObject({ skillId: "blade-slash", name: "Measured Slash", kind: "damage" });
     expect(after.events).toContainEqual(expect.objectContaining({
       type: "skill-damage",
       actorId: "gatekeeper",

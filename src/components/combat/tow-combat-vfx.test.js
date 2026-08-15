@@ -4,6 +4,7 @@ import { statusTypes } from "../../gameplay/kernel/status-stack.js";
 import { resolveTowAbilityArt } from "./tow-combat-ability-art.js";
 import {
   COMBAT_VFX_ASSETS,
+  COMBAT_VFX_FLIPBOOK_ASSETS,
   COMBAT_VFX_PLANNED_SKILL_REGISTRY,
   COMBAT_VFX_SKILL_REGISTRY,
   combatVfxForEvent,
@@ -13,7 +14,7 @@ import {
   combatVfxVariantForForm,
   combatVfxVariantForSkill,
 } from "./tow-combat-vfx.js";
-import { canvasSupportsChoreography } from "./TowCombatVfxCanvas.jsx";
+import { flipbookSupportsVisual } from "./TowCombatVfxCanvas.jsx";
 
 const ARCHETYPE_PREFIXES = Object.freeze([
   "arctic-",
@@ -30,12 +31,20 @@ const ARCHETYPE_PREFIXES = Object.freeze([
   "witch-",
 ]);
 
-function expectCanvasVisual(visual) {
+function expectFlipbookVisual(visual) {
   expect(visual).toMatchObject({
     asset: null,
-    assetSource: "canvas",
+    assetSource: "imagegen-flipbook",
     authored: true,
     choreography: expect.any(String),
+    flipbook: {
+      id: expect.any(String),
+      asset: expect.stringMatching(/\.webp$/),
+      frameCount: 9,
+      frameSize: 256,
+      fps: 18,
+      layout: "horizontal",
+    },
     palette: {
       primary: expect.any(String),
       secondary: expect.any(String),
@@ -47,10 +56,10 @@ function expectCanvasVisual(visual) {
     },
     signatureKey: expect.any(String),
   });
-  expect(canvasSupportsChoreography(visual.choreography), visual.variant).toBe(true);
+  expect(flipbookSupportsVisual(visual), visual.variant).toBe(true);
 }
 
-describe("authored procedural combat VFX", () => {
+describe("authored ImageGen flipbook combat VFX", () => {
   it("keeps the raster family manifest only for backwards-compatible UI consumers", () => {
     expect(Object.keys(COMBAT_VFX_ASSETS).sort()).toEqual([
       "afflict", "arcane", "evade", "fire", "frost", "gash", "heal", "impact",
@@ -68,9 +77,15 @@ describe("authored procedural combat VFX", () => {
     ));
     expect(archetypeIds).toHaveLength(276);
     expect(Object.keys(COMBAT_VFX_SKILL_REGISTRY)).toEqual(ids);
+    const flipbookAssets = Object.values(COMBAT_VFX_FLIPBOOK_ASSETS);
+    expect(COMBAT_VFX_FLIPBOOK_ASSETS).toMatchObject({
+      "arctic-strike": expect.stringMatching(/arctic-strike-v1\.webp$/),
+      strike: expect.stringMatching(/strike-v1\.webp$/),
+    });
+    expect(new Set(flipbookAssets).size).toBe(flipbookAssets.length);
 
     const visuals = ids.map((skillId) => combatVfxVariantForSkill(skillId));
-    visuals.forEach(expectCanvasVisual);
+    visuals.forEach(expectFlipbookVisual);
     expect(new Set(visuals.map((visual) => visual.signatureKey)).size).toBe(visuals.length);
 
     const slash = combatVfxVariantForSkill("blade-slash");
@@ -81,17 +96,17 @@ describe("authored procedural combat VFX", () => {
   it("authors the forward-compatible ability aliases named by the implementation plan", () => {
     const visuals = Object.values(COMBAT_VFX_PLANNED_SKILL_REGISTRY);
     expect(visuals).toHaveLength(141);
-    visuals.forEach(expectCanvasVisual);
+    visuals.forEach(expectFlipbookVisual);
     expect(combatVfxVariantForSkill("mage-chain-lightning").choreography).toBe("lightning-fork");
     expect(combatVfxVariantForSkill("automaton-orbital-laser").choreography).toBe("orbital-pillar");
     expect(combatVfxVariantForSkill("blade-thousand-cuts").choreography).toBe("strike-combo");
   });
 
-  it("separates the Last Assassin execution line from every knife-storm contact", () => {
+  it("separates the Rogue execution line from every knife-storm contact", () => {
     const execution = combatVfxVariantForSkill("assassin-execution");
     const storm = combatVfxVariantForSkill("assassin-storm-of-knives");
-    expectCanvasVisual(execution);
-    expectCanvasVisual(storm);
+    expectFlipbookVisual(execution);
+    expectFlipbookVisual(storm);
     expect(execution).toMatchObject({ choreography: "execution-line", motion: "execution" });
     expect(storm).toMatchObject({ choreography: "knife-combo", motion: "volley" });
     expect(execution.signatureKey).not.toBe(storm.signatureKey);
@@ -103,7 +118,7 @@ describe("authored procedural combat VFX", () => {
     expect(new Set(hits.map((visual) => visual.signatureKey)).size).toBe(4);
   });
 
-  it("gives the Desolate Vampire semantic motion and keeps Thorn out of the claw family", () => {
+  it("gives the Vampire semantic motion and keeps Thorn out of the claw family", () => {
     expect(combatVfxVariantForSkill("vampire-claw").choreography).toBe("claw-trails");
     expect(combatVfxVariantForSkill("vampire-blood-spear").choreography).toBe("blood-lance");
     expect(combatVfxVariantForSkill("vampire-heart-destroyer").choreography).toBe("heart-pierce");
@@ -117,13 +132,13 @@ describe("authored procedural combat VFX", () => {
     expect(thorn).toMatchObject({
       family: "nature",
       choreography: "thorn-growth",
-      palette: { primary: "#7bd88f", secondary: "#3a8043", shadow: "#183e1c" },
+      palette: { primary: "#d8f8d8", secondary: "#5eae62", shadow: "#183e1c" },
     });
     expect(thorn.family).not.toBe("gash");
     expect(thorn.choreography).not.toContain("claw");
   });
 
-  it("renders persistent damage as procedural status choreography", () => {
+  it("renders persistent damage through reusable bitmap status choreography", () => {
     const tickCases = [
       [{ voidMonster: 12 }, "void", "void-tendrils"],
       [{ hellfireSpirit: 20 }, "fire", "hellfire-rise"],
@@ -131,20 +146,17 @@ describe("authored procedural combat VFX", () => {
       [{ forbiddenRitual: true }, "void", "forbidden-glyph"],
     ];
     for (const [detail, family, choreography] of tickCases) {
-      expect(combatVfxForEvent({}, { type: "tick-damage", ...detail })).toMatchObject({
-        family,
-        choreography,
-        asset: null,
-        assetSource: "canvas",
-      });
+      const visual = combatVfxForEvent({}, { type: "tick-damage", ...detail });
+      expectFlipbookVisual(visual);
+      expect(visual).toMatchObject({ family, choreography });
     }
   });
 
-  it("gives every active status canvas choreography while retaining icon metadata", () => {
+  it("gives every active status bitmap choreography while retaining icon metadata", () => {
     const types = statusTypes();
     const visuals = types.map((status) => combatVfxForStatus(status));
     for (const [index, visual] of visuals.entries()) {
-      expectCanvasVisual(visual);
+      expectFlipbookVisual(visual);
       expect(visual.variant).toBe(`status-${types[index]}`);
       expect(visual.iconAsset).toMatch(/\.(?:png|webp)$/);
       expect(visual.iconPosition).toMatch(/^\d+(?:\.\d+)?% \d+(?:\.\d+)?%$/);
@@ -157,7 +169,7 @@ describe("authored procedural combat VFX", () => {
     expect(combatVfxForStatus("stun").choreography).toBe("impact-stagger");
   });
 
-  it("gives every weapon form an authored, canvas-native lineage", () => {
+  it("gives every weapon form an authored flipbook lineage", () => {
     const forms = [
       ["measured-cut", "slash", "single-sweep"],
       ["threefold-cut", "gash", "strike-combo"],
@@ -167,7 +179,7 @@ describe("authored procedural combat VFX", () => {
     ];
     for (const [formId, family, choreography] of forms) {
       const visual = combatVfxVariantForForm(formId);
-      expectCanvasVisual(visual);
+      expectFlipbookVisual(visual);
       expect(visual).toMatchObject({ family, choreography });
     }
   });
@@ -191,8 +203,8 @@ describe("authored procedural combat VFX", () => {
     }, {
       type: "enemy-attack", enemyId: "foe", attackId: "storm-flurry", hits: [{}, {}, {}],
     });
-    expect(attack).toMatchObject({ asset: null, assetSource: "canvas", motion: "multi" });
-    expect(canvasSupportsChoreography(attack.choreography)).toBe(true);
+    expectFlipbookVisual(attack);
+    expect(attack).toMatchObject({ asset: null, assetSource: "imagegen-flipbook", motion: "multi" });
   });
 
   it("gives hybrid abilities distinct impact, ward, and status phases", () => {

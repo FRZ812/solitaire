@@ -1,6 +1,6 @@
 import sellsword from "../assets/generated/character-portraits/sellsword-grounded-v3.webp";
 import reaver from "../assets/generated/character-portraits/reaver-grounded-v3.webp";
-import ranger from "../assets/generated/character-portraits/ranger-grounded-v3.webp";
+import rangerLegacy from "../assets/generated/character-portraits/ranger-grounded-v3.webp";
 import cutthroat from "../assets/generated/character-portraits/cutthroat-grounded-v3.webp";
 import devout from "../assets/generated/character-portraits/devout-grounded-v3.webp";
 import courtEnvoy from "../assets/generated/character-portraits/court-envoy-grounded-v3.webp";
@@ -25,21 +25,21 @@ import undyingChampion from "../assets/generated/character-portraits/undying-cha
 import demonWarlock from "../assets/generated/character-portraits/demon-warlock-grounded-v3.webp";
 import dragonAscendant from "../assets/generated/character-portraits/dragon-ascendant-grounded-v3.webp";
 import enchanterTyrant from "../assets/generated/character-portraits/enchanter-tyrant-grounded-v3.webp";
-import arcticKnight from "../assets/generated/winter-tower/characters/arctic-knight-cutout-v1.png";
-import demonSlayer from "../assets/generated/winter-tower/characters/demon-slayer-cutout-v1.png";
-import ownerOfClocktower from "../assets/generated/winter-tower/characters/owner-of-clocktower-cutout-v1.png";
-import oldKingOfNorthland from "../assets/generated/winter-tower/characters/old-king-of-northland-cutout-v1.png";
-import sleeplessOne from "../assets/generated/winter-tower/characters/sleepless-one-cutout-v1.png";
-import lastAssassin from "../assets/generated/winter-tower/characters/last-assassin-cutout-v1.png";
-import witchOfEternity from "../assets/generated/winter-tower/characters/witch-of-eternity-cutout-v1.png";
-import tenaciousMage from "../assets/generated/winter-tower/characters/tenacious-mage-cutout-v1.png";
-import exiledPriestess from "../assets/generated/winter-tower/characters/exiled-priestess-cutout-v1.png";
-import wanderingBlade from "../assets/generated/winter-tower/characters/wandering-blade-cutout-v1.png";
-import desolateVampire from "../assets/generated/winter-tower/characters/desolate-vampire-cutout-v1.png";
-import forsakenAutomaton from "../assets/generated/winter-tower/characters/forsaken-automaton-cutout-v1.png";
+import knight from "../assets/generated/archetypes/portraits/knight-portrait-v1.webp";
+import rangerArchetype from "../assets/generated/archetypes/portraits/ranger-portrait-v1.webp";
+import artificer from "../assets/generated/archetypes/portraits/artificer-portrait-v1.webp";
+import berserker from "../assets/generated/archetypes/portraits/berserker-portrait-v1.webp";
+import sorcerer from "../assets/generated/archetypes/portraits/sorcerer-portrait-v1.webp";
+import rogue from "../assets/generated/archetypes/portraits/rogue-portrait-v1.webp";
+import warlock from "../assets/generated/archetypes/portraits/warlock-portrait-v1.webp";
+import wizard from "../assets/generated/archetypes/portraits/wizard-portrait-v1.webp";
+import paladin from "../assets/generated/archetypes/portraits/paladin-portrait-v1.webp";
+import blademaster from "../assets/generated/archetypes/portraits/blademaster-portrait-v1.webp";
+import vampire from "../assets/generated/archetypes/portraits/vampire-portrait-v1.webp";
+import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v1.webp";
 
 export const CHARACTER_PORTRAITS = Object.freeze({
-  sellsword, reaver, ranger, cutthroat, devout,
+  sellsword, reaver, ranger: rangerLegacy, cutthroat, devout,
   "court-envoy": courtEnvoy,
   "confidence-artist": confidenceArtist,
   "hedge-mage": hedgeMage,
@@ -62,18 +62,31 @@ export const CHARACTER_PORTRAITS = Object.freeze({
   "demon-warlock": demonWarlock,
   "dragon-ascendant": dragonAscendant,
   "enchanter-tyrant": enchanterTyrant,
-  "arctic-knight": arcticKnight,
-  "demon-slayer": demonSlayer,
-  "owner-of-clocktower": ownerOfClocktower,
-  "old-king-of-northland": oldKingOfNorthland,
-  "sleepless-one": sleeplessOne,
-  "last-assassin": lastAssassin,
-  "witch-of-eternity": witchOfEternity,
-  "tenacious-mage": tenaciousMage,
-  "exiled-priestess": exiledPriestess,
-  "wandering-blade": wanderingBlade,
-  "desolate-vampire": desolateVampire,
-  "forsaken-automaton": forsakenAutomaton,
+  "tow:knight": knight,
+  "tow:ranger": rangerArchetype,
+  "tow:artificer": artificer,
+  "tow:berserker": berserker,
+  "tow:sorcerer": sorcerer,
+  "tow:rogue": rogue,
+  "tow:warlock": warlock,
+  "tow:wizard": wizard,
+  "tow:paladin": paladin,
+  "tow:blademaster": blademaster,
+  "tow:vampire": vampire,
+  "tow:automaton": automaton,
+  // Legacy portrait keys are read-only save aliases.
+  "tow:arctic-knight": knight,
+  "tow:demon-slayer": rangerArchetype,
+  "tow:owner-of-clocktower": artificer,
+  "tow:old-king-of-northland": berserker,
+  "tow:sleepless-one": sorcerer,
+  "tow:last-assassin": rogue,
+  "tow:witch-of-eternity": warlock,
+  "tow:tenacious-mage": wizard,
+  "tow:exiled-priestess": paladin,
+  "tow:wandering-blade": blademaster,
+  "tow:desolate-vampire": vampire,
+  "tow:forsaken-automaton": automaton,
 });
 
 export function portraitTemplateId(record = {}) {
@@ -84,5 +97,10 @@ export function portraitTemplateId(record = {}) {
 export function resolveCharacterPortrait(record = {}, fallback = null, override = null) {
   if (typeof override === "string" && override.trim()) return override;
   if (typeof record.portrait === "string" && record.portrait.trim()) return record.portrait;
-  return CHARACTER_PORTRAITS[portraitTemplateId(record)] || fallback;
+  const rawKey = record.portraitKey || record.templateId;
+  const templateId = portraitTemplateId(record);
+  const lookup = typeof rawKey === "string" && rawKey.startsWith("tow:")
+    ? `tow:${templateId}`
+    : templateId;
+  return CHARACTER_PORTRAITS[lookup] || fallback;
 }

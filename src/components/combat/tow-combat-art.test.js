@@ -25,7 +25,7 @@ describe("Tower combat art", () => {
     }
   });
 
-  it("maps every Tower of Winter character to its own generated cutout", () => {
+  it("maps every legacy Tower id to its generalized archetype portrait", () => {
     const characterIds = [
       "arctic-knight",
       "demon-slayer",
@@ -43,6 +43,18 @@ describe("Tower combat art", () => {
     const resolved = characterIds.map((id) => resolvePlayerCombatCutout(`tow:${id}`));
     expect(resolved).toEqual(characterIds.map((id) => TOW_COMBAT_CUTOUTS[id]));
     expect(new Set(resolved).size).toBe(characterIds.length);
+  });
+
+  it("maps all canonical modular archetypes without colliding with template portraits", () => {
+    const ids = [
+      "knight", "ranger", "artificer", "berserker", "sorcerer", "rogue",
+      "warlock", "wizard", "paladin", "blademaster", "vampire", "automaton",
+    ];
+    const resolved = ids.map((id) => resolvePlayerCombatCutout(`tow:${id}`));
+    expect(resolved).toEqual(ids.map((id) => TOW_COMBAT_CUTOUTS[id]));
+    expect(new Set(resolved).size).toBe(ids.length);
+    expect(resolvePlayerCombatCutout("template:ranger")).toBe(TOW_COMBAT_CUTOUTS.wildstrider);
+    expect(resolvePlayerCombatCutout("tow:ranger")).toBe(TOW_COMBAT_CUTOUTS.ranger);
   });
 
   it("recognises template keys without leaking their storage prefix", () => {

@@ -392,7 +392,7 @@ describe("acquiring skills", () => {
     })).toMatchObject({ ok: false, reason: "incompatible-ability-slot" });
   });
 
-  it("refuses an exclusive ability authored for another character", () => {
+  it("refuses an archetype ability owned by another kit", () => {
     const arcticLoadout = [
       "arctic-strike",
       "arctic-block",

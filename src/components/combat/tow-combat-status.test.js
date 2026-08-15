@@ -51,7 +51,7 @@ describe("combat status presentation", () => {
       .toContain("entire stack is spent");
   });
 
-  it("gives every kernel status readable copy, procedural VFX, and dedicated generated icon cells", () => {
+  it("gives every kernel status readable copy, raster VFX, and dedicated generated icon cells", () => {
     const icons = [];
     for (const type of statusTypes()) {
       const detail = towStatusPresentation({ type, count: 1 });
@@ -59,7 +59,7 @@ describe("combat status presentation", () => {
       expect(detail.effect.length, type).toBeGreaterThan(20);
       expect(detail.lifecycle.length, type).toBeGreaterThan(10);
       expect(detail.visual.asset, type).toBeNull();
-      expect(detail.visual.assetSource, type).toBe("canvas");
+      expect(detail.visual.assetSource, type).toBe("imagegen-flipbook");
       expect(detail.visual.authored, type).toBe(true);
       expect(detail.visual.choreography, type).toEqual(expect.any(String));
       expect(detail.visual.signatureKey, type).toEqual(expect.any(String));

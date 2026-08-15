@@ -150,8 +150,8 @@ describe("one bootstrap compiler", () => {
     const automaton = compileCharacterBootstrap({ archetypeId: "forsaken-automaton", origin: "archetype" });
     expect(knight.ok).toBe(true);
     expect(automaton.ok).toBe(true);
-    expect(knight.receipt.archetypeId).toBe("arctic-knight");
-    expect(automaton.receipt.archetypeId).toBe("forsaken-automaton");
+    expect(knight.receipt.archetypeId).toBe("knight");
+    expect(automaton.receipt.archetypeId).toBe("automaton");
     expect(knight.receipt.build).not.toHaveProperty("level");
     expect(automaton.receipt.build).not.toHaveProperty("level");
     expect(knight.receipt.id).not.toBe(automaton.receipt.id);

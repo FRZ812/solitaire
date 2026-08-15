@@ -8,18 +8,18 @@ import oathforged from "../../assets/generated/combat-cutouts/oathforged-cutout-
 import raiderFoe from "../../assets/generated/combat-cutouts/raider-foe-cutout-v1.webp";
 import wildstrider from "../../assets/generated/combat-cutouts/wildstrider-cutout-v1.webp";
 import wyrmAscendant from "../../assets/generated/combat-cutouts/wyrm-ascendant-cutout-v1.webp";
-import arcticKnight from "../../assets/generated/winter-tower/characters/arctic-knight-cutout-v1.png";
-import demonSlayer from "../../assets/generated/winter-tower/characters/demon-slayer-cutout-v1.png";
-import ownerOfClocktower from "../../assets/generated/winter-tower/characters/owner-of-clocktower-cutout-v1.png";
-import oldKingOfNorthland from "../../assets/generated/winter-tower/characters/old-king-of-northland-cutout-v1.png";
-import sleeplessOne from "../../assets/generated/winter-tower/characters/sleepless-one-cutout-v1.png";
-import lastAssassin from "../../assets/generated/winter-tower/characters/last-assassin-cutout-v1.png";
-import witchOfEternity from "../../assets/generated/winter-tower/characters/witch-of-eternity-cutout-v1.png";
-import tenaciousMage from "../../assets/generated/winter-tower/characters/tenacious-mage-cutout-v1.png";
-import exiledPriestess from "../../assets/generated/winter-tower/characters/exiled-priestess-cutout-v1.png";
-import wanderingBlade from "../../assets/generated/winter-tower/characters/wandering-blade-cutout-v1.png";
-import desolateVampire from "../../assets/generated/winter-tower/characters/desolate-vampire-cutout-v1.png";
-import forsakenAutomaton from "../../assets/generated/winter-tower/characters/forsaken-automaton-cutout-v1.png";
+import knight from "../../assets/generated/archetypes/portraits/knight-portrait-v1.webp";
+import ranger from "../../assets/generated/archetypes/portraits/ranger-portrait-v1.webp";
+import artificer from "../../assets/generated/archetypes/portraits/artificer-portrait-v1.webp";
+import berserker from "../../assets/generated/archetypes/portraits/berserker-portrait-v1.webp";
+import sorcerer from "../../assets/generated/archetypes/portraits/sorcerer-portrait-v1.webp";
+import rogue from "../../assets/generated/archetypes/portraits/rogue-portrait-v1.webp";
+import warlock from "../../assets/generated/archetypes/portraits/warlock-portrait-v1.webp";
+import wizard from "../../assets/generated/archetypes/portraits/wizard-portrait-v1.webp";
+import paladin from "../../assets/generated/archetypes/portraits/paladin-portrait-v1.webp";
+import blademaster from "../../assets/generated/archetypes/portraits/blademaster-portrait-v1.webp";
+import vampire from "../../assets/generated/archetypes/portraits/vampire-portrait-v1.webp";
+import automaton from "../../assets/generated/archetypes/portraits/automaton-portrait-v1.webp";
 
 export const TOW_COMBAT_CUTOUTS = Object.freeze({
   ironbound,
@@ -32,18 +32,44 @@ export const TOW_COMBAT_CUTOUTS = Object.freeze({
   "wyrm-ascendant": wyrmAscendant,
   "duellist-foe": duellistFoe,
   "raider-foe": raiderFoe,
-  "arctic-knight": arcticKnight,
-  "demon-slayer": demonSlayer,
-  "owner-of-clocktower": ownerOfClocktower,
-  "old-king-of-northland": oldKingOfNorthland,
-  "sleepless-one": sleeplessOne,
-  "last-assassin": lastAssassin,
-  "witch-of-eternity": witchOfEternity,
-  "tenacious-mage": tenaciousMage,
-  "exiled-priestess": exiledPriestess,
-  "wandering-blade": wanderingBlade,
-  "desolate-vampire": desolateVampire,
-  "forsaken-automaton": forsakenAutomaton,
+  knight, ranger, artificer, berserker, sorcerer, rogue,
+  warlock, wizard, paladin, blademaster, vampire, automaton,
+  "arctic-knight": knight,
+  "demon-slayer": ranger,
+  "owner-of-clocktower": artificer,
+  "old-king-of-northland": berserker,
+  "sleepless-one": sorcerer,
+  "last-assassin": rogue,
+  "witch-of-eternity": warlock,
+  "tenacious-mage": wizard,
+  "exiled-priestess": paladin,
+  "wandering-blade": blademaster,
+  "desolate-vampire": vampire,
+  "forsaken-automaton": automaton,
+  "tow:knight": knight,
+  "tow:ranger": ranger,
+  "tow:artificer": artificer,
+  "tow:berserker": berserker,
+  "tow:sorcerer": sorcerer,
+  "tow:rogue": rogue,
+  "tow:warlock": warlock,
+  "tow:wizard": wizard,
+  "tow:paladin": paladin,
+  "tow:blademaster": blademaster,
+  "tow:vampire": vampire,
+  "tow:automaton": automaton,
+  "tow:arctic-knight": knight,
+  "tow:demon-slayer": ranger,
+  "tow:owner-of-clocktower": artificer,
+  "tow:old-king-of-northland": berserker,
+  "tow:sleepless-one": sorcerer,
+  "tow:last-assassin": rogue,
+  "tow:witch-of-eternity": warlock,
+  "tow:tenacious-mage": wizard,
+  "tow:exiled-priestess": paladin,
+  "tow:wandering-blade": blademaster,
+  "tow:desolate-vampire": vampire,
+  "tow:forsaken-automaton": automaton,
 });
 
 const CUTOUT_BY_TEMPLATE = Object.freeze({
@@ -57,18 +83,30 @@ const CUTOUT_BY_TEMPLATE = Object.freeze({
   "dragon-ascendant": wyrmAscendant,
   "knight-errant": duellistFoe,
   reaver: raiderFoe,
-  "arctic-knight": arcticKnight,
-  "demon-slayer": demonSlayer,
-  "owner-of-clocktower": ownerOfClocktower,
-  "old-king-of-northland": oldKingOfNorthland,
-  "sleepless-one": sleeplessOne,
-  "last-assassin": lastAssassin,
-  "witch-of-eternity": witchOfEternity,
-  "tenacious-mage": tenaciousMage,
-  "exiled-priestess": exiledPriestess,
-  "wandering-blade": wanderingBlade,
-  "desolate-vampire": desolateVampire,
-  "forsaken-automaton": forsakenAutomaton,
+  "tow:knight": knight,
+  "tow:ranger": ranger,
+  "tow:artificer": artificer,
+  "tow:berserker": berserker,
+  "tow:sorcerer": sorcerer,
+  "tow:rogue": rogue,
+  "tow:warlock": warlock,
+  "tow:wizard": wizard,
+  "tow:paladin": paladin,
+  "tow:blademaster": blademaster,
+  "tow:vampire": vampire,
+  "tow:automaton": automaton,
+  "tow:arctic-knight": knight,
+  "tow:demon-slayer": ranger,
+  "tow:owner-of-clocktower": artificer,
+  "tow:old-king-of-northland": berserker,
+  "tow:sleepless-one": sorcerer,
+  "tow:last-assassin": rogue,
+  "tow:witch-of-eternity": warlock,
+  "tow:tenacious-mage": wizard,
+  "tow:exiled-priestess": paladin,
+  "tow:wandering-blade": blademaster,
+  "tow:desolate-vampire": vampire,
+  "tow:forsaken-automaton": automaton,
 });
 
 const CUTOUT_BY_AUTHORED_NAME = Object.freeze({
@@ -80,18 +118,20 @@ const CUTOUT_BY_AUTHORED_NAME = Object.freeze({
   "caldra vey": oathforged,
   "sable ren": nightSovereign,
   vaeraxa: wyrmAscendant,
-  "arctic knight": arcticKnight,
-  "demon slayer": demonSlayer,
-  "owner of clocktower": ownerOfClocktower,
-  "old king of northland": oldKingOfNorthland,
-  "sleepless one": sleeplessOne,
-  "last assassin": lastAssassin,
-  "witch of eternity": witchOfEternity,
-  "tenacious mage": tenaciousMage,
-  "exiled priestess": exiledPriestess,
-  "wandering blade": wanderingBlade,
-  "desolate vampire": desolateVampire,
-  "forsaken automaton": forsakenAutomaton,
+  knight, ranger, artificer, berserker, sorcerer, rogue,
+  warlock, wizard, paladin, blademaster, vampire, automaton,
+  "arctic knight": knight,
+  "demon slayer": ranger,
+  "owner of clocktower": artificer,
+  "old king of northland": berserker,
+  "sleepless one": sorcerer,
+  "last assassin": rogue,
+  "witch of eternity": warlock,
+  "tenacious mage": wizard,
+  "exiled priestess": paladin,
+  "wandering blade": blademaster,
+  "desolate vampire": vampire,
+  "forsaken automaton": automaton,
 });
 
 const KNIGHT_FOE = /\b(duell?ist|sparring|knight|gatekeeper|guard|captain|soldier)\b/i;
@@ -104,8 +144,12 @@ export function combatPortraitTemplateId(portraitKey) {
 }
 
 export function resolvePlayerCombatCutout(portraitKey, actor = null) {
-  const templateId = combatPortraitTemplateId(portraitKey || actor?.portraitKey || actor?.templateId);
-  if (templateId && CUTOUT_BY_TEMPLATE[templateId]) return CUTOUT_BY_TEMPLATE[templateId];
+  const rawKey = portraitKey || actor?.portraitKey || actor?.templateId;
+  const templateId = combatPortraitTemplateId(rawKey);
+  const lookup = typeof rawKey === "string" && rawKey.trim().startsWith("tow:")
+    ? `tow:${templateId}`
+    : templateId;
+  if (lookup && CUTOUT_BY_TEMPLATE[lookup]) return CUTOUT_BY_TEMPLATE[lookup];
   const authored = String(actor?.name || "").trim().toLowerCase();
   return CUTOUT_BY_AUTHORED_NAME[authored] || null;
 }

@@ -75,7 +75,7 @@ describe("inventory and arsenal atlas integration", () => {
     expect(html).toContain("<span>Spellcasting</span><strong>16</strong>");
   });
 
-  it("keeps a source character's real five-action Tower kit visible after creation", () => {
+  it("keeps a Knight archetype's real five-action Tower kit visible after creation", () => {
     const state = makeInitialState();
     state.character.progressionModel = "tow-archetype";
     state.mechanics = {
@@ -91,8 +91,8 @@ describe("inventory and arsenal atlas integration", () => {
     expect(html).toContain("Tower combat kit · 5");
     expect(html).toContain("Basic attack");
     expect(html).toContain("Defensive");
-    expect(html).toContain("Exclusive ability");
-    expect(html).toContain("Incineration");
+    expect(html).toContain("Archetype ability");
+    expect(html).toContain("Burning Reprisal");
     expect(html).toContain("Mortal Blow");
   });
 

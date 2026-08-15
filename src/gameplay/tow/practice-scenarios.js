@@ -51,7 +51,7 @@ function foe(id, name, maxHp, attack, archetypeId) {
     resolve: archetype.baseStats.resolveMax,
     resolveMax: archetype.baseStats.resolveMax,
     stats: { attack, defense: attack, critRate: 4, dodgeRate: 3 },
-    archetypeId,
+    archetypeId: archetype.id,
     build: Object.freeze({
       traits: Object.freeze({ ...archetype.build.traits }),
       skills: Object.freeze([...archetype.build.skills]),
@@ -66,7 +66,7 @@ function foe(id, name, maxHp, attack, archetypeId) {
  * Instructional rather than trivial: each is meant to be won by someone reading the
  * telegraph and spending a guard at the right moment, and lost by someone mashing the
  * attack button. Scenarios scale by fixture, never by secretly normalising the person — the
- * authored character's fixed equipment and identity go in untouched.
+ * selected archetype's fixed combat equipment and mechanics go in untouched.
  */
 export const PRACTICE_SCENARIOS = Object.freeze([
   Object.freeze({
