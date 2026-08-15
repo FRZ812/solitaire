@@ -180,7 +180,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.textContent).toContain("Starting equipment");
     expect(details.textContent).toContain("Starting fusions");
     expect(details.textContent).toContain("Select loadout");
-    expect(details.textContent).toContain("Source identity");
+    expect(details.textContent).toContain("Reusable combat kit");
     expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(6);
     expect(details.textContent).not.toContain("Possible refinement");
     expect(details.textContent).toContain("Passive trait");

@@ -1,8 +1,8 @@
-// Source-calibrated character abilities for the complete Tower of Winter roster.
+// Source-calibrated abilities for the complete Tower of Winter rules roster.
 //
 // Stable Solitaire ids remain unchanged so saves, authored VFX, and loadouts keep working.
 // Every player-facing mechanic is compiled directly from the shipped 1.4.16 table rows
-// in `character-ability-source-data.js`: 12 characters x 23 abilities.
+// in `character-ability-source-data.js`: 12 reusable archetypes x 23 abilities.
 
 import {
   TOW_CHARACTER_ABILITY_SOURCE_ROWS,
@@ -11,6 +11,7 @@ import {
   TOW_SOURCE_BUILD,
   TOW_STATUS_SOURCE_ROWS,
 } from "./character-ability-source-data.js";
+import { canonicalTowArchetypeId, sameTowArchetype } from "./archetype-identities.js";
 
 export const CHARACTER_ABILITY_TYPES = Object.freeze([
   "basic-attack",
@@ -28,6 +29,116 @@ export const CHARACTER_ABILITY_TYPE_LABELS = Object.freeze({
 
 export const FIXED_CHARACTER_ABILITY_TYPES = Object.freeze(["basic-attack", "defensive"]);
 export const FLEXIBLE_CHARACTER_ABILITY_TYPES = Object.freeze(["archetype", "general"]);
+
+// Only presentation is reflavoured. Stable ids, source effects, ranks, and legacy owner ids
+// remain untouched so historical saves and deterministic replays keep their exact rules.
+const GENERALIZED_ABILITY_NAMES = Object.freeze({
+  "arctic-slaughter": "Bleeding Cut",
+  "arctic-threatening-cry": "Challenge",
+  "arctic-gather-strength": "Gather Strength",
+  "arctic-battle-cry": "Rally",
+  "arctic-giants-smash": "Colossus Blow",
+  "arctic-thirst-for-blood": "Martial Vigor",
+  "arctic-fist-of-justice": "Shield Verdict",
+  "arctic-secret-blow": "Guardbreaker",
+  "arctic-incineration": "Burning Reprisal",
+  "arctic-ultimate-body": "Tempered Bulwark",
+  "demon-apply-poison": "Envenom",
+  "demon-snipe": "Snipe",
+  "demon-ultimate-venom": "Virulent Toxin",
+  "demon-overwhelm": "Field Rush",
+  "demon-d-day": "Marked Quarry",
+  "demon-shadow-stealth": "Camouflage",
+  "demon-endless-grudge": "Barbed Arrows",
+  "clocktower-binding-shot": "Binding Shot",
+  "clocktower-cloaking-field": "Cloaking Field",
+  "clocktower-fusion-barrier": "Composite Barrier",
+  "clocktower-grappling-hook": "Grappling Hook",
+  "clocktower-ultra-barrier": "Reinforced Field",
+  "clocktower-grenade-toss": "Grenade",
+  "clocktower-tailored-drink": "Combat Tonic",
+  "clocktower-mysterious-stopwatch": "Phase Regulator",
+  "clocktower-time-machine": "Temporal Overdrive",
+  "north-king-bears-blessing": "Battle Hardened",
+  "north-king-boulder-toss": "Boulder Toss",
+  "north-king-rampage": "Rampage",
+  "north-king-natures-intervention": "Blood Truce",
+  "north-king-beasts-heart": "Berserker's Heart",
+  "sleepless-swing": "Arcane Lash",
+  "sleepless-hard-scales": "Arcane Ward",
+  "sleepless-steel-scales": "Hardened Ward",
+  "sleepless-entangling-roots": "Binding Growth",
+  "sleepless-mark-of-the-wild": "Elemental Attunement",
+  "sleepless-water-totem": "Water Sigil",
+  "sleepless-cool-composure": "Still Mind",
+  "sleepless-tail-swipe": "Force Sweep",
+  "sleepless-transference": "Elemental Transfer",
+  "sleepless-predators-instinct": "Heightened Instinct",
+  "sleepless-gale-totem": "Gale Sigil",
+  "sleepless-fire-dragons-breath": "Dragonfire",
+  "sleepless-hardening": "Elemental Bastion",
+  "sleepless-high-speed-flight": "Arcane Flight",
+  "assassin-boost-up": "Exploit Opening",
+  "assassin-storm-of-knives": "Storm of Knives",
+  "assassin-finishing-blow": "Finishing Strike",
+  "assassin-perfect-opportunity": "Widen Opening",
+  "assassin-execution": "Execution",
+  "assassin-life-saving-pill": "Field Remedy",
+  "witch-skull-throw": "Bone Cast",
+  "witch-ghost-form": "Wraithform",
+  "witch-touch-of-the-dead": "Grave Grasp",
+  "witch-demons-sigil": "Pact Circle",
+  "witch-battering-ram": "Bound Horror",
+  "witch-proliferation": "Raise Host",
+  "witch-void-monster": "Call Voidling",
+  "witch-human-wave-tactics": "Sacrifice Host",
+  "witch-gate-underworld": "Open the Gate",
+  "witch-hellfire-spirit": "Bind Infernal",
+  "witch-limited-life-sentence": "Pact Sentence",
+  "mage-magic-arrow": "Arcane Missile",
+  "mage-incinerate": "Ember Formula",
+  "mage-blood-judgment": "Crimson Formula",
+  "mage-invincible": "Absolute Ward",
+  "mage-disintegrate": "Disintegrate",
+  "mage-god-slaying-spear": "Grand Arcane Lance",
+  "mage-regression": "Vital Reversion",
+  "priestess-wrath-of-heaven": "Sacred Verdict",
+  "priestess-divine-favor": "Oath's Blessing",
+  "priestess-divine-barrier": "Sacred Aegis",
+  "priestess-intercession": "Intercession",
+  "priestess-immediate-judgment": "Immediate Judgment",
+  "priestess-oracle": "Oath Ascendant",
+  "priestess-doom": "Condemnation",
+  "priestess-holy-binding": "Oathbinding",
+  "priestess-power-of-god": "Oath Unbound",
+  "priestess-immortality": "Lasting Oath",
+  "blade-slash": "Measured Slash",
+  "blade-inversion": "Sword Wave",
+  "blade-quick-swordsmanship": "Quickdraw",
+  "blade-double-slash": "Twin Arc",
+  "blade-domain": "Blade Domain",
+  "blade-katana-dance": "Blade Dance",
+  "blade-mountain-of-blades": "Mountain of Blades",
+  "blade-latent-power": "Mortal Commitment",
+  "blade-selfless-state": "Empty Mind",
+  "blade-instant-kill": "Severing Wing",
+  "blade-breakthrough": "Crescent Break",
+  "blade-one-flash": "Final Flash",
+  "blade-flowing-water": "Still Water Counter",
+  "vampire-claw": "Claw Strike",
+  "vampire-bite": "Blood Bite",
+  "vampire-bloodflow-absorption": "Sanguine Draw",
+  "vampire-rain-of-death": "Crimson Rain",
+  "vampire-ancestral-blood": "Elder Blood",
+  "automaton-bombardment": "Bombardment",
+  "automaton-repair": "Field Repair",
+  "automaton-interception": "Intercepting Field",
+  "automaton-flash": "Combat Flare",
+  "automaton-scorched-earth": "Scorched Earth",
+  "automaton-emergency-fuel": "Redline Fuel",
+  "automaton-fate-manipulator": "Thermal Transfer",
+  "automaton-infinite-power": "Reserve Cell",
+});
 
 const RANKS_BY_SOURCE_GRADE = Object.freeze({
   Common: 6,
@@ -453,9 +564,10 @@ function compileAbility(row) {
     ? rankTable(sourceUses, usesIncrement, rankCount)
     : null;
   const description = `${effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`;
+  const archetypeId = canonicalTowArchetypeId(characterId);
   return Object.freeze({
     id,
-    name: name.trim(),
+    name: GENERALIZED_ABILITY_NAMES[id] || name.trim(),
     rarity: RARITY_BY_SOURCE_GRADE[sourceGrade],
     slot: "slotted",
     abilityType,
@@ -466,6 +578,7 @@ function compileAbility(row) {
     usesPerAct,
     usesPerActByRank,
     exclusiveTo: characterId,
+    archetypeId,
     description,
     source: Object.freeze({
       page: TOW_CHARACTER_SOURCE_PAGE,
@@ -473,6 +586,7 @@ function compileAbility(row) {
       build: TOW_SOURCE_BUILD,
       sourceId,
       characterId,
+      archetypeId,
       sourceName,
       fidelity: "direct",
       detail: description,
@@ -499,5 +613,5 @@ export function characterAbilityIds() {
 }
 
 export function characterAbilitiesFor(characterId) {
-  return definitions.filter((definition) => definition.exclusiveTo === characterId);
+  return definitions.filter((definition) => sameTowArchetype(definition.exclusiveTo, characterId));
 }

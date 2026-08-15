@@ -1,8 +1,8 @@
 // The single new-campaign start surface.
 //
-// Browse complete authored characters, then preview one. Identity and mechanics are fixed
-// together; there is no name, portrait, or build assembly step. The controlled draft lives
-// in App so a disposable practice fight returns to the same character preview.
+// Browse reusable combat archetypes, then preview one. Each entry is a rules kit with a
+// representative portrait; authored character identity remains separate from its mechanics.
+// The controlled draft lives in App so a disposable practice fight returns to the preview.
 
 import "./archetype-start.css";
 import "./character-select-polish.css";
@@ -68,7 +68,7 @@ function characterKind(entry) {
   const ancestry = entry?.character?.kindLabel || (entry?.character?.subrace
     ? `${titleCase(entry.character.subrace)} ${titleCase(entry.character.race)}`
     : titleCase(entry?.character?.race));
-  return [ancestry, entry?.name].filter(Boolean).join(" · ");
+  return [ancestry, entry?.descriptor].filter(Boolean).join(" · ");
 }
 
 function updateDraft(current, patch) {
@@ -753,7 +753,7 @@ function SelectLoadoutEditor({ selected, skillIds, skillRarities, onSkillChange,
           const groups = flexible ? [
             {
               id: "exclusive",
-              label: `${selected.character.name} exclusives`,
+              label: `${selected.name} abilities`,
               options: flexibleOptions,
             },
             {
@@ -764,8 +764,8 @@ function SelectLoadoutEditor({ selected, skillIds, skillRarities, onSkillChange,
           ] : [{
             id: slotIndex === 0 ? "basic" : "defensive",
             label: slotIndex === 0
-              ? `${selected.character.name} Basic Attacks`
-              : `${selected.character.name} Defenses`,
+              ? `${selected.name} Basic Attacks`
+              : `${selected.name} Defenses`,
             options: fixedOptions,
           }];
           return (
@@ -939,7 +939,7 @@ function CharacterDetails({
 
   return (
     <>
-      <button type="button" className="character-details__scrim" aria-label="Close character details" onClick={onClose} />
+      <button type="button" className="character-details__scrim" aria-label="Close archetype details" onClick={onClose} />
       <aside
         ref={dialogRef}
         className="character-details"
@@ -951,18 +951,18 @@ function CharacterDetails({
         <header>
           <div>
             <span>{selected.power} · {selected.name}</span>
-            <h2 id={headingId}>Character details</h2>
+            <h2 id={headingId}>Archetype details</h2>
           </div>
-          <button type="button" className="character-details__close" aria-label="Close character details" onClick={onClose}>
+          <button type="button" className="character-details__close" aria-label="Close archetype details" onClick={onClose}>
             <Icon name="x" size={16} strokeWidth={1.6} />
           </button>
         </header>
 
         <div className="character-details__body">
           <section className="character-details__story">
-            <h3>{selected.character.epithet}</h3>
-            <p>{selected.character.history}</p>
-            <small>Source identity · {selected.character.sourceName}</small>
+            <h3>{selected.descriptor}</h3>
+            <p>{selected.design}</p>
+            <small>Reusable combat kit · character identity remains independent</small>
           </section>
 
           <section className="character-details__stats" aria-label="Base combat stats">
@@ -980,7 +980,7 @@ function CharacterDetails({
 
           <section className="character-details__combat-style">
             <div className="character-details__section-heading">
-              <span className="character-details__label">How {selected.character.name.split(" ")[0]} fights</span>
+              <span className="character-details__label">How {selected.name} fights</span>
               <small>{selected.role}</small>
             </div>
             <p>{selected.playstyle}</p>
@@ -1132,7 +1132,7 @@ export function QuickStartLane({
 
   if (!normalized.preview) {
     return (
-      <section ref={rootRef} className="archetype-start character-select is-grid" role="dialog" aria-modal="true" aria-label="Choose a character">
+      <section ref={rootRef} className="archetype-start character-select is-grid" role="dialog" aria-modal="true" aria-label="Choose an archetype">
         <img className="character-select__world" src={winterScene} alt="" />
         <div className="character-select__veil" aria-hidden="true" />
         <div className="character-grid-view">
@@ -1144,17 +1144,17 @@ export function QuickStartLane({
             ) : <span />}
             <div>
               <span>New journey</span>
-              <h1>Select a character</h1>
-              <p>{STARTING_ARCHETYPES.length} lives. One road north.</p>
+              <h1>Select an archetype</h1>
+              <p>{STARTING_ARCHETYPES.length} reusable combat kits. One road north.</p>
             </div>
             <span aria-hidden="true" />
           </header>
 
-          <div className="character-choice-grid" aria-label="Available characters">
+          <div className="character-choice-grid" aria-label="Available archetypes">
             {STARTING_ARCHETYPES.map((entry, index) => (
               <button
                 type="button"
-                aria-label={`${entry.character.name}, ${characterKind(entry)}`}
+                aria-label={`${entry.name}, ${characterKind(entry)}`}
                 className="character-choice-card"
                 style={{
                   "--character-accent": entry.color,
@@ -1169,7 +1169,7 @@ export function QuickStartLane({
                 <img className="character-choice-card__art" src={combatArtFor(entry)} alt="" />
                 <span className="character-choice-card__shade" />
                 <span className="character-choice-card__copy">
-                  <strong>{entry.character.name}</strong>
+                  <strong>{entry.name}</strong>
                 </span>
               </button>
             ))}
@@ -1185,7 +1185,7 @@ export function QuickStartLane({
       ref={rootRef}
       role="dialog"
       aria-modal="true"
-      aria-label={`Preview ${selected.character.name}`}
+      aria-label={`Preview ${selected.name} archetype`}
       style={{
         "--character-accent": selected.color,
         "--portrait-scale": selected.portrait.scale,
@@ -1198,9 +1198,9 @@ export function QuickStartLane({
       <div className="character-preview">
         <header className="character-preview__nav">
           <button type="button" className="character-select__quiet-action" onClick={() => change({ preview: false })}>
-            <Icon name="arrowLeft" size={15} strokeWidth={1.7} /> Characters
+            <Icon name="arrowLeft" size={15} strokeWidth={1.7} /> Archetypes
           </button>
-          <span aria-label={`Character ${selectedIndex + 1} of ${STARTING_ARCHETYPES.length}`}>
+          <span aria-label={`Archetype ${selectedIndex + 1} of ${STARTING_ARCHETYPES.length}`}>
             {String(selectedIndex + 1).padStart(2, "0")} / {String(STARTING_ARCHETYPES.length).padStart(2, "0")}
           </span>
         </header>
@@ -1213,16 +1213,16 @@ export function QuickStartLane({
             <img
               className="character-preview__cutout"
               src={combatArtFor(selected)}
-              alt={`${selected.character.name}, ${selected.character.epithet}`}
+              alt={`${selected.name} archetype representative, ${selected.descriptor}`}
             />
             <span aria-hidden="true" />
           </figure>
 
           <div className="character-preview__copy">
             <p className="character-preview__kind">{characterKind(selected)}</p>
-            <h1>{selected.character.name}</h1>
-            <h2>{selected.character.epithet}</h2>
-            <p className="character-preview__summary">{selected.character.summary}</p>
+            <h1>{selected.name}</h1>
+            <h2>{selected.descriptor}</h2>
+            <p className="character-preview__summary">{selected.summary}</p>
             <div className="character-preview__kit">
               <div
                 className="character-preview__trait"
@@ -1297,7 +1297,7 @@ export function QuickStartLane({
           <button type="button" className="character-preview__rail-arrow is-left" aria-label="Previous character" onClick={() => moveCharacter(-1)}>
             <ArrowIcon direction="left" />
           </button>
-          <div className="character-preview__carousel" ref={railRef} role="radiogroup" aria-label="Character carousel">
+          <div className="character-preview__carousel" ref={railRef} role="radiogroup" aria-label="Archetype carousel">
             {STARTING_ARCHETYPES.map((entry, index) => {
               const active = entry.id === selected.id;
               return (
@@ -1305,7 +1305,7 @@ export function QuickStartLane({
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  aria-label={`${entry.character.name}, ${entry.name}`}
+                  aria-label={`${entry.name}, ${entry.descriptor}`}
                   className={active ? "is-selected" : ""}
                   style={{
                     "--character-accent": entry.color,

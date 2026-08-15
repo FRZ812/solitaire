@@ -82,8 +82,8 @@ function withStatus(type, count, stack = createStatusStack()) {
   return applyStatus(stack, type, count);
 }
 
-describe("source-calibrated character ability catalogue", () => {
-  it("maps all 276 shipped records one-to-one across the 12 complete character kits", () => {
+describe("source-calibrated archetype ability catalogue", () => {
+  it("maps all 276 shipped records one-to-one across the 12 reusable archetype kits", () => {
     expect(TOW_CHARACTER_ABILITY_SOURCE_ROWS).toHaveLength(276);
     expect(characterAbilityIds()).toHaveLength(276);
     expect(new Set(Object.values(CHARACTER_ABILITIES).map((ability) => ability.source.sourceId)).size)
@@ -103,7 +103,7 @@ describe("source-calibrated character ability catalogue", () => {
     }
   });
 
-  it("marks every character ability as direct build data and removes remake notes", () => {
+  it("marks every archetype ability as direct build data and removes remake notes", () => {
     for (const ability of Object.values(CHARACTER_ABILITIES)) {
       expect(ability.source).toMatchObject({ build: TOW_SOURCE_BUILD, fidelity: "direct" });
       expect(ability.source.sourceName).toBeTruthy();
@@ -114,17 +114,17 @@ describe("source-calibrated character ability catalogue", () => {
     }
   });
 
-  it("uses the shipped character stat line for every playable archetype", () => {
+  it("uses the shipped rules chassis for every playable archetype", () => {
     const expected = new Map(TOW_CHARACTER_SOURCE_ROWS.map(([
       , id, , , , maxHp, attack, defense, critRate, dodgeRate,
     ]) => [id, { maxHp, attack, defense, critRate, dodgeRate }]));
     for (const archetype of STARTING_ARCHETYPES) {
-      expect(archetype.baseStats).toMatchObject(expected.get(archetype.id));
+      expect(archetype.baseStats).toMatchObject(expected.get(archetype.legacyId));
       expect(archetype.baseStats.resolveMax).toBeGreaterThan(0);
     }
   });
 
-  it("uses every character's shipped rank-3 starting trait", () => {
+  it("uses every archetype's shipped rank-3 starting trait", () => {
     const expected = new Map(TOW_CHARACTER_SOURCE_ROWS.map(([
       , id, , , , , , , , , startingTrait,
     ]) => {
@@ -132,7 +132,7 @@ describe("source-calibrated character ability catalogue", () => {
       return [id, { [SOURCE_STARTING_TRAIT_IDS[sourceName]]: 3 }];
     }));
     for (const archetype of STARTING_ARCHETYPES) {
-      expect(archetype.build.traits).toEqual(expected.get(archetype.id));
+      expect(archetype.build.traits).toEqual(expected.get(archetype.legacyId));
     }
   });
 
@@ -160,16 +160,16 @@ describe("source-calibrated character ability catalogue", () => {
   it.each([
     ["arctic-retaliation", 1030118, "Retaliation", 8, 0, [{ type: "scaled-status", status: "counter-attack", percentByRank: [160, 240] }]],
     ["demon-trackers-net", 1030217, "Tracker's Net", 5, 6, [{ type: "scaled-status", status: "cripple", percentByRank: [20, 30] }, { type: "status", status: "paralyze", countByRank: [1, 1] }]],
-    ["mage-god-slaying-spear", 1030321, "Spear of Godslayer", 1, 0, [{ type: "damage", hits: 3, percentByRank: [120, 180] }]],
-    ["priestess-doom", 1030418, "Perdition", 3, 7, [{ type: "scale-status", statuses: ["burn", "poison", "bleed"], percentByRank: [200, 250] }]],
-    ["assassin-execution", 1030519, "Behead", 2, 0, [{ type: "damage", percentByRank: [240, 360] }, { type: "scale-status", statuses: ["limp"], percentByRank: [0, 0] }]],
+    ["mage-god-slaying-spear", 1030321, "Grand Arcane Lance", 1, 0, [{ type: "damage", hits: 3, percentByRank: [120, 180] }]],
+    ["priestess-doom", 1030418, "Condemnation", 3, 7, [{ type: "scale-status", statuses: ["burn", "poison", "bleed"], percentByRank: [200, 250] }]],
+    ["assassin-execution", 1030519, "Execution", 2, 0, [{ type: "damage", percentByRank: [240, 360] }, { type: "scale-status", statuses: ["limp"], percentByRank: [0, 0] }]],
     ["north-king-earthquake", 1030622, "Earthquake", 1, 0, [{ type: "damage", percentByRank: [400] }, { type: "scaled-status", status: "lethargy", percentByRank: [400] }]],
     ["clocktower-chain-explosion", 1030720, "Chain Explosion", 4, 3, [{ type: "scale-status", statuses: ["doom"], percentByRank: [450, 450] }]],
     ["witch-all-out-attack", 1030817, "Skeleton Wave", 2, 9, [{ type: "damage", hits: 5, percentByRank: [40, 40] }]],
     ["sleepless-fire-essence", 1030922, "Fire Essence", 3, 1, [{ type: "scale-status", statuses: ["overload"], percentByRank: [350] }]],
     ["blade-chi-liberation", 1031019, "Chi Liberation", 2, 7, [{ type: "scale-status", statuses: ["doom-atk"], percentByRank: [160, 160] }]],
     ["vampire-rampage", 1031122, "Rampage", 1, 0, [{ type: "scaled-status", status: "doom", percentByRank: [30] }, { type: "damage", percentByRank: [50] }]],
-    ["automaton-fate-manipulator", 1031222, "Fate Manipulator", 3, 0, [{ type: "status-from-status", status: "limp", factorByRank: [1] }, { type: "scale-status", statuses: ["limp"], percentByRank: [0] }]],
+    ["automaton-fate-manipulator", 1031222, "Thermal Transfer", 3, 0, [{ type: "status-from-status", status: "limp", factorByRank: [1] }, { type: "scale-status", statuses: ["limp"], percentByRank: [0] }]],
   ])("calibrates %s against source record %i", (id, sourceId, name, uses, cooldown, effects) => {
     expect(getCharacterAbility(id)).toMatchObject({
       name,

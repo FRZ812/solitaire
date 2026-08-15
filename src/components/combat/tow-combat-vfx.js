@@ -32,8 +32,46 @@ import statusTempo from "../../assets/generated/winter-tower/status/tempo-v1.png
 import { getSkill, skillIds } from "../../gameplay/tow/skills.js";
 import { resolveTowIntentArt } from "./tow-combat-ability-art.js";
 
+const GENERATED_FLIPBOOK_MODULES = import.meta.glob(
+  "../../assets/generated/winter-tower/vfx/flipbooks/*-v1.webp",
+  { eager: true, import: "default" },
+);
+
+export const COMBAT_VFX_FLIPBOOK_ASSETS = Object.freeze(Object.fromEntries(
+  Object.entries(GENERATED_FLIPBOOK_MODULES).map(([modulePath, asset]) => {
+    const id = modulePath.match(/\/([^/]+)-v1\.webp$/)?.[1];
+    return [id, asset];
+  }).filter(([id]) => Boolean(id)),
+));
+
+const FLIPBOOK_IDS_BY_LENGTH = Object.freeze(
+  Object.keys(COMBAT_VFX_FLIPBOOK_ASSETS).sort((left, right) => right.length - left.length),
+);
+
+function flipbookIdForVariant(variant) {
+  if (!variant) return null;
+  if (COMBAT_VFX_FLIPBOOK_ASSETS[variant]) return variant;
+  return FLIPBOOK_IDS_BY_LENGTH.find((id) => variant.startsWith(`${id}-`))
+    || (COMBAT_VFX_FLIPBOOK_ASSETS.strike ? "strike" : FLIPBOOK_IDS_BY_LENGTH[0])
+    || null;
+}
+
+function flipbookForId(id, frameRange = null) {
+  const asset = id && COMBAT_VFX_FLIPBOOK_ASSETS[id];
+  if (!asset) return null;
+  return Object.freeze({
+    id,
+    asset,
+    frameCount: 9,
+    frameSize: 256,
+    fps: 18,
+    layout: "horizontal",
+    ...(frameRange ? { frameRange: Object.freeze([...frameRange]) } : {}),
+  });
+}
+
 // Kept as a compatibility manifest for old intent-card and external UI consumers. The
-// battlefield renderer never reads these assets; foreground effects are always Canvas 2D.
+// battlefield renderer never reads these static emblems; it samples generated flipbooks.
 export const COMBAT_VFX_ASSETS = Object.freeze({
   afflict: afflictAsset,
   arcane: arcaneAsset,
@@ -87,6 +125,30 @@ const FAMILY_PALETTES = Object.freeze({
   void: Object.freeze(["#f0e6ff", "#9b5de5", "#240046"]),
   ward: Object.freeze(["#effcff", "#79cee8", "#234e70"]),
   wind: Object.freeze(["#ebfff9", "#73cfb7", "#215b55"]),
+});
+
+// Status ticks, item reactions, and plan-only aliases are not separate abilities, so they
+// reuse the closest authored ability flipbook instead of falling back to procedural marks.
+// Every current skill still resolves to its own exact `${skillId}-v1.webp` atlas first.
+const FAMILY_FLIPBOOK_IDS = Object.freeze({
+  afflict: "blade-of-curse",
+  arcane: "mage-magic-arrow",
+  evade: "emergency-evasion",
+  fire: "incineration",
+  frost: "rapid-cooling",
+  gash: "slaughter",
+  heal: "first-aid",
+  impact: "sudden-blow",
+  lightning: "rising-power",
+  mechanical: "automaton-impact-cannon",
+  nature: "mage-thorn-veil",
+  pierce: "penetration",
+  radiant: "priestess-holy-shock",
+  slash: "strike",
+  toxic: "demon-poison-bottle",
+  void: "witch-void-monster",
+  ward: "block",
+  wind: "north-king-whirlwind",
 });
 
 function prefixedChoreographies(prefix, entries) {
@@ -783,15 +845,22 @@ function paletteFor(spec, profile) {
 function withMotion(spec) {
   const profile = visualProfile(spec.variant);
   const choreography = choreographyFor(spec, profile);
+  const inheritedFlipbookId = spec.flipbook?.id
+    || flipbookIdForVariant(spec.variant)
+    || FAMILY_FLIPBOOK_IDS[spec.family]
+    || "strike";
+  const flipbook = spec.flipbook || flipbookForId(inheritedFlipbookId);
   return Object.freeze({
     ...spec,
-    // Combat presentation is drawn frame-by-frame. Static ability art and large bitmap
-    // emblems stay in the command/intent UI and never get enlarged over a combatant.
+    // Full ability art remains in command/intent UI. Battlefield presentation samples an
+    // ImageGen-authored nine-frame raster atlas; it never enlarges the old static emblems.
     asset: null,
-    assetSource: "canvas",
+    assetSource: flipbook ? "imagegen-flipbook" : "none",
+    flipbook,
     choreography,
     authored: Boolean(
-      spec.choreography
+      flipbook
+      || spec.choreography
       || AUTHORED_CHOREOGRAPHIES[spec.variant]
       || PLANNED_ONLY_CHOREOGRAPHIES[spec.variant]
     ),
@@ -959,7 +1028,7 @@ const FORM_EFFECTS = Object.freeze({
 });
 
 const STATUS_PALETTES = Object.freeze({
-  bramble: Object.freeze(["#7bd88f", "#3a8043", "#183e1c"]),
+  bramble: Object.freeze(["#d8f8d8", "#5eae62", "#183e1c"]),
   crimson: Object.freeze(["#ff4d6d", "#b7094c", "#590d22"]),
   ember: Object.freeze(["#fff1c7", "#ff6b2c", "#7b160d"]),
   toxic: Object.freeze(["#c7f9cc", "#57cc99", "#22577a"]),
@@ -1277,6 +1346,13 @@ function skillEffectFor(skillId) {
     || null;
 }
 
+function withInheritedFlipbook(spec, sourceVisual) {
+  return withMotion(Object.freeze({
+    ...spec,
+    flipbook: sourceVisual?.flipbook || spec.flipbook || null,
+  }));
+}
+
 function attackDefinition(encounter, event) {
   return encounter?.enemyAttacks?.[event.enemyId]?.find((entry) => entry.id === event.attackId) || null;
 }
@@ -1330,7 +1406,7 @@ export function combatVfxForEvent(encounter, event) {
       skillVisual?.choreography || null,
       skillVisual?.palette || null,
     );
-    return withMotion(spec);
+    return withInheritedFlipbook(spec, skillVisual);
   }
 
   if (event.type === "tick-damage") {
@@ -1348,50 +1424,52 @@ export function combatVfxForEvent(encounter, event) {
 
   const skillVariant = event.skillId && skillEffectFor(event.skillId);
   if (event.type === "skill-shield") {
-    return withMotion(effect(
+    return withInheritedFlipbook(effect(
       "ward",
       `${slug(event.skillId, "ward")}-ward`,
       skillVariant?.motion === "fortress" ? "fortress" : "brace",
       skillVariant?.motion === "fortress" ? "fortress-barrier" : "ward-arc",
       STATUS_PALETTES.ward,
-    ));
+    ), skillVariant);
   }
   if (event.type === "ward-expired") {
     return withMotion(effect("ward", "ward-expired", "shatter"));
   }
   if (event.type === "skill-heal" || event.type === "skill-cleanse") {
-    return withMotion(effect(
+    return withInheritedFlipbook(effect(
       "heal",
       `${slug(event.skillId, "heal")}-heal`,
       "mend",
       "regeneration-rise",
       STATUS_PALETTES.jade,
-    ));
+    ), skillVariant);
   }
   if (event.type === "skill-status" && event.status && STATUS_EFFECTS[event.status]) {
     const statusVariant = STATUS_EFFECTS[event.status];
-    return withMotion(effect(
+    return withInheritedFlipbook(effect(
       statusVariant.family,
       `${slug(event.skillId, "skill")}-${slug(event.status, "status")}`,
       statusVariant.motion,
       statusVariant.choreography,
       statusVariant.palette,
-    ));
+    ), skillVariant);
   }
   if (["skill-status-amplified", "skill-status-scaled", "skill-status-modified"].includes(event.type)) {
     const status = event.status || event.statuses?.[0];
     const statusVariant = STATUS_EFFECTS[status];
-    return withMotion(effect(
+    return withInheritedFlipbook(effect(
       statusVariant?.family || "afflict",
       `${slug(event.skillId, "skill")}-${slug(status, "status")}-${slug(event.type)}`,
       statusVariant?.motion || "void",
       statusVariant?.choreography || "doom-collapse",
       statusVariant?.palette || STATUS_PALETTES.void,
-    ));
+    ), skillVariant);
   }
 
   const formId = event.skillId === "strike" ? activeFormId(encounter, event) : null;
-  if (formId && FORM_EFFECTS[formId]) return withMotion(FORM_EFFECTS[formId]);
+  if (formId && FORM_EFFECTS[formId]) {
+    return withInheritedFlipbook(FORM_EFFECTS[formId], skillVariant || skillEffectFor("strike"));
+  }
   if (skillVariant) return withMotion(skillVariant);
   if (event.status && STATUS_EFFECTS[event.status]) return combatVfxForStatus(event.status);
 
@@ -1415,7 +1493,9 @@ export function combatVfxVariantForSkill(skillId) {
 }
 
 export function combatVfxVariantForForm(formId) {
-  return FORM_EFFECTS[formId] ? withMotion(FORM_EFFECTS[formId]) : null;
+  return FORM_EFFECTS[formId]
+    ? withInheritedFlipbook(FORM_EFFECTS[formId], skillEffectFor("strike"))
+    : null;
 }
 
 const CHOREOGRAPHY_COMBOS = Object.freeze({
@@ -1426,6 +1506,14 @@ const CHOREOGRAPHY_COMBOS = Object.freeze({
   "shadow-combo": Object.freeze(["shadow-left", "shadow-right", "shadow-thrust", "shadow-cross"]),
   "projectile-barrage": Object.freeze(["projectile-high", "projectile-low", "projectile-center", "projectile-cross"]),
 });
+
+function flipbookRangeForHit(hitIndex, hitCount) {
+  const count = Math.max(1, hitCount);
+  const index = Math.max(0, Math.min(count - 1, hitIndex));
+  const start = Math.floor((index * 9) / count);
+  const end = Math.max(start, Math.floor(((index + 1) * 9) / count) - 1);
+  return [start, Math.min(8, end)];
+}
 
 /** Give every contact in a multi-hit action its own moving beat rather than replaying one overlay. */
 export function combatVfxForHit(visual, hitIndex = 0, hitCount = 1) {
@@ -1439,11 +1527,16 @@ export function combatVfxForHit(visual, hitIndex = 0, hitCount = 1) {
   if (!combo) return visual;
   const choreography = combo[hitIndex % combo.length];
   const profile = visualProfile(`${visual.variant}:hit:${hitIndex}`);
+  const frameRange = flipbookRangeForHit(hitIndex, hitCount);
+  const flipbook = visual.flipbook
+    ? flipbookForId(visual.flipbook.id, frameRange)
+    : null;
   return Object.freeze({
     ...visual,
     choreography,
+    flipbook,
     profile,
-    signatureKey: `${visual.variant}:${choreography}:${profile.key}`,
+    signatureKey: `${visual.variant}:${choreography}:${profile.key}:${frameRange.join("-")}`,
     comboStep: hitIndex,
   });
 }

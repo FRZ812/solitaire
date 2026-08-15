@@ -9,7 +9,7 @@
 // resource. A skill can also *replace* the basic attack or defence rather than taking a slot,
 // which is what makes Strike and Block slots rather than cards.
 //
-// Rank values are quoted verbatim from the wiki rather than interpolated. Character
+// Rank values are quoted verbatim from the wiki rather than interpolated. Archetype
 // abilities list every promoted value outright; a General ability whose capture contains
 // one fixed value keeps that value as its rarity rises instead of inventing new scaling.
 
@@ -18,6 +18,7 @@ import {
   characterAbilityIds,
   getCharacterAbility,
 } from "./character-abilities.js";
+import { canonicalTowArchetypeId } from "./archetype-identities.js";
 
 export const SKILL_SLOTS = 5;
 export const SKILL_RARITY_PROGRESSION = Object.freeze([
@@ -154,6 +155,7 @@ function skill(id, name, {
     usesPerAct,
     usesPerActByRank: usesPerActByRank ? Object.freeze(usesPerActByRank) : null,
     exclusiveTo,
+    archetypeId: canonicalTowArchetypeId(exclusiveTo),
     abilityType,
     description,
     source: source ? Object.freeze(source) : null,
@@ -207,7 +209,7 @@ const SKILLS = Object.freeze(Object.fromEntries([
     replaces: "strike",
     effects: [damage("defense", [105, 120, 135, 150, 165])],
   }),
-  skill("slaughter", "Slaughter", {
+  skill("slaughter", "Bleeding Cut", {
     rarity: "uncommon",
     replaces: "strike",
     effects: [
@@ -233,8 +235,8 @@ const SKILLS = Object.freeze(Object.fromEntries([
     effects: [shield("attack", [270, 310, 350, 390, 430])],
   }),
 
-  // --- Arctic Knight exclusives --------------------------------------------
-  skill("threatening-cry", "Threatening Cry", {
+  // --- Knight compatibility abilities --------------------------------------
+  skill("threatening-cry", "Challenge", {
     rarity: "uncommon",
     consumesTurn: false,
     usesPerAct: 7,
@@ -250,7 +252,7 @@ const SKILLS = Object.freeze(Object.fromEntries([
       status("paralyze", "self", [1, 1, 1, 1, 1]),
     ],
   }),
-  skill("giants-smash", "Giant's Smash", {
+  skill("giants-smash", "Colossus Blow", {
     rarity: "rare",
     usesPerAct: 3,
     exclusiveTo: "arctic-knight",
@@ -268,14 +270,14 @@ const SKILLS = Object.freeze(Object.fromEntries([
       shield("defense", [110, 135, 160, 185]),
     ],
   }),
-  skill("warcry", "Warcry", {
+  skill("warcry", "Rally", {
     rarity: "rare",
     consumesTurn: false,
     usesPerActByRank: [4, 5, 6, 7],
     exclusiveTo: "arctic-knight",
     effects: [status("solidity", "self", [3, 3, 3, 3])],
   }),
-  skill("fist-of-justice", "Fist of Justice", {
+  skill("fist-of-justice", "Shield Verdict", {
     rarity: "rare",
     usesPerAct: 5,
     exclusiveTo: "arctic-knight",
@@ -291,7 +293,7 @@ const SKILLS = Object.freeze(Object.fromEntries([
     effects: [shield("defense", [160, 240])],
     note: "counterattack",
   }),
-  skill("incineration", "Incineration", {
+  skill("incineration", "Burning Reprisal", {
     rarity: "mythical",
     usesPerAct: 1,
     exclusiveTo: "arctic-knight",
