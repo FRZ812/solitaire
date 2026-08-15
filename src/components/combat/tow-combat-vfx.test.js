@@ -22,15 +22,16 @@ describe("authored combat VFX", () => {
     expect(new Set(Object.values(COMBAT_VFX_ASSETS)).size).toBe(13);
   });
 
-  it("gives every active ability its own foreground VFX asset", () => {
+  it("keeps full-bleed ability-card art out of character-anchored foreground VFX", () => {
     const visuals = skillIds().map((skillId) => combatVfxVariantForSkill(skillId));
     expect(visuals.filter((visual) => !visual)).toEqual([]);
-    expect(visuals.every((visual) => /\.(?:png|webp)$/.test(visual.asset))).toBe(true);
-    expect(visuals.every((visual) => /\.(?:png|webp)$/.test(visual.signatureAsset))).toBe(true);
-    expect(visuals.every((visual) => !visual.asset.includes("svg") && !visual.signatureAsset.includes("svg"))).toBe(true);
-    expect(visuals.every((visual) => ["ability", "dedicated"].includes(visual.assetSource))).toBe(true);
-    expect(new Set(visuals.map((visual) => visual.asset)).size).toBe(visuals.length);
-    expect(new Set(visuals.map((visual) => visual.signatureAsset)).size).toBe(visuals.length);
+    expect(visuals.every((visual) => visual.asset.endsWith(".png"))).toBe(true);
+    expect(visuals.every((visual) => ["family", "dedicated"].includes(visual.assetSource))).toBe(true);
+    expect(visuals.every((visual) => !Object.hasOwn(visual, "signatureAsset"))).toBe(true);
+
+    const slash = combatVfxVariantForSkill("blade-slash");
+    expect(slash).toMatchObject({ asset: COMBAT_VFX_ASSETS.slash, assetSource: "family" });
+    expect(slash.asset).not.toBe(resolveTowAbilityArt(getSkill("blade-slash")));
   });
 
   it("separates the Last Assassin execution impact from the multi-hit knife storm", () => {
@@ -43,33 +44,30 @@ describe("authored combat VFX", () => {
     expect(storm.motion).toBe("volley");
   });
 
-  it("keeps each sourced Witch persistent effect on its own ability asset", () => {
+  it("renders persistent damage with transparent effect families instead of source-skill cards", () => {
     const tickCases = [
-      [{ voidMonster: 12 }, "witch-void-monster-v1.webp"],
-      [{ hellfireSpirit: 20 }, "witch-hellfire-spirit-v1.webp"],
-      [{ delayedDamage: 666 }, "witch-limited-life-sentence-v1.webp"],
-      [{ forbiddenRitual: true }, "witch-forbidden-ritual-v1.webp"],
+      [{ voidMonster: 12 }, "arcane"],
+      [{ hellfireSpirit: 20 }, "fire"],
+      [{ delayedDamage: 666 }, "afflict"],
+      [{ forbiddenRitual: true }, "arcane"],
     ];
-    const assets = tickCases.map(([detail, expected]) => {
+    for (const [detail, family] of tickCases) {
       const visual = combatVfxForEvent({}, { type: "tick-damage", ...detail });
-      expect(visual.asset).toContain(expected);
-      expect(visual.assetSource).toBe("ability");
-      return visual.asset;
-    });
-    expect(new Set(assets).size).toBe(assets.length);
+      expect(visual).toMatchObject({ family, asset: COMBAT_VFX_ASSETS[family], assetSource: "family" });
+      expect(visual.asset).not.toContain("abilities/");
+    }
   });
 
-  it("makes Whirlwind a dedicated wind-pressure signature without a shared family decal", () => {
+  it("gives Whirlwind wind-pressure VFX without floating its square ability card", () => {
     const whirlwind = combatVfxVariantForSkill("north-king-whirlwind");
     expect(whirlwind).toMatchObject({
       family: "wind",
       variant: "north-king-whirlwind",
       motion: "cyclone",
     });
-    expect(whirlwind.asset).toContain("north-king-whirlwind-v1.webp");
-    expect(whirlwind.asset).not.toBe(COMBAT_VFX_ASSETS.wind);
+    expect(whirlwind.asset).toBe(COMBAT_VFX_ASSETS.wind);
     expect(whirlwind.asset).not.toBe(COMBAT_VFX_ASSETS.slash);
-    expect(whirlwind.signatureAsset).toContain("north-king-whirlwind-v1.webp");
+    expect(whirlwind).not.toHaveProperty("signatureAsset");
   });
 
   it("gives every active status an icon-ready transparent effect", () => {
@@ -95,9 +93,9 @@ describe("authored combat VFX", () => {
     expect(combatVfxVariantForForm("pinning-arrow")).toMatchObject({ family: "pierce", variant: "pinning-arrow", motion: "pin" });
     expect(combatVfxVariantForForm("cinder-mark")).toMatchObject({ family: "fire", variant: "cinder-mark", motion: "brand" });
     expect(combatVfxVariantForForm("forked-bolt")).toMatchObject({ family: "lightning", variant: "forked-bolt", motion: "fork" });
-    const formSignatures = ["measured-cut", "crossing-cuts", "threefold-cut", "pinning-arrow", "forked-bolt"]
-      .map((formId) => combatVfxVariantForForm(formId).signatureAsset);
-    expect(new Set(formSignatures).size).toBe(formSignatures.length);
+    expect(combatVfxVariantForForm("measured-cut").asset).toBe(COMBAT_VFX_ASSETS.slash);
+    expect(combatVfxVariantForForm("threefold-cut").asset).toBe(COMBAT_VFX_ASSETS.gash);
+    expect(combatVfxVariantForForm("pinning-arrow").asset).toBe(COMBAT_VFX_ASSETS.pierce);
   });
 
   it("derives enemy intent and attack art from the declared move", () => {

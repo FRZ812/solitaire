@@ -73,32 +73,32 @@ export const GOODS = {
   "threadbare-war-ribbon": {
     id: "threadbare-war-ribbon", name: "Threadbare War Ribbon", kind: "keepsake", tier: "common", value: 20,
     appearance: "A faded crimson ribbon tied around a battered iron clasp, worn thin by years of handling.",
-    description: "A humble permanent keepsake. Its remembered endurance grants +4 maximum health in Tower combat.",
+    description: "The last scrap of a standard carried by a company that marched north and never returned.",
   },
   "frostglass-bead": {
     id: "frostglass-bead", name: "Frostglass Bead", kind: "keepsake", tier: "uncommon", value: 140,
     appearance: "A clear blue prayer bead on black cord, with a perfect snowflake caught inside.",
-    description: "A permanent keepsake that grants +2 Defence and +4 maximum health in Tower combat.",
+    description: "Pilgrims claim the snowflake sealed inside formed when the first bell of winter fell silent.",
   },
   "red-wolf-token": {
     id: "red-wolf-token", name: "Red Wolf Token", kind: "keepsake", tier: "rare", value: 520,
     appearance: "A scarred bronze token stamped with a wolf's profile and darkened along one old claw mark.",
-    description: "A permanent keepsake that grants +3 Attack and +3% Critical in Tower combat.",
+    description: "The Red Wolves pressed one into the hand of every recruit who survived their first winter.",
   },
   "saints-broken-halo": {
     id: "saints-broken-halo", name: "Saint's Broken Halo", kind: "keepsake", tier: "epic", value: 2200,
     appearance: "A palm-sized ring of old gold, broken cleanly through one radiant segment.",
-    description: "An achievement keepsake that grants +4 Defence, +10 maximum health, and one rank of Aegis.",
+    description: "The final reliquary of a nameless saint, cracked when her mountain chapel vanished beneath the snow.",
   },
   "crownless-coin": {
     id: "crownless-coin", name: "Crownless Coin", kind: "keepsake", tier: "legendary", value: 6800,
     appearance: "A black-gold royal coin split through the erased crown stamped on both faces.",
-    description: "An achievement keepsake that grants +5 Attack, +5 Defence, +5% Critical, and +5% Dodge.",
+    description: "Struck for a king whose crown was chiselled from every record before the metal had cooled.",
   },
   "heart-of-still-winter": {
     id: "heart-of-still-winter", name: "Heart of Still Winter", kind: "keepsake", tier: "mythical", value: 14000,
     appearance: "A deep-blue crystal heart holding a white star that never flickers and never melts its frost.",
-    description: "A mythic achievement keepsake granting +8 Attack, +8 Defence, +20 maximum health, +8% Critical, and +8% Dodge.",
+    description: "No flame can thaw the white star at its centre, and no chronicle agrees who first carved it.",
   },
 
   // Emergency keepsakes are ordinary carried consumables. Their decisive effect is resolved
@@ -106,22 +106,22 @@ export const GOODS = {
   "crimson-vial": {
     id: "crimson-vial", name: "Crimson Vial", kind: "remedy", value: 65,
     appearance: "A thumb-sized red vial in a wire cage, warm despite the winter air.",
-    description: "A single combat draught that restores 25% of maximum health. Chosen as a starting keepsake or found later.",
+    description: "Battlefield chirurgeons bottle it only at dusk; even beneath winter ice, the glass stays warm.",
   },
   "lucid-tonic": {
     id: "lucid-tonic", name: "Lucid Tonic", kind: "remedy", value: 70,
     appearance: "A clear ampoule in which one silver bubble refuses to rise.",
-    description: "A single combat draught that restores 3 Resolve. Chosen as a starting keepsake or found later.",
+    description: "One silver bubble wanders through the ampoule, always drifting away from the hand that holds it.",
   },
   "warding-ash": {
     id: "warding-ash", name: "Warding Ash", kind: "remedy", value: 55,
     appearance: "Grey temple ash folded into waxed paper and marked with a closed eye.",
-    description: "Scattered in combat, it raises a one-window ward worth 150% of Defence.",
+    description: "Ash gathered from a razed temple and folded beneath the closed-eye seal of its last watch.",
   },
   "fire-pot": {
     id: "fire-pot", name: "Fire Pot", kind: "remedy", value: 60,
     appearance: "A pitch-sealed clay pot with a short black fuse under its carrying loop.",
-    description: "Thrown in combat, it makes a 150% Attack strike against one target.",
+    description: "A pitch-sealed clay pot from the Cinder March, its short fuse forever smelling faintly of cloves.",
   },
 
   // ---- Butcher (meat) ----

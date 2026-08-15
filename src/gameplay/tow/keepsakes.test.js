@@ -40,6 +40,14 @@ describe("starting keepsake catalogue", () => {
     expect(isKeepsakeUnlocked("red-wolf-token")).toBe(true);
   });
 
+  it("keeps picker subtext as lore while effects own every mechanical explanation", () => {
+    const mechanicalCopy = /[+%]|\b(?:attack|defence|critical|dodge|health|resolve|aegis|common|uncommon|rare|epic|legendary|mythical)\b/i;
+    for (const keepsake of STARTING_KEEPSAKES) {
+      expect(keepsake.description, keepsake.id).not.toMatch(mechanicalCopy);
+      expect(keepsake.effect, keepsake.id).toMatch(/[+%]|\b(?:ATK|DEF|Resolve|ward|use)\b/i);
+    }
+  });
+
   it("separates permanent grants from disposable combat inventory", () => {
     expect(permanentItemIdForKeepsake("frostglass-bead")).toBe("frostglass-bead");
     expect(combatItemIdForKeepsake("frostglass-bead")).toBeNull();

@@ -421,6 +421,11 @@ describe("the simple grid-to-preview flow", () => {
     let panel = document.querySelector(".keepsake-picker__panel");
     expect(panel.querySelectorAll('[role="option"]')).toHaveLength(6);
     expect(panel.querySelectorAll(".ability-swap-picker__option-art img")).toHaveLength(6);
+    const redWolf = panel.querySelector('[data-keepsake-id="red-wolf-token"]');
+    expect(redWolf.querySelector(".ability-swap-picker__option-summary").textContent)
+      .toBe("The Red Wolves pressed one into the hand of every recruit who survived their first winter.");
+    expect(redWolf.querySelector(".ability-swap-picker__option-meta").textContent)
+      .toBe("+3 ATK · +3% Critical");
     const lockedHalo = panel.querySelector('[data-keepsake-id="saints-broken-halo"]');
     expect(lockedHalo.getAttribute("aria-disabled")).toBeNull();
     await click(lockedHalo);
