@@ -1078,15 +1078,20 @@
 }
 
 .ability-swap-picker__trigger[data-rarity="uncommon"],
-.ability-swap-picker__list > [data-rarity="uncommon"] { --ability-rarity: #91c7a4; }
+.ability-swap-picker__list > [data-rarity="uncommon"],
+.ability-swap-picker__rarity-bar[data-rarity="uncommon"] { --ability-rarity: #91c7a4; }
 .ability-swap-picker__trigger[data-rarity="rare"],
-.ability-swap-picker__list > [data-rarity="rare"] { --ability-rarity: #78a9d4; }
+.ability-swap-picker__list > [data-rarity="rare"],
+.ability-swap-picker__rarity-bar[data-rarity="rare"] { --ability-rarity: #78a9d4; }
 .ability-swap-picker__trigger[data-rarity="epic"],
-.ability-swap-picker__list > [data-rarity="epic"] { --ability-rarity: #b89add; }
+.ability-swap-picker__list > [data-rarity="epic"],
+.ability-swap-picker__rarity-bar[data-rarity="epic"] { --ability-rarity: #b89add; }
 .ability-swap-picker__trigger[data-rarity="legendary"],
-.ability-swap-picker__list > [data-rarity="legendary"] { --ability-rarity: #d9aa62; }
+.ability-swap-picker__list > [data-rarity="legendary"],
+.ability-swap-picker__rarity-bar[data-rarity="legendary"] { --ability-rarity: #d9aa62; }
 .ability-swap-picker__trigger[data-rarity="mythical"],
-.ability-swap-picker__list > [data-rarity="mythical"] { --ability-rarity: #dc7771; }
+.ability-swap-picker__list > [data-rarity="mythical"],
+.ability-swap-picker__rarity-bar[data-rarity="mythical"] { --ability-rarity: #dc7771; }
 
 .ability-swap-picker__overlay {
   position: fixed;
@@ -1342,7 +1347,8 @@
   color: #a98b84;
 }
 
-.ability-swap-picker__rank-bar {
+.ability-swap-picker__rarity-bar {
+  --ability-rarity: #aeb7b4;
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: minmax(130px, 1fr) auto auto;
@@ -1354,13 +1360,13 @@
   box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.18);
 }
 
-.ability-swap-picker__rank-copy {
+.ability-swap-picker__rarity-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
 }
 
-.ability-swap-picker__rank-copy > small {
+.ability-swap-picker__rarity-copy > small {
   color: color-mix(in srgb, var(--character-accent), #fff 22%);
   font-size: 0.43rem;
   font-weight: 800;
@@ -1368,7 +1374,7 @@
   text-transform: uppercase;
 }
 
-.ability-swap-picker__rank-copy > strong {
+.ability-swap-picker__rarity-copy > strong {
   overflow: hidden;
   margin-top: 2px;
   color: #f2eadc;
@@ -1378,13 +1384,13 @@
   white-space: nowrap;
 }
 
-.ability-swap-picker__rank-copy > span {
+.ability-swap-picker__rarity-copy > span {
   margin-top: 2px;
   color: #77837d;
   font-size: 0.46rem;
 }
 
-.ability-swap-picker__rank-stepper {
+.ability-swap-picker__rarity-stepper {
   display: grid;
   grid-template-columns: 31px minmax(66px, auto) 31px;
   align-items: stretch;
@@ -1394,7 +1400,7 @@
   background: rgba(2, 7, 9, 0.46);
 }
 
-.ability-swap-picker__rank-stepper > button {
+.ability-swap-picker__rarity-stepper > button {
   min-width: 31px;
   padding: 0;
   border: 0;
@@ -1404,21 +1410,21 @@
   font-size: 1rem;
 }
 
-.ability-swap-picker__rank-stepper > button:first-child {
+.ability-swap-picker__rarity-stepper > button:first-child {
   border-right: 1px solid rgba(225, 212, 188, 0.1);
 }
 
-.ability-swap-picker__rank-stepper > button:last-child {
+.ability-swap-picker__rarity-stepper > button:last-child {
   border-left: 1px solid rgba(225, 212, 188, 0.1);
 }
 
-.ability-swap-picker__rank-stepper > button:disabled {
+.ability-swap-picker__rarity-stepper > button:disabled {
   color: #4f5a55;
   background: transparent;
   cursor: default;
 }
 
-.ability-swap-picker__rank-stepper output {
+.ability-swap-picker__rarity-stepper output {
   display: flex;
   min-height: 38px;
   align-items: center;
@@ -1430,17 +1436,11 @@
   text-align: center;
 }
 
-.ability-swap-picker__rank-stepper output strong {
+.ability-swap-picker__rarity-stepper output strong {
+  color: var(--ability-rarity);
   font-family: Georgia, serif;
   font-size: 0.66rem;
   font-weight: 600;
-  white-space: nowrap;
-}
-
-.ability-swap-picker__rank-stepper output small {
-  margin-top: 2px;
-  color: #81735e;
-  font-size: 0.4rem;
   white-space: nowrap;
 }
 
@@ -1504,7 +1504,7 @@
 .ability-swap-picker__header > button:focus-visible,
 .ability-swap-picker__tabs > button:focus-visible,
 .ability-swap-picker__list > button:focus-visible,
-.ability-swap-picker__rank-stepper > button:focus-visible,
+.ability-swap-picker__rarity-stepper > button:focus-visible,
 .ability-swap-picker__confirm:focus-visible,
 .character-details__test-loadout .character-details__section-heading > button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--character-accent), #fff 18%);
@@ -2372,17 +2372,17 @@
     padding: 8px;
   }
 
-  .ability-swap-picker__rank-bar {
+  .ability-swap-picker__rarity-bar {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px 10px;
     padding: 9px 11px 10px;
   }
 
-  .ability-swap-picker__rank-copy > strong {
+  .ability-swap-picker__rarity-copy > strong {
     font-size: 0.7rem;
   }
 
-  .ability-swap-picker__rank-stepper {
+  .ability-swap-picker__rarity-stepper {
     grid-template-columns: 29px minmax(60px, auto) 29px;
   }
 

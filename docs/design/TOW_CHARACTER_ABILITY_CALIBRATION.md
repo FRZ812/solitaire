@@ -33,18 +33,20 @@ and authored VFX.
 
 Each character has the same 23-row source distribution: six Common, three Uncommon, six
 Rare, six Legendary, and two Mythic abilities. Their advancement spans are also sourced:
-Common has six ranks, Uncommon five, Rare four, Legendary two, and Mythic one. The exact
-catalogue is compiled rather than hand-authored from prose.
+Common has six value rows, Uncommon five, Rare four, Legendary two, and Mythic one. Those
+rows are presented to players as rarity promotion, not as an independent numeric rank.
+The exact catalogue is compiled rather than hand-authored from prose.
 
-## Practice rank preview
+## Practice rarity preview
 
 The character-details loadout editor lets the player choose both an ability and its
-starting rank for a practice fight. Rank controls are bounded by the source progression
-span, so Mythic and any other single-rank ability is fixed at Rank 1 while multi-rank
-abilities can be previewed from Rank 1 through their sourced maximum. Damage, status,
-and use-count text update live at the selected rank before the player confirms the swap.
+starting rarity for a practice fight. The visible ladder is Common, Uncommon, Rare, Epic,
+Legendary, and Mythical. An ability cannot be lowered below its authored rarity: Legendary
+has only Legendary and Mythical states, while Common reaches Legendary after four
+promotions and Mythical after five. The interface always shows the resulting rarity name,
+never an `x/y` rank counter. Damage, status, and use-count text update live before confirm.
 
-The selected ranks are part of the deterministic practice seed and starting encounter
+The selected rarities are part of the deterministic practice seed and starting encounter
 state only. They do not change the authored journey loadout or durable build schema.
 
 ## Status and damage lifecycle

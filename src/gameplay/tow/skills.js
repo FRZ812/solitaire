@@ -17,6 +17,14 @@ import {
 } from "./character-abilities.js";
 
 export const SKILL_SLOTS = 5;
+export const SKILL_RARITY_PROGRESSION = Object.freeze([
+  "common",
+  "uncommon",
+  "rare",
+  "epic",
+  "legendary",
+  "mythical",
+]);
 export const GENERAL_ACTIVE_SOURCE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91#s-11.1";
 export const GENERAL_ABILITY_IDS = Object.freeze([
   "penetration",
@@ -521,6 +529,37 @@ export function maxRankOf(skillId) {
   const definition = getSkill(skillId);
   if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
   return definition.rankCount;
+}
+
+function skillDefinition(skillOrId) {
+  const definition = typeof skillOrId === "string" ? getSkill(skillOrId) : skillOrId;
+  if (!definition) throw new TypeError(`unknown-skill:${skillOrId}`);
+  return definition;
+}
+
+/** Player-facing rarity states unlocked by this ability's sourced upgrade rows. */
+export function skillRarityChoices(skillOrId) {
+  const definition = skillDefinition(skillOrId);
+  const start = SKILL_RARITY_PROGRESSION.indexOf(definition.rarity);
+  const choices = SKILL_RARITY_PROGRESSION.slice(start, start + definition.rankCount);
+  if (start < 0 || choices.length !== definition.rankCount) {
+    throw new TypeError(`invalid-skill-rarity-progression:${definition.id}`);
+  }
+  return choices;
+}
+
+/** Translate the engine's compact rank index into the rarity promoted to at that row. */
+export function skillRarityAtRank(skillOrId, rank = 1) {
+  const definition = skillDefinition(skillOrId);
+  return skillRarityChoices(definition)[rankIndex(definition, rank)];
+}
+
+/** Translate a player-selected rarity back to the sourced row used by combat math. */
+export function skillRankForRarity(skillOrId, rarity) {
+  const definition = skillDefinition(skillOrId);
+  const index = skillRarityChoices(definition).indexOf(rarity);
+  if (index < 0) throw new TypeError("invalid-skill-rarity");
+  return index + 1;
 }
 
 function rankIndex(definition, rank) {

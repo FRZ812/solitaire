@@ -17,7 +17,13 @@ import {
   characterAbilitiesFor,
   describeCharacterAbilityEffect,
 } from "../../gameplay/tow/character-abilities.js";
-import { createSkillState, generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
+import {
+  createSkillState,
+  generalAbilityIds,
+  getSkill,
+  skillRankForRarity,
+  skillRarityChoices,
+} from "../../gameplay/tow/skills.js";
 import {
   describeTraitAtRank,
   getFusion,
@@ -110,7 +116,7 @@ function AbilitySwapPicker({
   slotIndex,
   slotLabel,
   value,
-  rank,
+  rarity,
   groups,
   skillIds,
   accent,
@@ -128,12 +134,13 @@ function AbilitySwapPicker({
   const [activeGroupId, setActiveGroupId] = useState(selectedGroup.id);
   const [activeIndex, setActiveIndex] = useState(0);
   const [pendingSkillId, setPendingSkillId] = useState(value);
-  const [pendingRank, setPendingRank] = useState(rank);
+  const [pendingRarity, setPendingRarity] = useState(rarity);
   const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0];
   const options = activeGroup?.options || [];
   const pendingSkill = groups.flatMap((group) => group.options)
     .find((skill) => skill.id === pendingSkillId) || selected;
-  const pendingRankCap = pendingSkill?.rankCount || 1;
+  const pendingRarityChoices = pendingSkill ? skillRarityChoices(pendingSkill) : [];
+  const pendingRarityIndex = pendingRarityChoices.indexOf(pendingRarity);
 
   const equippedSlot = (skillId) => skillIds.findIndex(
     (chosenId, chosenIndex) => chosenIndex !== slotIndex && chosenId === skillId,
@@ -162,7 +169,7 @@ function AbilitySwapPicker({
   const openPicker = () => {
     setActiveGroupId(selectedGroup.id);
     setPendingSkillId(value);
-    setPendingRank(rank);
+    setPendingRarity(rarity);
     setOpen(true);
   };
 
@@ -174,17 +181,21 @@ function AbilitySwapPicker({
   const selectCandidate = (skill) => {
     if (!skill || isUnavailable(skill.id)) return;
     setPendingSkillId(skill.id);
-    setPendingRank(skill.id === value ? rank : 1);
+    setPendingRarity(skill.id === value ? rarity : skill.rarity);
   };
 
   const confirmCandidate = () => {
     if (!pendingSkill || isUnavailable(pendingSkill.id)) return;
-    onChange(pendingSkill.id, pendingRank);
+    onChange(pendingSkill.id, pendingRarity);
     closePicker();
   };
 
-  const changePendingRank = (delta) => {
-    setPendingRank((current) => Math.max(1, Math.min(pendingRankCap, current + delta)));
+  const changePendingRarity = (delta) => {
+    const nextIndex = Math.max(0, Math.min(
+      pendingRarityChoices.length - 1,
+      pendingRarityIndex + delta,
+    ));
+    setPendingRarity(pendingRarityChoices[nextIndex]);
   };
 
   const moveActive = (direction) => {
@@ -238,8 +249,9 @@ function AbilitySwapPicker({
   };
 
   if (!selected || !activeGroup) return null;
-  const selectedSummary = abilityMechanicalSummary(selected, rank);
-  const candidateUnchanged = pendingSkillId === value && pendingRank === rank;
+  const selectedRank = skillRankForRarity(selected, rarity);
+  const selectedSummary = abilityMechanicalSummary(selected, selectedRank);
+  const candidateUnchanged = pendingSkillId === value && pendingRarity === rarity;
 
   return (
     <div className="ability-swap-picker">
@@ -252,7 +264,7 @@ function AbilitySwapPicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? `${listboxId}-panel` : undefined}
-        data-rarity={selected.rarity}
+        data-rarity={rarity}
         onClick={openPicker}
       >
         <span className="ability-swap-picker__trigger-art">
@@ -261,11 +273,11 @@ function AbilitySwapPicker({
         <span className="ability-swap-picker__trigger-copy">
           <span className="ability-swap-picker__trigger-title">
             <strong>{resolveTowActionName(selected)}</strong>
-            <small>{titleCase(selected.rarity)} · Rank {rank}</small>
+            <small>{titleCase(rarity)}</small>
           </span>
           <span className="ability-swap-picker__trigger-summary">{selectedSummary}</span>
           <span className="ability-swap-picker__trigger-uses">
-            {abilityUsesLabel(selected, rank)}{selected.consumesTurn ? "" : " · swift"}
+            {abilityUsesLabel(selected, selectedRank)}{selected.consumesTurn ? "" : " · swift"}
           </span>
         </span>
         <span className="ability-swap-picker__change" aria-hidden="true">
@@ -335,7 +347,8 @@ function AbilitySwapPicker({
                 const unavailable = unavailableSlot >= 0;
                 const equipped = skill.id === value;
                 const candidate = skill.id === pendingSkillId;
-                const previewRank = candidate ? pendingRank : (equipped ? rank : 1);
+                const previewRarity = candidate ? pendingRarity : (equipped ? rarity : skill.rarity);
+                const previewRank = skillRankForRarity(skill, previewRarity);
                 const summary = abilityMechanicalSummary(skill, previewRank);
                 return (
                   <button
@@ -346,7 +359,7 @@ function AbilitySwapPicker({
                     aria-disabled={unavailable}
                     tabIndex={index === activeIndex ? 0 : -1}
                     className={`${index === activeIndex ? "is-active" : ""}${candidate ? " is-selected" : ""}${equipped ? " is-equipped" : ""}${unavailable ? " is-unavailable" : ""}`}
-                    data-rarity={skill.rarity}
+                    data-rarity={previewRarity}
                     data-skill-id={skill.id}
                     key={skill.id}
                     onFocus={() => !unavailable && setActiveIndex(index)}
@@ -359,7 +372,7 @@ function AbilitySwapPicker({
                     <span className="ability-swap-picker__option-copy">
                       <span className="ability-swap-picker__option-title">
                         <strong>{resolveTowActionName(skill)}</strong>
-                        <small>{titleCase(skill.rarity)} · Rank {previewRank}/{skill.rankCount}</small>
+                        <small>{titleCase(previewRarity)}</small>
                       </span>
                       <span className="ability-swap-picker__option-summary">{summary}</span>
                       <span className="ability-swap-picker__option-meta">
@@ -375,33 +388,34 @@ function AbilitySwapPicker({
             </div>
 
             <div
-              className="ability-swap-picker__rank-bar"
+              className="ability-swap-picker__rarity-bar"
               data-skill-id={pendingSkill.id}
-              data-rank={pendingRank}
+              data-rarity={pendingRarity}
             >
-              <span className="ability-swap-picker__rank-copy">
-                <small>Starting rank</small>
+              <span className="ability-swap-picker__rarity-copy">
+                <small>Starting rarity</small>
                 <strong>{resolveTowActionName(pendingSkill)}</strong>
-                <span>{pendingRankCap === 1 ? "Fixed at Rank 1" : `Choose Rank 1–${pendingRankCap}`}</span>
+                <span>{pendingRarityChoices.length === 1
+                  ? `Fixed at ${titleCase(pendingRarity)}`
+                  : `${titleCase(pendingRarityChoices[0])} → ${titleCase(pendingRarityChoices.at(-1))}`}</span>
               </span>
-              <span className="ability-swap-picker__rank-stepper" aria-label={`${resolveTowActionName(pendingSkill)} starting rank`}>
+              <span className="ability-swap-picker__rarity-stepper" aria-label={`${resolveTowActionName(pendingSkill)} starting rarity`}>
                 <button
                   type="button"
-                  data-action="decrease-rank"
-                  aria-label={`Lower ${resolveTowActionName(pendingSkill)} starting rank`}
-                  disabled={pendingRank <= 1}
-                  onClick={() => changePendingRank(-1)}
+                  data-action="lower-rarity"
+                  aria-label={`Lower ${resolveTowActionName(pendingSkill)} starting rarity`}
+                  disabled={pendingRarityIndex <= 0}
+                  onClick={() => changePendingRarity(-1)}
                 >−</button>
                 <output aria-live="polite">
-                  <strong>Rank {pendingRank}</strong>
-                  <small>of {pendingRankCap}</small>
+                  <strong>{titleCase(pendingRarity)}</strong>
                 </output>
                 <button
                   type="button"
-                  data-action="increase-rank"
-                  aria-label={`Raise ${resolveTowActionName(pendingSkill)} starting rank`}
-                  disabled={pendingRank >= pendingRankCap}
-                  onClick={() => changePendingRank(1)}
+                  data-action="promote-rarity"
+                  aria-label={`Promote ${resolveTowActionName(pendingSkill)} starting rarity`}
+                  disabled={pendingRarityIndex >= pendingRarityChoices.length - 1}
+                  onClick={() => changePendingRarity(1)}
                 >+</button>
               </span>
               <button
@@ -411,7 +425,7 @@ function AbilitySwapPicker({
                 disabled={candidateUnchanged}
                 onClick={confirmCandidate}
               >
-                {candidateUnchanged ? "Current selection" : `Equip Rank ${pendingRank}`}
+                {candidateUnchanged ? "Current selection" : `Equip ${titleCase(pendingRarity)}`}
               </button>
             </div>
 
@@ -426,7 +440,7 @@ function AbilitySwapPicker({
   );
 }
 
-function SelectLoadoutEditor({ selected, skillIds, skillRanks, onSkillChange, onReset }) {
+function SelectLoadoutEditor({ selected, skillIds, skillRarities, onSkillChange, onReset }) {
   const exclusiveAbilities = useMemo(() => characterAbilitiesFor(selected.id), [selected.id]);
   const basicOptions = useMemo(
     () => exclusiveAbilities.filter((skill) => skill.abilityType === "basic-attack"),
@@ -445,14 +459,14 @@ function SelectLoadoutEditor({ selected, skillIds, skillRanks, onSkillChange, on
     [],
   );
   const changed = skillIds.some((id, index) => id !== selected.build.skills[index])
-    || skillRanks.some((rank) => rank !== 1);
+    || skillRarities.some((rarity, index) => rarity !== getSkill(skillIds[index]).rarity);
 
   return (
     <section className="character-details__test-loadout">
       <div className="character-details__section-heading">
         <div>
           <span className="character-details__label">Select loadout</span>
-          <p>Choose each practice ability and the source rank it starts at.</p>
+          <p>Choose each practice ability and the rarity it starts at.</p>
         </div>
         <button type="button" disabled={!changed} onClick={onReset}>Reset kit</button>
       </div>
@@ -495,11 +509,11 @@ function SelectLoadoutEditor({ selected, skillIds, skillRanks, onSkillChange, on
                 slotIndex={slotIndex}
                 slotLabel={PRACTICE_SLOT_LABELS[slotIndex]}
                 value={skillId}
-                rank={skillRanks[slotIndex]}
+                rarity={skillRarities[slotIndex]}
                 groups={groups}
                 skillIds={skillIds}
                 accent={selected.color}
-                onChange={(nextSkillId, nextRank) => onSkillChange(slotIndex, nextSkillId, nextRank)}
+                onChange={(nextSkillId, nextRarity) => onSkillChange(slotIndex, nextSkillId, nextRarity)}
               />
             </div>
           );
@@ -622,7 +636,7 @@ function ScenarioPicker({ value, onChange }) {
 function CharacterDetails({
   selected,
   testSkillIds,
-  testSkillRanks,
+  testSkillRarities,
   onTestSkillChange,
   onResetTestSkills,
   scenarioId,
@@ -697,7 +711,7 @@ function CharacterDetails({
           <SelectLoadoutEditor
             selected={selected}
             skillIds={testSkillIds}
-            skillRanks={testSkillRanks}
+            skillRarities={testSkillRarities}
             onSkillChange={onTestSkillChange}
             onReset={onResetTestSkills}
           />
@@ -783,7 +797,8 @@ export function QuickStartLane({
   const previewTraitRank = selected.build.traits[baseTrait?.id] || 1;
   const previewTraitSummary = baseTrait ? describeTraitAtRank(baseTrait.id, previewTraitRank) : "";
   const testSkillIds = normalized.testSkillIds || selected.build.skills;
-  const testSkillRanks = normalized.testSkillRanks || testSkillIds.map(() => 1);
+  const testSkillRarities = normalized.testSkillRarities
+    || testSkillIds.map((skillId) => getSkill(skillId).rarity);
 
   useEffect(() => setDetailsOpen(false), [selected.id]);
   useEffect(() => {
@@ -799,13 +814,13 @@ export function QuickStartLane({
   }, [normalized.preview, selected.id]);
 
   const change = (patch) => onDraftChange?.(updateDraft(normalized, patch));
-  const changeTestSkill = (slotIndex, skillId, rank) => {
+  const changeTestSkill = (slotIndex, skillId, rarity) => {
     const nextSkillIds = [...testSkillIds];
     if (nextSkillIds.some((selectedId, index) => index !== slotIndex && selectedId === skillId)) return;
     nextSkillIds[slotIndex] = skillId;
-    const nextSkillRanks = [...testSkillRanks];
-    nextSkillRanks[slotIndex] = rank;
-    change({ testSkillIds: nextSkillIds, testSkillRanks: nextSkillRanks });
+    const nextSkillRarities = [...testSkillRarities];
+    nextSkillRarities[slotIndex] = rarity;
+    change({ testSkillIds: nextSkillIds, testSkillRarities: nextSkillRarities });
   };
   const focusCarouselChoice = (index) => {
     const node = thumbnailRefs.current[index];
@@ -1023,9 +1038,9 @@ export function QuickStartLane({
         <CharacterDetails
           selected={selected}
           testSkillIds={testSkillIds}
-          testSkillRanks={testSkillRanks}
+          testSkillRarities={testSkillRarities}
           onTestSkillChange={changeTestSkill}
-          onResetTestSkills={() => change({ testSkillIds: null, testSkillRanks: null })}
+          onResetTestSkills={() => change({ testSkillIds: null, testSkillRarities: null })}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
           onPractice={() => onPractice?.(normalized, scenarioId)}

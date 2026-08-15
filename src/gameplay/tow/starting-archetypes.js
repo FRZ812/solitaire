@@ -4,7 +4,7 @@
 
 import { itemTemplate } from "../../data/catalog.js";
 import { FIXED_CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
-import { SKILL_SLOTS, getSkill } from "./skills.js";
+import { SKILL_SLOTS, getSkill, skillRarityChoices } from "./skills.js";
 import { getFusion, getTrait } from "./traits.js";
 import { startingPackage } from "./starting-packages.js";
 import { describeTowItems, getTowStartItemGrant } from "./start-items.js";
@@ -342,13 +342,13 @@ export function isArchetypePracticeLoadout(archetypeId, skillIds) {
     && skills.slice(2).every(legalFlexibleAbility);
 }
 
-export function isArchetypePracticeSkillRanks(archetypeId, skillIds, skillRanks) {
+export function isArchetypePracticeSkillRarities(archetypeId, skillIds, skillRarities) {
   if (!isArchetypePracticeLoadout(archetypeId, skillIds)) return false;
-  return Array.isArray(skillRanks)
-    && skillRanks.length === SKILL_SLOTS
-    && skillRanks.every((rank, index) => {
+  return Array.isArray(skillRarities)
+    && skillRarities.length === SKILL_SLOTS
+    && skillRarities.every((rarity, index) => {
       const definition = getSkill(skillIds[index]);
-      return Number.isSafeInteger(rank) && rank >= 1 && rank <= definition.rankCount;
+      return skillRarityChoices(definition).includes(rarity);
     });
 }
 
@@ -362,9 +362,9 @@ export function normalizeArchetypeDraft(input = {}) {
     normalized.testSkillIds = [...input.testSkillIds];
   }
   if ((input.testSkillIds == null || hasPracticeLoadout)
-    && isArchetypePracticeSkillRanks(selected.id, practiceSkillIds, input.testSkillRanks)
-    && input.testSkillRanks.some((rank) => rank !== 1)) {
-    normalized.testSkillRanks = [...input.testSkillRanks];
+    && isArchetypePracticeSkillRarities(selected.id, practiceSkillIds, input.testSkillRarities)
+    && input.testSkillRarities.some((rarity, index) => rarity !== getSkill(practiceSkillIds[index]).rarity)) {
+    normalized.testSkillRarities = [...input.testSkillRarities];
   }
   return normalized;
 }
@@ -381,10 +381,10 @@ export function practiceBuildForArchetypeDraft(draft) {
   };
 }
 
-/** Optional practice-only rank overrides; omitted when every selected ability is Rank 1. */
-export function practiceSkillRanksForArchetypeDraft(draft) {
+/** Optional practice-only rarity promotions; omitted when every ability stays at its base. */
+export function practiceSkillRaritiesForArchetypeDraft(draft) {
   const normalized = normalizeArchetypeDraft(draft);
-  return normalized.testSkillRanks ? [...normalized.testSkillRanks] : null;
+  return normalized.testSkillRarities ? [...normalized.testSkillRarities] : null;
 }
 
 export function archetypeItemRows(archetypeId) {

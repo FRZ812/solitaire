@@ -30,7 +30,7 @@ import { sealTowTerminalReceipt } from "./outcomes.js";
 import { skillStatesForReadiness } from "./readiness.js";
 import { verifyTowSession } from "./replay.js";
 import { TOW_RULESET_ID, createTowSession } from "./session.js";
-import { getSkill } from "./skills.js";
+import { getSkill, skillRankForRarity, skillRarityChoices } from "./skills.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
@@ -106,41 +106,44 @@ export function getPracticeScenario(scenarioId) {
  * a different practice fight depending on whether the player reached it from Quick Start or
  * from the roster, which is a difference the player can see and cannot explain.
  */
-function normalizedPracticeSkillRanks(receipt, skillRanks) {
-  if (skillRanks == null) return null;
-  if (!Array.isArray(skillRanks) || skillRanks.length !== receipt.build.skills.length) return false;
-  if (!skillRanks.every((rank, index) => {
+function normalizedPracticeSkillRarities(receipt, skillRarities) {
+  if (skillRarities == null) return null;
+  if (!Array.isArray(skillRarities) || skillRarities.length !== receipt.build.skills.length) return false;
+  if (!skillRarities.every((rarity, index) => {
     const definition = getSkill(receipt.build.skills[index]);
-    return definition && Number.isSafeInteger(rank) && rank >= 1 && rank <= definition.rankCount;
+    return definition && skillRarityChoices(definition).includes(rarity);
   })) return false;
-  return skillRanks.some((rank) => rank !== 1) ? [...skillRanks] : null;
+  return skillRarities.some((rarity, index) => (
+    rarity !== getSkill(receipt.build.skills[index]).rarity
+  )) ? [...skillRarities] : null;
 }
 
-function withPracticeSkillRanks(build, sourceSkillIds, skillRanks) {
-  if (!skillRanks) return build;
+function withPracticeSkillRarities(build, sourceSkillIds, skillRarities) {
+  if (!skillRarities) return build;
   return {
     ...build,
     skills: build.skills.map((entry) => {
       const id = typeof entry === "string" ? entry : entry.id;
       const sourceIndex = sourceSkillIds.indexOf(id);
       if (sourceIndex < 0) return entry;
+      const rank = skillRankForRarity(id, skillRarities[sourceIndex]);
       return typeof entry === "string"
-        ? { id, rank: skillRanks[sourceIndex] }
-        : { ...entry, id, rank: skillRanks[sourceIndex] };
+        ? { id, rank }
+        : { ...entry, id, rank };
     }),
   };
 }
 
-export function draftHash(receipt, skillRanks = null) {
+export function draftHash(receipt, skillRarities = null) {
   if (!isCharacterBootstrapReceipt(receipt)) return null;
-  const ranks = normalizedPracticeSkillRanks(receipt, skillRanks);
-  if (ranks === false) return null;
+  const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
+  if (rarities === false) return null;
   const archetype = getStartingArchetype(receipt.archetypeId);
   const itemIds = archetype?.gear || [];
-  const build = withPracticeSkillRanks(
+  const build = withPracticeSkillRarities(
     effectiveTowBuild(receipt.build, itemIds),
     receipt.build.skills,
-    ranks,
+    rarities,
   );
   return gameplayChecksum({
     archetypeId: receipt.archetypeId,
@@ -224,20 +227,20 @@ export function createPracticeSession(
   receipt,
   scenarioId = DEFAULT_PRACTICE_SCENARIO_ID,
   attemptIndex = 0,
-  { skillRanks = null } = {},
+  { skillRarities = null } = {},
 ) {
   if (!isCharacterBootstrapReceipt(receipt)) return rejected("invalid-bootstrap-receipt");
   const scenario = getPracticeScenario(scenarioId);
   if (!scenario) return rejected("unknown-practice-scenario");
 
-  const ranks = normalizedPracticeSkillRanks(receipt, skillRanks);
-  if (ranks === false) return rejected("invalid-practice-skill-ranks");
-  const hash = draftHash(receipt, ranks);
+  const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
+  if (rarities === false) return rejected("invalid-practice-skill-rarities");
+  const hash = draftHash(receipt, rarities);
   const archetype = getStartingArchetype(receipt.archetypeId);
-  const effectiveBuild = withPracticeSkillRanks(
+  const effectiveBuild = withPracticeSkillRarities(
     effectiveTowBuild(receipt.build, archetype?.gear || []),
     receipt.build.skills,
-    ranks,
+    rarities,
   );
   const seed = derivePracticeSeed({
     packageId: receipt.professionId,
