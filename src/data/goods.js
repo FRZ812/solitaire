@@ -66,10 +66,43 @@ export const GOODS = {
     description: "A potent alchemical cordial — drunk down, it restores a good deal of vitality at once.",
     use: { verb: "Drink", vitality: 15 },
   },
-  // ---- Character-start combat keepsakes ---------------------------------
-  // These are ordinary carried consumables, but their decisive effect is resolved by the
-  // replay-safe combat reducer. Each costs the holder's action as well as the single item,
-  // so choosing one is an emergency plan rather than a sixth ability slot.
+  // ---- Character-start keepsakes ----------------------------------------
+  // Permanent keepsakes occupy their own authored starting slot. They remain in the pack
+  // as named objects, but have no Use action and do not consume a normal equipment slot;
+  // their TOW bonuses are derived from the character profile at encounter admission.
+  "threadbare-war-ribbon": {
+    id: "threadbare-war-ribbon", name: "Threadbare War Ribbon", kind: "keepsake", tier: "common", value: 20,
+    appearance: "A faded crimson ribbon tied around a battered iron clasp, worn thin by years of handling.",
+    description: "A humble permanent keepsake. Its remembered endurance grants +4 maximum health in Tower combat.",
+  },
+  "frostglass-bead": {
+    id: "frostglass-bead", name: "Frostglass Bead", kind: "keepsake", tier: "uncommon", value: 140,
+    appearance: "A clear blue prayer bead on black cord, with a perfect snowflake caught inside.",
+    description: "A permanent keepsake that grants +2 Defence and +4 maximum health in Tower combat.",
+  },
+  "red-wolf-token": {
+    id: "red-wolf-token", name: "Red Wolf Token", kind: "keepsake", tier: "rare", value: 520,
+    appearance: "A scarred bronze token stamped with a wolf's profile and darkened along one old claw mark.",
+    description: "A permanent keepsake that grants +3 Attack and +3% Critical in Tower combat.",
+  },
+  "saints-broken-halo": {
+    id: "saints-broken-halo", name: "Saint's Broken Halo", kind: "keepsake", tier: "epic", value: 2200,
+    appearance: "A palm-sized ring of old gold, broken cleanly through one radiant segment.",
+    description: "An achievement keepsake that grants +4 Defence, +10 maximum health, and one rank of Aegis.",
+  },
+  "crownless-coin": {
+    id: "crownless-coin", name: "Crownless Coin", kind: "keepsake", tier: "legendary", value: 6800,
+    appearance: "A black-gold royal coin split through the erased crown stamped on both faces.",
+    description: "An achievement keepsake that grants +5 Attack, +5 Defence, +5% Critical, and +5% Dodge.",
+  },
+  "heart-of-still-winter": {
+    id: "heart-of-still-winter", name: "Heart of Still Winter", kind: "keepsake", tier: "mythical", value: 14000,
+    appearance: "A deep-blue crystal heart holding a white star that never flickers and never melts its frost.",
+    description: "A mythic achievement keepsake granting +8 Attack, +8 Defence, +20 maximum health, +8% Critical, and +8% Dodge.",
+  },
+
+  // Emergency keepsakes are ordinary carried consumables. Their decisive effect is resolved
+  // by the replay-safe combat reducer and costs both the holder's action and the single item.
   "crimson-vial": {
     id: "crimson-vial", name: "Crimson Vial", kind: "remedy", value: 65,
     appearance: "A thumb-sized red vial in a wire cage, warm despite the winter air.",

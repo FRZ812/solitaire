@@ -6,10 +6,10 @@ import { itemTemplate } from "../../data/catalog.js";
 import { resolvePoolForMind } from "../../engine/attributes.js";
 import { FIXED_CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
 import {
-  STARTING_COMBAT_ITEMS,
-  getCombatItem,
-  isStartingCombatItem,
-} from "./combat-items.js";
+  DEFAULT_STARTING_KEEPSAKE_ID,
+  getStartingKeepsake,
+  isStartingKeepsake,
+} from "./keepsakes.js";
 import { SKILL_SLOTS, getSkill, skillRarityChoices } from "./skills.js";
 import { getFusion, getTrait } from "./traits.js";
 import { startingPackage } from "./starting-packages.js";
@@ -331,7 +331,7 @@ export function getStartingArchetype(id) {
 export function createDefaultArchetypeDraft() {
   return {
     archetypeId: STARTING_ARCHETYPES[0].id,
-    keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+    keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
     preview: false,
   };
 }
@@ -370,9 +370,9 @@ export function normalizeArchetypeDraft(input = {}) {
   const selected = getStartingArchetype(input.archetypeId) || STARTING_ARCHETYPES[0];
   const normalized = {
     archetypeId: selected.id,
-    keepsakeId: isStartingCombatItem(input.keepsakeId)
+    keepsakeId: isStartingKeepsake(input.keepsakeId)
       ? input.keepsakeId
-      : STARTING_COMBAT_ITEMS[0].id,
+      : DEFAULT_STARTING_KEEPSAKE_ID,
     preview: input.preview === true,
   };
   const hasPracticeLoadout = isArchetypePracticeLoadout(selected.id, input.testSkillIds);
@@ -424,7 +424,8 @@ export function characterSetupForArchetype(draft) {
   const normalized = normalizeArchetypeDraft(draft);
   const selected = getStartingArchetype(normalized.archetypeId);
   const character = selected?.character;
-  if (!selected || !character) return null;
+  const keepsake = getStartingKeepsake(normalized.keepsakeId);
+  if (!selected || !character || !keepsake) return null;
 
   return {
     name: character.name,
@@ -449,7 +450,7 @@ export function characterSetupForArchetype(draft) {
     abilities: [],
     items: [
       ...selected.gear.map((itemId) => ({ itemId, quantity: 1, worn: true })),
-      { itemId: normalized.keepsakeId, quantity: 1, worn: false },
+      { itemId: keepsake.itemId, quantity: 1, worn: false },
     ],
     coins: { gold: 2, silver: 5 },
     knows: [
@@ -457,7 +458,7 @@ export function characterSetupForArchetype(draft) {
       character.history,
       `My source identity is ${character.sourceName}.`,
       "My combat kit has one Basic Attack, one Defensive ability, and three exclusive flexible abilities.",
-      `I carry ${getCombatItem(normalized.keepsakeId).name} as my one starting keepsake.`,
+      `I carry ${keepsake.name} as my one starting keepsake.`,
     ],
     profile: {
       source: "tow-authored-character-start",
@@ -470,6 +471,9 @@ export function characterSetupForArchetype(draft) {
       archetypeName: selected.name,
       power: selected.power,
       role: selected.role,
+      keepsakeId: keepsake.id,
+      keepsakeFamily: keepsake.family,
+      keepsakeRarity: keepsake.rarity,
     },
     // World progression remains a compatibility shell. Combat power comes from the source
     // base-stat chassis, the five-action build, and equipment rather than character level.

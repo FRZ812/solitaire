@@ -4,7 +4,10 @@ import React, { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstrap.js";
-import { STARTING_COMBAT_ITEMS } from "../../gameplay/tow/combat-items.js";
+import {
+  DEFAULT_STARTING_KEEPSAKE_ID,
+  STARTING_KEEPSAKES,
+} from "../../gameplay/tow/keepsakes.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
 import {
@@ -203,7 +206,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(asked).toEqual([[
       {
         archetypeId: STARTING_ARCHETYPES[6].id,
-        keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+        keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
         preview: true,
       },
       PRACTICE_SCENARIOS[1].id,
@@ -285,7 +288,8 @@ describe("the simple grid-to-preview flow", () => {
     await click(mounted.querySelectorAll(".character-choice-card")[5]);
     await click(mounted.querySelector(".character-preview__details-button"));
 
-    const trigger = mounted.querySelectorAll(".ability-swap-picker__trigger")[0];
+    const editor = mounted.querySelector('[aria-label="Selectable loadout"]');
+    const trigger = editor.querySelectorAll(".ability-swap-picker__trigger")[0];
     await click(trigger);
     let panel = document.querySelector(".ability-swap-picker__panel");
     const lower = panel.querySelector('[data-action="lower-rarity"]');
@@ -317,7 +321,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(trigger.querySelector(".ability-swap-picker__trigger-summary").textContent)
       .toContain("2 hits of 78% ATK damage");
 
-    await click(mounted.querySelectorAll(".ability-swap-picker__trigger")[2]);
+    await click(editor.querySelectorAll(".ability-swap-picker__trigger")[2]);
     panel = document.querySelector(".ability-swap-picker__panel");
     expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
       .toBe("Legendary");
@@ -334,7 +338,7 @@ describe("the simple grid-to-preview flow", () => {
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([{
       archetypeId: selected.id,
-      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
       preview: true,
       testSkillRarities: ["legendary", "common", "legendary", "legendary", "rare"],
     }]);
@@ -349,7 +353,8 @@ describe("the simple grid-to-preview flow", () => {
     await click(mounted.querySelectorAll(".character-choice-card")[5]);
     await click(mounted.querySelector(".character-preview__details-button"));
 
-    const trigger = mounted.querySelectorAll(".ability-swap-picker__trigger")[2];
+    const editor = mounted.querySelector('[aria-label="Selectable loadout"]');
+    const trigger = editor.querySelectorAll(".ability-swap-picker__trigger")[2];
     await click(trigger);
     let panel = document.querySelector(".ability-swap-picker__panel");
     await click(panel.querySelector('[role="tab"][data-group-id="general"]'));
@@ -383,7 +388,7 @@ describe("the simple grid-to-preview flow", () => {
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([{
       archetypeId: selected.id,
-      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
       preview: true,
       testSkillIds: expectedSkillIds,
       testSkillRarities: expectedRarities,
@@ -399,22 +404,54 @@ describe("the simple grid-to-preview flow", () => {
     await click(begin);
     expect(begun).toEqual([{
       archetypeId: STARTING_ARCHETYPES[4].id,
-      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
       preview: true,
     }]);
   });
 
-  it("carries the selected combat keepsake into the authored start", async () => {
+  it("uses the custom keepsake catalogue for permanent relics and one-use supplies", async () => {
     const begun = [];
     const mounted = await render(<ControlledStart onBegin={(draft) => begun.push(draft)} />);
     await click(mounted.querySelector(".character-choice-card"));
-    const select = mounted.querySelector(".character-preview__keepsake select");
-    expect(select.querySelectorAll("option")).toHaveLength(4);
-    await change(select, "fire-pot");
-    expect(mounted.querySelector(".character-preview__keepsake").textContent)
-      .toContain("Strike for 150% ATK");
+    const trigger = mounted.querySelector(".character-preview__keepsake .keepsake-picker__trigger");
+    expect(trigger.textContent).toContain("Threadbare War Ribbon");
+    expect(trigger.querySelector("img")?.getAttribute("src")).toMatch(/threadbare-war-ribbon-v1\.webp$/);
+
+    await click(trigger);
+    let panel = document.querySelector(".keepsake-picker__panel");
+    expect(panel.querySelectorAll('[role="option"]')).toHaveLength(6);
+    expect(panel.querySelectorAll(".ability-swap-picker__option-art img")).toHaveLength(6);
+    const lockedHalo = panel.querySelector('[data-keepsake-id="saints-broken-halo"]');
+    expect(lockedHalo.getAttribute("aria-disabled")).toBeNull();
+    await click(lockedHalo);
+    expect(panel.querySelector(".keepsake-picker__unlock").textContent).toContain("Hold the Line");
+    expect(panel.querySelector('[data-action="confirm-keepsake"]').disabled).toBe(true);
+
+    await click(panel.querySelector('[role="tab"][data-group-id="supply"]'));
+    panel = document.querySelector(".keepsake-picker__panel");
+    expect(panel.querySelectorAll('[role="option"]')).toHaveLength(4);
+    expect(STARTING_KEEPSAKES).toHaveLength(10);
+    await click(panel.querySelector('[data-keepsake-id="fire-pot"]'));
+    await click(panel.querySelector('[data-action="confirm-keepsake"]'));
+    expect(document.querySelector(".keepsake-picker__panel")).toBeNull();
+    expect(trigger.textContent).toContain("Fire Pot");
+    expect(trigger.textContent).toContain("150% ATK");
     await click(mounted.querySelector(".character-preview__begin"));
     expect(begun[0]).toMatchObject({ keepsakeId: "fire-pot" });
+  });
+
+  it("enables an achievement relic without changing the selector contract", async () => {
+    const mounted = await render(
+      <ControlledStart unlockedAchievementIds={["hold-the-line"]} />,
+    );
+    await click(mounted.querySelector(".character-choice-card"));
+    const trigger = mounted.querySelector(".character-preview__keepsake .keepsake-picker__trigger");
+    await click(trigger);
+    const panel = document.querySelector(".keepsake-picker__panel");
+    await click(panel.querySelector('[data-keepsake-id="saints-broken-halo"]'));
+    expect(panel.querySelector('[data-action="confirm-keepsake"]').disabled).toBe(false);
+    await click(panel.querySelector('[data-action="confirm-keepsake"]'));
+    expect(trigger.textContent).toContain("Saint's Broken Halo");
   });
 });
 
@@ -534,7 +571,7 @@ describe("every advertised character reaches the production fight", () => {
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([[{
       archetypeId: selected.id,
-      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
       preview: true,
       testSkillIds: expectedTestSkills,
     }, PRACTICE_SCENARIOS[0].id]]);
@@ -543,7 +580,7 @@ describe("every advertised character reaches the production fight", () => {
     await click(mounted.querySelector(".character-preview__begin"));
     expect(begun).toEqual([{
       archetypeId: selected.id,
-      keepsakeId: STARTING_COMBAT_ITEMS[0].id,
+      keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
       preview: true,
     }]);
   });

@@ -127,7 +127,7 @@ import {
 } from "./gameplay/tow/session.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
 import { towBuildForCharacter } from "./gameplay/tow/professions.js";
-import { effectiveTowBuild, wornItemIds } from "./gameplay/tow/start-items.js";
+import { activeTowItemIds, effectiveTowBuild } from "./gameplay/tow/start-items.js";
 import {
   characterSetupForArchetype,
   createDefaultArchetypeDraft,
@@ -1598,6 +1598,7 @@ export function Solitaire() {
         origin: setup.origin, profession: setup.profession, archetype: setup.archetype || null, gender: setup.gender,
         combatArchetypeId: setup.combatArchetypeId || null,
         progressionModel: setup.progressionModel || null,
+        towBaseStats: setup.towBaseStats || null,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
@@ -3009,7 +3010,7 @@ export function Solitaire() {
       receipt: compiled.receipt,
       scenarioId,
       skillRarities: practiceSkillRaritiesForArchetypeDraft(draft),
-      combatItemId: draft.keepsakeId,
+      keepsakeId: draft.keepsakeId,
     });
   }
 
@@ -3094,7 +3095,7 @@ export function Solitaire() {
       : towBuildForCharacter(st.character);
     const campaignBuild = effectiveTowBuild(
       durableBuild,
-      wornItemIds(st.character, st.world.codex),
+      activeTowItemIds(st.character, st.world.codex),
       st.world.codex,
     );
     // Each admitted companion crosses the same bridge the player does and brings their own
@@ -3105,7 +3106,7 @@ export function Solitaire() {
         const actor = towPlayerFromCharacter(entity, st.world.codex, { id: `ally-${companionId}` });
         const build = effectiveTowBuild(
           towBuildForCharacter(entity),
-          wornItemIds(entity, st.world.codex),
+          activeTowItemIds(entity, st.world.codex),
           st.world.codex,
         );
         return {
@@ -4356,7 +4357,7 @@ export function Solitaire() {
           receipt={practiceDraft.receipt}
           scenarioId={practiceDraft.scenarioId}
           skillRarities={practiceDraft.skillRarities}
-          combatItemId={practiceDraft.combatItemId}
+          keepsakeId={practiceDraft.keepsakeId}
           onExit={() => setPracticeDraft(null)}
         />
       )}

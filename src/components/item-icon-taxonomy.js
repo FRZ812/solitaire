@@ -98,7 +98,7 @@ export function itemIconTaxonomy(item, itemId) {
     return EQUIPMENT_CELLS[armorClass({ ...definition, kind: "armor" }) === "heavy" ? "armor-heavy" : "armor-light"];
   }
   if (kind === "clothing") return clothingCell(definition);
-  if (kind === "trinket") return EQUIPMENT_CELLS.trinket;
+  if (kind === "trinket" || kind === "keepsake") return EQUIPMENT_CELLS.trinket;
 
   if (kind === "remedy") return ITEM_CELLS.remedy;
   if (kind === "food" || kind === "feed") return ITEM_CELLS.food;

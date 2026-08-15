@@ -25,9 +25,9 @@ import {
 } from "../../gameplay/tow/combat-items.js";
 import { normalizeWeaponPresentation } from "../../gameplay/tow/weapon-presentation.js";
 import { weaponAttackSummary } from "../../gameplay/tow/weapon-techniques.js";
-import { ItemIcon } from "../ItemIcon.jsx";
 import { resolveTowCombatArt } from "./tow-combat-art.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
+import { resolveTowKeepsakeArt } from "./tow-keepsake-art.js";
 import {
   combatCueTimeline,
   combatEventReceipt,
@@ -541,43 +541,49 @@ function Vitals({ actor, enemy = false, feedbackCues = [], reacting = false }) {
       className={`tow-combat__vitals${enemy ? " tow-combat__vitals--enemy" : ""}${reacting ? " is-reacting" : ""}`}
       style={{ "--tow-vitals-delay": `${feedbackDelay}ms` }}
     >
-      <div
-        className="tow-combat__bar"
-        role="meter"
-        aria-label={`${actor.name} health`}
-        aria-valuemin="0"
-        aria-valuemax={presented.maxHp}
-        aria-valuenow={presented.hp}
-      >
-        <span className="tow-combat__bar-hp" style={{ width: `${percent(presented.hp, presented.maxHp)}%` }} />
-        {presented.shield > 0 ? (
-          <span
-            className="tow-combat__bar-shield"
-            style={{ width: `${percent(presented.shield, presented.maxHp)}%` }}
-          />
-        ) : null}
+      <div className="tow-combat__resource tow-combat__resource--health">
+        <span className="tow-combat__resource-label">HP</span>
+        <div
+          className="tow-combat__bar"
+          role="meter"
+          aria-label={`${actor.name} health`}
+          aria-valuemin="0"
+          aria-valuemax={presented.maxHp}
+          aria-valuenow={presented.hp}
+        >
+          <span className="tow-combat__bar-hp" style={{ width: `${percent(presented.hp, presented.maxHp)}%` }} />
+          {presented.shield > 0 ? (
+            <span
+              className="tow-combat__bar-shield"
+              style={{ width: `${percent(presented.shield, presented.maxHp)}%` }}
+            />
+          ) : null}
+        </div>
         <span className="tow-combat__bar-value">
           <strong>{presented.hp}</strong>
-          <span>/ {presented.maxHp}</span>
-          {presented.shield > 0 ? <em>+{presented.shield} ward</em> : null}
+          <span>/{presented.maxHp}</span>
+          {presented.shield > 0 ? <em>+{presented.shield}</em> : null}
         </span>
       </div>
       {Number.isFinite(actor.resolve) ? (
-        <div
-          className="tow-combat__bar tow-combat__bar--resolve"
-          role="meter"
-          aria-label={`${actor.name} Resolve`}
-          aria-valuemin="0"
-          aria-valuemax={actor.resolveMax}
-          aria-valuenow={actor.resolve}
-        >
-          <span
-            className="tow-combat__bar-resolve"
-            style={{ width: `${percent(actor.resolve, actor.resolveMax)}%` }}
-          />
+        <div className="tow-combat__resource tow-combat__resource--resolve">
+          <span className="tow-combat__resource-label">RP</span>
+          <div
+            className="tow-combat__bar tow-combat__bar--resolve"
+            role="meter"
+            aria-label={`${actor.name} Resolve`}
+            aria-valuemin="0"
+            aria-valuemax={actor.resolveMax}
+            aria-valuenow={actor.resolve}
+          >
+            <span
+              className="tow-combat__bar-resolve"
+              style={{ width: `${percent(actor.resolve, actor.resolveMax)}%` }}
+            />
+          </div>
           <span className="tow-combat__bar-value tow-combat__bar-value--resolve">
             <strong>{actor.resolve}</strong>
-            <span>/ {actor.resolveMax} Resolve</span>
+            <span>/{actor.resolveMax}</span>
           </span>
         </div>
       ) : null}
@@ -903,11 +909,14 @@ export function TowCombatView({
   const impactClearTimerRef = useRef(null);
   const terminalRevealTimerRef = useRef(null);
   const forcedAdvanceRef = useRef(null);
+  const satchelRef = useRef(null);
+  const satchelTriggerRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
   const [commanderId, setCommanderId] = useState(null);
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [inspectedStatus, setInspectedStatus] = useState(null);
   const [recordExpanded, setRecordExpanded] = useState(false);
+  const [satchelOpen, setSatchelOpen] = useState(false);
   const [impactCues, setImpactCues] = useState([]);
   const [actionBeat, setActionBeat] = useState(null);
   const [terminalRevealed, setTerminalRevealed] = useState(() => encounter.phase !== "player");
@@ -994,6 +1003,7 @@ export function TowCombatView({
       : combatItemLegality(encounter, held.id, activeCommander.id);
     return { item, held, legality };
   }).filter((row) => row.item);
+  const combatItemQuantity = combatItemRows.reduce((total, row) => total + row.held.quantity, 0);
   const inspectedSkill = skillRows.find(({ skillState }) => skillState.id === inspectedSkillId) || null;
   const declared = terminal ? [] : declaredIntents(encounter);
   const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
@@ -1108,6 +1118,7 @@ export function TowCombatView({
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setRecordExpanded(false);
+    setSatchelOpen(false);
     setActionBeat(beat);
     clearActionTimer("commit");
     actionTimersRef.current.commit = setTimeout(() => {
@@ -1161,7 +1172,21 @@ export function TowCombatView({
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setRecordExpanded(false);
+    setSatchelOpen(false);
   }, [activeCommander.id, encounter.round, terminal]);
+
+  useEffect(() => {
+    if (!satchelOpen) return undefined;
+    const closeFromOutside = (event) => {
+      if (!satchelRef.current?.contains(event.target)) setSatchelOpen(false);
+    };
+    document.addEventListener("pointerdown", closeFromOutside);
+    return () => document.removeEventListener("pointerdown", closeFromOutside);
+  }, [satchelOpen]);
+
+  useEffect(() => {
+    if (combatItemRows.length === 0 || presentationLocked) setSatchelOpen(false);
+  }, [combatItemRows.length, presentationLocked]);
 
   useEffect(() => {
     const previousPhase = authoritativePhaseRef.current;
@@ -1243,7 +1268,11 @@ export function TowCombatView({
 
   function keepFocusInside(event) {
     if (event.key === "Escape") {
-      if (inspectedSkillId) {
+      if (satchelOpen) {
+        event.preventDefault();
+        setSatchelOpen(false);
+        globalThis.requestAnimationFrame?.(() => satchelTriggerRef.current?.focus());
+      } else if (inspectedSkillId) {
         event.preventDefault();
         setInspectedSkillId(null);
       } else if (inspectedStatus) {
@@ -1528,38 +1557,96 @@ export function TowCombatView({
               ))}
             </div>
 
-            {combatItemRows.length > 0 ? (
-              <div className="tow-combat__items" aria-label="Carried combat items">
-                <span className="tow-combat__items-label">Satchel</span>
-                {combatItemRows.map(({ item, held, legality }) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="tow-combat__item"
-                    disabled={presentationLocked || !legality.ok}
-                    aria-label={`${item.name}. ${describeCombatItemEffect(item)}. ${held.quantity} left${legality.ok ? ". Use item" : `. ${refusalText(legality.reason, held)}`}`}
-                    title={`${item.name} · ${describeCombatItemEffect(item)} · ${held.quantity} left`}
-                    onClick={() => onUseItem?.(item.id, activeTarget, activeCommander.id)}
-                  >
-                    <ItemIcon itemId={item.id} size={30} />
-                    <span>
-                      <strong>{item.name}</strong>
-                      <small>{describeCombatItemEffect(item)} · {held.quantity} left</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            <div className="tow-combat__command-tools">
+              <div className="tow-combat__satchel-slot">
+                {combatItemRows.length > 0 ? (
+                  <div className="tow-combat__satchel" ref={satchelRef}>
+                    <button
+                      ref={satchelTriggerRef}
+                      type="button"
+                      className="tow-combat__satchel-trigger"
+                      aria-label={`Open satchel. ${combatItemQuantity} consumable${combatItemQuantity === 1 ? "" : "s"} carried.`}
+                      aria-haspopup="dialog"
+                      aria-expanded={satchelOpen}
+                      aria-controls={satchelOpen ? "tow-combat-satchel" : undefined}
+                      disabled={presentationLocked || Boolean(forcedWindow)}
+                      onClick={() => {
+                        setInspectedSkillId(null);
+                        setInspectedStatus(null);
+                        setRecordExpanded(false);
+                        setSatchelOpen((current) => !current);
+                      }}
+                    >
+                      <Icon name="bagOpen" size={19} strokeWidth={1.55} />
+                      <span aria-hidden="true">{combatItemQuantity}</span>
+                    </button>
 
-            <p className="tow-combat__action-hint">
-              {actionBeat
-                ? actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · watch the exchange"
-                : forcedWindow?.kind === "control"
-                  ? "No input needed · the skipped command advances automatically"
-                  : forcedWindow?.kind === "priority"
-                    ? "No input needed · enemy Priority resolves automatically"
-                    : "Tap to commit · hold for details"}
-            </p>
+                    {satchelOpen ? (
+                      <section
+                        id="tow-combat-satchel"
+                        className="tow-combat__satchel-panel"
+                        role="dialog"
+                        aria-label="Combat satchel"
+                      >
+                        <header>
+                          <span><small>Inventory</small><strong>Satchel</strong></span>
+                          <span>{combatItemRows.length} kind{combatItemRows.length === 1 ? "" : "s"} · {combatItemQuantity} total</span>
+                          <button
+                            type="button"
+                            aria-label="Close satchel"
+                            onClick={() => {
+                              setSatchelOpen(false);
+                              globalThis.requestAnimationFrame?.(() => satchelTriggerRef.current?.focus());
+                            }}
+                          >
+                            <Icon name="x" size={14} strokeWidth={1.7} />
+                          </button>
+                        </header>
+                        <div className="tow-combat__satchel-list">
+                          {combatItemRows.map(({ item, held, legality }) => {
+                            const art = resolveTowKeepsakeArt(item.id);
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="tow-combat__satchel-item"
+                                disabled={presentationLocked || !legality.ok}
+                                aria-label={`${item.name}. ${describeCombatItemEffect(item)}. ${held.quantity} left${legality.ok ? ". Use item" : `. ${refusalText(legality.reason, held)}`}`}
+                                onClick={() => {
+                                  setSatchelOpen(false);
+                                  onUseItem?.(item.id, activeTarget, activeCommander.id);
+                                }}
+                              >
+                                <span className="tow-combat__satchel-art" aria-hidden="true">
+                                  {art ? <img src={art} alt="" /> : <Icon name="bag" size={21} />}
+                                </span>
+                                <span className="tow-combat__satchel-copy">
+                                  <strong>{item.name}</strong>
+                                  <small>{describeCombatItemEffect(item)}</small>
+                                  {!legality.ok ? <em>{refusalText(legality.reason, held)}</em> : null}
+                                </span>
+                                <span className="tow-combat__satchel-quantity" aria-hidden="true">×{held.quantity}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <p className="tow-combat__action-hint">
+                {actionBeat
+                  ? actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · watch the exchange"
+                  : forcedWindow?.kind === "control"
+                    ? "No input needed · the skipped command advances automatically"
+                    : forcedWindow?.kind === "priority"
+                      ? "No input needed · enemy Priority resolves automatically"
+                      : "Tap to commit · hold for details"}
+              </p>
+              <span className="tow-combat__command-tools-balance" aria-hidden="true" />
+            </div>
 
             {inspectedSkill ? (
               <SkillDetails
