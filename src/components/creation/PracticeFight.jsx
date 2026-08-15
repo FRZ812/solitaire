@@ -23,21 +23,21 @@ import {
 import { getStartingArchetype } from "../../gameplay/tow/starting-archetypes.js";
 import { weaponPresentationFromItemIds } from "../../gameplay/tow/weapon-presentation.js";
 
-export function PracticeFight({ receipt, scenarioId, skillRanks = null, onExit }) {
+export function PracticeFight({ receipt, scenarioId, skillRarities = null, onExit }) {
   const archetype = getStartingArchetype(receipt?.archetypeId);
   const playerPortraitKey = archetype?.character?.portraitKey ?? null;
   const weaponPresentation = weaponPresentationFromItemIds(archetype?.gear || []);
   const [attemptIndex, setAttemptIndex] = useState(0);
   const [practice, setPractice] = useState(
-    () => createPracticeSession(receipt, scenarioId, 0, { skillRanks }),
+    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities }),
   );
   const [feedback, setFeedback] = useState(null);
 
   const start = useCallback((index) => {
     setFeedback(null);
     setAttemptIndex(index);
-    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRanks }));
-  }, [receipt, scenarioId, skillRanks]);
+    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRarities }));
+  }, [receipt, scenarioId, skillRarities]);
 
   const dispatch = useCallback((input) => {
     setPractice((current) => {

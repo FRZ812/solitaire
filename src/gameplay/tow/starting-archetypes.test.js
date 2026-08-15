@@ -4,7 +4,7 @@ import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
 import { characterAbilitiesFor } from "./character-abilities.js";
-import { generalAbilityIds, getSkill } from "./skills.js";
+import { generalAbilityIds, getSkill, skillRarityAtRank } from "./skills.js";
 import { practiceActor } from "./practice-scenarios.js";
 import {
   STARTING_ARCHETYPES,
@@ -13,10 +13,10 @@ import {
   getStartingArchetype,
   invalidStartingArchetypes,
   isArchetypePracticeLoadout,
-  isArchetypePracticeSkillRanks,
+  isArchetypePracticeSkillRarities,
   normalizeArchetypeDraft,
   practiceBuildForArchetypeDraft,
-  practiceSkillRanksForArchetypeDraft,
+  practiceSkillRaritiesForArchetypeDraft,
 } from "./starting-archetypes.js";
 import {
   effectiveTowBuild,
@@ -117,28 +117,31 @@ describe("disposable practice loadouts", () => {
     })).not.toHaveProperty("testSkillIds");
   });
 
-  it("keeps only supported per-ability starting ranks in the disposable draft", () => {
+  it("keeps only supported per-ability starting rarities in the disposable draft", () => {
     const archetype = getStartingArchetype("last-assassin");
     const skillIds = [...archetype.build.skills];
-    const skillRanks = skillIds.map((id) => Math.min(2, getSkill(id).rankCount));
+    const skillRarities = skillIds.map((id) => skillRarityAtRank(
+      id,
+      Math.min(2, getSkill(id).rankCount),
+    ));
     const draft = normalizeArchetypeDraft({
       archetypeId: archetype.id,
       preview: true,
-      testSkillRanks: skillRanks,
+      testSkillRarities: skillRarities,
     });
 
-    expect(isArchetypePracticeSkillRanks(archetype.id, skillIds, skillRanks)).toBe(true);
-    expect(draft.testSkillRanks).toEqual(skillRanks);
-    expect(practiceSkillRanksForArchetypeDraft(draft)).toEqual(skillRanks);
+    expect(isArchetypePracticeSkillRarities(archetype.id, skillIds, skillRarities)).toBe(true);
+    expect(draft.testSkillRarities).toEqual(skillRarities);
+    expect(practiceSkillRaritiesForArchetypeDraft(draft)).toEqual(skillRarities);
     expect(practiceBuildForArchetypeDraft(draft).skills).toEqual(skillIds);
 
-    const impossible = [...skillRanks];
-    impossible[0] = getSkill(skillIds[0]).rankCount + 1;
-    expect(isArchetypePracticeSkillRanks(archetype.id, skillIds, impossible)).toBe(false);
+    const impossible = [...skillRarities];
+    impossible[0] = "divine";
+    expect(isArchetypePracticeSkillRarities(archetype.id, skillIds, impossible)).toBe(false);
     expect(normalizeArchetypeDraft({
       archetypeId: archetype.id,
-      testSkillRanks: impossible,
-    })).not.toHaveProperty("testSkillRanks");
+      testSkillRarities: impossible,
+    })).not.toHaveProperty("testSkillRarities");
   });
 });
 

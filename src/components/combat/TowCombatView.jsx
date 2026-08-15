@@ -13,6 +13,7 @@ import {
 import {
   getSkill,
   skillLegality,
+  skillRarityAtRank,
   usesPerAct,
   UNLIMITED_USES,
 } from "../../gameplay/tow/skills.js";
@@ -71,6 +72,12 @@ function activeControlFor(actor) {
 
 function domId(value) {
   return String(value || "unknown").replace(/[^a-z0-9_-]+/gi, "-");
+}
+
+function rarityLabel(value) {
+  return String(value || "common")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function statusPanelId(actorId, statusType) {
@@ -139,7 +146,7 @@ function SkillDetails({
     >
       <AbilityArt src={art} className="tow-combat__skill-details-art" />
       <div className="tow-combat__skill-details-copy">
-        <span>{CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || definition.rarity} · {definition.rarity} · rank {skillState.rank}</span>
+        <span>{CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || rarityLabel(definition.rarity)} · {rarityLabel(skillRarityAtRank(definition, skillState.rank))}</span>
         <strong>{displayName}</strong>
         {definition.id === "strike" ? (
           <b>{weaponPresentation.weaponName} · {weaponPresentation.familyLabel}</b>

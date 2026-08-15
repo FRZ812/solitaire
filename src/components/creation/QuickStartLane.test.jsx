@@ -262,7 +262,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("chooses a bounded source rank with live values before equipping an ability", async () => {
+  it("promotes an ability through named rarities with live values before equipping it", async () => {
     const asked = [];
     const mounted = await render(
       <ControlledStart onPractice={(draft) => asked.push(draft)} />,
@@ -274,39 +274,54 @@ describe("the simple grid-to-preview flow", () => {
     const trigger = mounted.querySelectorAll(".ability-swap-picker__trigger")[0];
     await click(trigger);
     let panel = document.querySelector(".ability-swap-picker__panel");
-    const decrease = panel.querySelector('[data-action="decrease-rank"]');
-    const increase = panel.querySelector('[data-action="increase-rank"]');
-    expect(decrease.disabled).toBe(true);
-    expect(increase.disabled).toBe(false);
-    expect(panel.querySelector(".ability-swap-picker__rank-stepper output").textContent)
-      .toContain("Rank 1of 6");
+    const lower = panel.querySelector('[data-action="lower-rarity"]');
+    const promote = panel.querySelector('[data-action="promote-rarity"]');
+    expect(lower.disabled).toBe(true);
+    expect(promote.disabled).toBe(false);
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Common");
 
-    await click(increase);
-    await click(panel.querySelector('[data-action="increase-rank"]'));
+    await click(promote);
+    await click(panel.querySelector('[data-action="promote-rarity"]'));
     panel = document.querySelector(".ability-swap-picker__panel");
-    expect(panel.querySelector(".ability-swap-picker__rank-stepper output").textContent)
-      .toContain("Rank 3of 6");
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Rare");
     expect(panel.querySelector('[role="option"][aria-selected="true"] .ability-swap-picker__option-summary').textContent)
       .toContain("2 hits of 64% ATK damage");
 
+    await click(panel.querySelector('[data-action="promote-rarity"]'));
+    await click(panel.querySelector('[data-action="promote-rarity"]'));
+    panel = document.querySelector(".ability-swap-picker__panel");
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Legendary");
+    expect(panel.querySelector('[role="option"][aria-selected="true"] .ability-swap-picker__option-summary').textContent)
+      .toContain("2 hits of 78% ATK damage");
+
     await click(panel.querySelector('[data-action="confirm-ability-swap"]'));
-    expect(trigger.textContent).toContain("Rank 3");
+    expect(trigger.textContent).toContain("Legendary");
+    expect(trigger.textContent).not.toMatch(/Rank|\d\s*\/\s*\d/);
     expect(trigger.querySelector(".ability-swap-picker__trigger-summary").textContent)
-      .toContain("2 hits of 64% ATK damage");
+      .toContain("2 hits of 78% ATK damage");
 
     await click(mounted.querySelectorAll(".ability-swap-picker__trigger")[2]);
     panel = document.querySelector(".ability-swap-picker__panel");
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Legendary");
+    await click(panel.querySelector('[data-action="promote-rarity"]'));
+    expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
+      .toBe("Mythical");
+    expect(panel.querySelector('[data-action="promote-rarity"]').disabled).toBe(true);
     await click(panel.querySelector('[role="option"][data-skill-id="assassin-shadow-strike"]'));
-    expect(panel.querySelector(".ability-swap-picker__rank-copy").textContent).toContain("Fixed at Rank 1");
-    expect(panel.querySelector('[data-action="decrease-rank"]').disabled).toBe(true);
-    expect(panel.querySelector('[data-action="increase-rank"]').disabled).toBe(true);
+    expect(panel.querySelector(".ability-swap-picker__rarity-copy").textContent).toContain("Fixed at Mythical");
+    expect(panel.querySelector('[data-action="lower-rarity"]').disabled).toBe(true);
+    expect(panel.querySelector('[data-action="promote-rarity"]').disabled).toBe(true);
     await keydown(panel.querySelector('[role="option"][aria-selected="true"]'), "Escape");
 
     await click(mounted.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([{
       archetypeId: selected.id,
       preview: true,
-      testSkillRanks: [3, 1, 1, 1, 1],
+      testSkillRarities: ["legendary", "common", "legendary", "legendary", "rare"],
     }]);
   });
 
