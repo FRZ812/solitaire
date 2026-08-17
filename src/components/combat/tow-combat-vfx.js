@@ -17,6 +17,7 @@ import witchHellfireSpiritIcon from "../../assets/generated/winter-tower/abiliti
 import witchLimitedLifeSentenceIcon from "../../assets/generated/winter-tower/abilities/witch-limited-life-sentence-v1.webp";
 import witchMirrorImageIcon from "../../assets/generated/winter-tower/abilities/witch-mirror-image-v1.webp";
 import witchVoidMonsterIcon from "../../assets/generated/winter-tower/abilities/witch-void-monster-v1.webp";
+import arcticMortalBlowV2 from "../../assets/generated/winter-tower/vfx/flipbooks/arctic-mortal-blow-v2.webp";
 
 import statusAfflictions from "../../assets/generated/winter-tower/status/afflictions-v1.png";
 import statusAttackModifiers from "../../assets/generated/winter-tower/status/attack-modifiers-v1.png";
@@ -37,12 +38,24 @@ const GENERATED_FLIPBOOK_MODULES = import.meta.glob(
   { eager: true, import: "default" },
 );
 
-export const COMBAT_VFX_FLIPBOOK_ASSETS = Object.freeze(Object.fromEntries(
-  Object.entries(GENERATED_FLIPBOOK_MODULES).map(([modulePath, asset]) => {
+export const COMBAT_VFX_FLIPBOOK_ASSETS = Object.freeze({
+  ...Object.fromEntries(Object.entries(GENERATED_FLIPBOOK_MODULES).map(([modulePath, asset]) => {
     const id = modulePath.match(/\/([^/]+)-v1\.webp$/)?.[1];
     return [id, asset];
-  }).filter(([id]) => Boolean(id)),
-));
+  }).filter(([id]) => Boolean(id))),
+  "arctic-mortal-blow": arcticMortalBlowV2,
+});
+
+const FLIPBOOK_METADATA = Object.freeze({
+  "arctic-mortal-blow": Object.freeze({
+    frameCount: 24,
+    frameSize: 512,
+    fps: 30,
+    layout: "grid",
+    columns: 6,
+    rows: 4,
+  }),
+});
 
 const FLIPBOOK_IDS_BY_LENGTH = Object.freeze(
   Object.keys(COMBAT_VFX_FLIPBOOK_ASSETS).sort((left, right) => right.length - left.length),
@@ -58,13 +71,16 @@ function flipbookIdForVariant(variant) {
 function flipbookForId(id, frameRange = null) {
   const asset = id && COMBAT_VFX_FLIPBOOK_ASSETS[id];
   if (!asset) return null;
-  return Object.freeze({
-    id,
-    asset,
+  const metadata = FLIPBOOK_METADATA[id] || {
     frameCount: 9,
     frameSize: 256,
     fps: 18,
     layout: "horizontal",
+  };
+  return Object.freeze({
+    id,
+    asset,
+    ...metadata,
     ...(frameRange ? { frameRange: Object.freeze([...frameRange]) } : {}),
   });
 }
@@ -1522,12 +1538,16 @@ const CHOREOGRAPHY_COMBOS = Object.freeze({
   "projectile-barrage": Object.freeze(["projectile-high", "projectile-low", "projectile-center", "projectile-cross"]),
 });
 
-function flipbookRangeForHit(hitIndex, hitCount) {
+function flipbookRangeForHit(hitIndex, hitCount, frameCount = 9) {
   const count = Math.max(1, hitCount);
   const index = Math.max(0, Math.min(count - 1, hitIndex));
-  const start = Math.floor((index * 9) / count);
-  const end = Math.max(start, Math.floor(((index + 1) * 9) / count) - 1);
-  return [start, Math.min(8, end)];
+  const availableFrames = Math.max(1, frameCount);
+  const start = Math.floor((index * availableFrames) / count);
+  const end = Math.max(
+    start,
+    Math.floor(((index + 1) * availableFrames) / count) - 1,
+  );
+  return [start, Math.min(availableFrames - 1, end)];
 }
 
 /** Give every contact in a multi-hit action its own moving beat rather than replaying one overlay. */
@@ -1542,7 +1562,11 @@ export function combatVfxForHit(visual, hitIndex = 0, hitCount = 1) {
   if (!combo) return visual;
   const choreography = combo[hitIndex % combo.length];
   const profile = visualProfile(`${visual.variant}:hit:${hitIndex}`);
-  const frameRange = flipbookRangeForHit(hitIndex, hitCount);
+  const frameRange = flipbookRangeForHit(
+    hitIndex,
+    hitCount,
+    visual.flipbook?.frameCount,
+  );
   const flipbook = visual.flipbook
     ? flipbookForId(visual.flipbook.id, frameRange)
     : null;

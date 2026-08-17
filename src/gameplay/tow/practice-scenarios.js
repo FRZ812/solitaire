@@ -38,8 +38,19 @@ import { getSkill, skillRankForRarity, skillRarityChoices } from "./skills.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
-export const PRACTICE_SCENARIO_VERSION = 2;
+export const PRACTICE_SCENARIO_VERSION = 3;
+export const PRACTICE_ALLY_GROUP_VERSION = 1;
 export const MAX_PRACTICE_ATTEMPT = 4096;
+
+function freezeJsonData(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map(freezeJsonData));
+  if (value && typeof value === "object") {
+    return Object.freeze(Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, freezeJsonData(entry)]),
+    ));
+  }
+  return value;
+}
 
 function foe(id, name, maxHp, attack, archetypeId) {
   const archetype = getStartingArchetype(archetypeId);
@@ -50,7 +61,7 @@ function foe(id, name, maxHp, attack, archetypeId) {
     maxHp,
     resolve: archetype.baseStats.resolveMax,
     resolveMax: archetype.baseStats.resolveMax,
-    stats: { attack, defense: attack, critRate: 4, dodgeRate: 3 },
+    stats: Object.freeze({ attack, defense: attack, critRate: 4, dodgeRate: 3 }),
     archetypeId: archetype.id,
     build: Object.freeze({
       traits: Object.freeze({ ...archetype.build.traits }),
@@ -58,6 +69,73 @@ function foe(id, name, maxHp, attack, archetypeId) {
       runes: Object.freeze([...archetype.build.runes]),
     }),
   });
+}
+
+function canonicalAlly(id, archetypeId) {
+  const archetype = getStartingArchetype(archetypeId);
+  if (!archetype) throw new TypeError(`unknown-practice-archetype:${archetypeId}`);
+  const base = archetype.baseStats;
+  const bonus = towItemActorBonuses(archetype.gear);
+  return Object.freeze({
+    id,
+    name: archetype.name,
+    maxHp: base.maxHp + bonus.maxHp,
+    resolve: base.resolveMax,
+    resolveMax: base.resolveMax,
+    stats: Object.freeze({
+      attack: base.attack + bonus.attack,
+      defense: base.defense + bonus.defense,
+      critRate: Math.min(100, base.critRate + bonus.critRate),
+      dodgeRate: Math.min(100, base.dodgeRate + bonus.dodgeRate),
+    }),
+    archetypeId: archetype.id,
+    build: freezeJsonData(effectiveTowBuild(archetype.build, archetype.gear)),
+  });
+}
+
+const PALADIN_ALLY = canonicalAlly("practice-ally-paladin", "paladin");
+const RANGER_ALLY = canonicalAlly("practice-ally-ranger", "ranger");
+
+function allyGroup(id, name, summary, allies, formation) {
+  return Object.freeze({
+    id,
+    version: PRACTICE_ALLY_GROUP_VERSION,
+    name,
+    summary,
+    allies: Object.freeze([...allies]),
+    formation: Object.freeze([...formation]),
+  });
+}
+
+/** Authored player-side groups. The selected archetype always occupies `wanderer`. */
+export const PRACTICE_ALLY_GROUPS = Object.freeze([
+  allyGroup(
+    "solo",
+    "Solo",
+    "Only the selected archetype enters the formation.",
+    [],
+    [null, "wanderer", null, null, null, null, null, null, null],
+  ),
+  allyGroup(
+    "field-pair",
+    "Field pair",
+    "A canonical Paladin holds the front while the selected archetype works behind them.",
+    [PALADIN_ALLY],
+    [null, PALADIN_ALLY.id, null, null, "wanderer", null, null, null, null],
+  ),
+  allyGroup(
+    "expedition-trio",
+    "Expedition trio",
+    "A canonical Paladin and Ranger demonstrate a complete three-rank formation.",
+    [PALADIN_ALLY, RANGER_ALLY],
+    [null, PALADIN_ALLY.id, null, null, "wanderer", null, null, RANGER_ALLY.id, null],
+  ),
+]);
+
+export const DEFAULT_PRACTICE_ALLY_GROUP_ID = "solo";
+
+export function getPracticeAllyGroup(allyGroupId) {
+  return PRACTICE_ALLY_GROUPS.find((group) => group.id === allyGroupId) || null;
 }
 
 /**
@@ -76,6 +154,7 @@ export const PRACTICE_SCENARIOS = Object.freeze([
     summary: "One opponent, no stakes. Room to see what your actions do.",
     difficulty: "gentle",
     enemies: Object.freeze([foe("foe-0", "Sparring partner", 52, 8, "arctic-knight")]),
+    formation: Object.freeze([null, "foe-0", null, null, null, null, null, null, null]),
   }),
   Object.freeze({
     id: "roadside-ambush",
@@ -87,6 +166,7 @@ export const PRACTICE_SCENARIOS = Object.freeze([
       foe("foe-0", "Waylayer", 34, 7, "last-assassin"),
       foe("foe-1", "Waylayer", 34, 7, "demon-slayer"),
     ]),
+    formation: Object.freeze(["foe-0", null, "foe-1", null, null, null, null, null, null]),
   }),
   Object.freeze({
     id: "the-duellist",
@@ -95,6 +175,24 @@ export const PRACTICE_SCENARIOS = Object.freeze([
     summary: "One opponent who hits hard enough that guarding the right round matters.",
     difficulty: "sharp",
     enemies: Object.freeze([foe("foe-0", "Duellist", 74, 11, "wandering-blade")]),
+    formation: Object.freeze([null, "foe-0", null, null, null, null, null, null, null]),
+  }),
+  Object.freeze({
+    id: "formation-drill",
+    version: PRACTICE_SCENARIO_VERSION,
+    name: "The formation drill",
+    summary: "Three distinct ranks make lines, columns, and area footprints visible.",
+    difficulty: "formation",
+    enemies: Object.freeze([
+      foe("foe-0", "Knight", 64, 9, "knight"),
+      foe("foe-1", "Ranger", 48, 9, "ranger"),
+      foe("foe-2", "Wizard", 44, 10, "wizard"),
+    ]),
+    formation: Object.freeze([
+      null, "foe-0", null,
+      "foe-1", null, null,
+      null, null, "foe-2",
+    ]),
   }),
 ]);
 
@@ -175,10 +273,12 @@ export function derivePracticeSeed({
   packageVersion = 1,
   scenarioId,
   scenarioVersion = PRACTICE_SCENARIO_VERSION,
+  allyGroupId = DEFAULT_PRACTICE_ALLY_GROUP_ID,
+  allyGroupVersion = PRACTICE_ALLY_GROUP_VERSION,
   draftHash: hash,
   attemptIndex = 0,
 } = {}) {
-  if (!packageId || !scenarioId || !hash) return null;
+  if (!packageId || !scenarioId || !allyGroupId || !hash) return null;
   if (!Number.isSafeInteger(attemptIndex) || attemptIndex < 0 || attemptIndex > MAX_PRACTICE_ATTEMPT) {
     return null;
   }
@@ -187,6 +287,7 @@ export function derivePracticeSeed({
     rulesetId,
     `${packageId}@${packageVersion}`,
     `${scenarioId}@${scenarioVersion}`,
+    `${allyGroupId}@${allyGroupVersion}`,
     hash,
     attemptIndex,
   ].join("::");
@@ -243,11 +344,18 @@ export function createPracticeSession(
   receipt,
   scenarioId = DEFAULT_PRACTICE_SCENARIO_ID,
   attemptIndex = 0,
-  { skillRarities = null, keepsakeId = null, combatItemId = null } = {},
+  {
+    skillRarities = null,
+    keepsakeId = null,
+    combatItemId = null,
+    allyGroupId = DEFAULT_PRACTICE_ALLY_GROUP_ID,
+  } = {},
 ) {
   if (!isCharacterBootstrapReceipt(receipt)) return rejected("invalid-bootstrap-receipt");
   const scenario = getPracticeScenario(scenarioId);
   if (!scenario) return rejected("unknown-practice-scenario");
+  const allyGroup = getPracticeAllyGroup(allyGroupId);
+  if (!allyGroup) return rejected("unknown-practice-ally-group");
 
   const rarities = normalizedPracticeSkillRarities(receipt, skillRarities);
   if (rarities === false) return rejected("invalid-practice-skill-rarities");
@@ -270,17 +378,24 @@ export function createPracticeSession(
     packageId: receipt.professionId,
     scenarioId: scenario.id,
     scenarioVersion: scenario.version,
+    allyGroupId: allyGroup.id,
+    allyGroupVersion: allyGroup.version,
     draftHash: hash,
     attemptIndex,
   });
   if (!seed) return rejected("invalid-practice-seed");
 
   const opened = createTowSession({
-    sessionId: `practice:${scenario.id}:${hash}:${attemptIndex}`,
+    sessionId: `practice:${scenario.id}:${allyGroup.id}:${hash}:${attemptIndex}`,
     rootSeed: seed,
     mode: "practice",
     player: practiceActor(receipt, selectedKeepsakeId),
+    allies: allyGroup.allies.map((ally) => cloneJsonData(ally)),
     enemies: scenario.enemies.map((enemy) => cloneJsonData(enemy)),
+    formations: {
+      player: [...allyGroup.formation],
+      enemy: [...scenario.formation],
+    },
     // Practice owns a disposable full Resolve snapshot rather than campaign resources.
     build: {
       ...effectiveBuild,
@@ -305,6 +420,7 @@ export function createPracticeSession(
     session: opened.session,
     seed,
     scenario: { id: scenario.id, version: scenario.version, name: scenario.name },
+    allyGroup,
     attemptIndex,
     draftHash: hash,
     genesisChecksum: gameplayChecksum(opened.session.genesis),
@@ -331,6 +447,8 @@ export function practiceResult(practice) {
     version: PRACTICE_SCENARIO_VERSION,
     scenarioId: practice.scenario.id,
     scenarioVersion: practice.scenario.version,
+    allyGroupId: practice.allyGroup.id,
+    allyGroupVersion: practice.allyGroup.version,
     seed: practice.seed,
     attemptIndex: practice.attemptIndex,
     draftHash: practice.draftHash,
@@ -348,7 +466,11 @@ export function practiceResult(practice) {
 export function nextPracticeAttempt(practice) {
   if (!practice?.ok) return null;
   const attemptIndex = Math.min(MAX_PRACTICE_ATTEMPT, practice.attemptIndex + 1);
-  return { scenarioId: practice.scenario.id, attemptIndex };
+  return {
+    scenarioId: practice.scenario.id,
+    allyGroupId: practice.allyGroup.id,
+    attemptIndex,
+  };
 }
 
 /**

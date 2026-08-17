@@ -117,6 +117,7 @@ import {
 } from "./gameplay/tow/chronicle.js";
 import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
 import { combatItemsFromInventory } from "./gameplay/tow/combat-items.js";
+import { DEFAULT_PRACTICE_ALLY_GROUP_ID } from "./gameplay/tow/practice-scenarios.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import {
@@ -180,6 +181,7 @@ import {
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { TowCombatView } from "./components/combat/TowCombatView.jsx";
+import { resolvePlayerCombatCutout } from "./components/combat/tow-combat-art.js";
 import ProductionCombatView from "./components/combat/ProductionCombatView.jsx";
 import { ReferenceCombatView } from "./components/combat/ReferenceCombatView.jsx";
 import { VitalsStrip, InputBar, ErrorBanner } from "./components/primitives.jsx";
@@ -2578,6 +2580,34 @@ export function Solitaire() {
     if (r.ok) setState(r.state);
   }
 
+  function handleSetCombatFormation(cells) {
+    setState((current) => {
+      const known = new Set([
+        "wanderer",
+        ...partyMembers(current)
+          .filter((member) => member.kind !== "mount")
+          .map((member) => member.id),
+      ]);
+      const supplied = Array.isArray(cells) ? cells : [];
+      const seen = new Set();
+      const normalized = Array.from({ length: 9 }, (_, index) => {
+        const id = supplied[index];
+        if (typeof id !== "string" || !known.has(id) || seen.has(id)) return null;
+        seen.add(id);
+        return id;
+      });
+      if (!seen.has("wanderer")) {
+        const open = normalized.indexOf(null);
+        normalized[open >= 0 ? open : 0] = "wanderer";
+      }
+      const next = withTowMechanics(current, {
+        formation: { version: 1, cells: normalized },
+      });
+      liveStateRef.current = next;
+      return next;
+    });
+  }
+
   // ----- Gaol: bounties + buying prisoner rights -----
 
   function handleAcceptBounty(b) {
@@ -2995,7 +3025,7 @@ export function Solitaire() {
    * Compiles the template through the one bootstrap compiler and hands the receipt to a
    * practice fight. Nothing is written: no campaign, no draft mutation, no save.
    */
-  function handleQuickStartPractice(draft, scenarioId) {
+  function handleQuickStartPractice(draft, scenarioId, allyGroupId) {
     const compiled = compileCharacterBootstrap({
       archetypeId: draft.archetypeId,
       origin: "archetype",
@@ -3009,6 +3039,7 @@ export function Solitaire() {
     setPracticeDraft({
       receipt: compiled.receipt,
       scenarioId,
+      allyGroupId: allyGroupId ?? DEFAULT_PRACTICE_ALLY_GROUP_ID,
       skillRarities: practiceSkillRaritiesForArchetypeDraft(draft),
       keepsakeId: draft.keepsakeId,
     });
@@ -3035,6 +3066,10 @@ export function Solitaire() {
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
+    if (enemies.length > 9) {
+      setError("This formation can field at most nine foes. Split this encounter into waves before it begins.");
+      return;
+    }
     if (st.pendingTravelCombat != null || st.pendingCombatDirective != null) {
       const cleared = {
         ...st,
@@ -3098,11 +3133,19 @@ export function Solitaire() {
       activeTowItemIds(st.character, st.world.codex),
       st.world.codex,
     );
+    const campaignFormation = st.mechanics?.tow?.formation?.cells || [];
+    const admittedById = new Map(admission.allies.map((entry) => [entry.companionId, entry]));
+    const requestedCompanions = campaignFormation
+      .filter((id) => id && id !== "wanderer" && admittedById.has(id));
+    const fieldedCompanionIds = [...new Set(requestedCompanions)].slice(0, 8);
+    const fieldedIdSet = new Set(fieldedCompanionIds);
+    const fieldedAllies = admission.allies.filter(({ companionId }) => fieldedIdSet.has(companionId));
+    const heldBackAllies = admission.allies.filter(({ companionId }) => !fieldedIdSet.has(companionId));
     // Each admitted companion crosses the same bridge the player does and brings their own
     // package, so an ally fights like themselves rather than like a copy of the protagonist.
     let allies;
     try {
-      allies = admission.allies.map(({ companionId, entity, openingStatuses }) => {
+      allies = fieldedAllies.map(({ companionId, entity, openingStatuses }) => {
         const actor = towPlayerFromCharacter(entity, st.world.codex, { id: `ally-${companionId}` });
         const build = effectiveTowBuild(
           towBuildForCharacter(entity),
@@ -3128,6 +3171,13 @@ export function Solitaire() {
       player: { ...player, statuses: [...player.statuses, ...admission.openingStatuses] },
       allies,
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
+      formations: {
+        player: Array.from({ length: 9 }, (_, index) => {
+          const campaignEntityId = campaignFormation[index] || null;
+          if (campaignEntityId === "wanderer") return "wanderer";
+          return fieldedIdSet.has(campaignEntityId) ? `ally-${campaignEntityId}` : null;
+        }),
+      },
       build: {
         ...campaignBuild,
         combatItems: combatItemsFromInventory(st.character.inventory),
@@ -3144,7 +3194,7 @@ export function Solitaire() {
           ]),
           // Allies are bound to their codex entry the same way foes are, so a companion who
           // falls is recorded against the person they actually are.
-          ...admission.allies.map(({ companionId }) => [
+          ...fieldedAllies.map(({ companionId }) => [
             `ally-${companionId}`,
             { campaignEntityId: companionId, lethal: null },
           ]),
@@ -3181,7 +3231,10 @@ export function Solitaire() {
       setError(`The fight could not start: ${opened.reason}.`);
       return;
     }
-    const notice = admissionPlayerNotice(admission);
+    const formationNotice = heldBackAllies.length > 0
+      ? `${heldBackAllies.map(({ entity }) => entity.name).join(", ")} remain in reserve; the formation holds nine combatants.`
+      : null;
+    const notice = [admissionPlayerNotice(admission), formationNotice].filter(Boolean).join(" ");
     const committed = commitTowSession(opened.session);
     // A companion who stays out of a fight is a fact the player should be told, not one
     // they have to notice by counting who is swinging.
@@ -3745,7 +3798,16 @@ export function Solitaire() {
     const actorId = input.actorId ?? session.encounter.playerId;
     const result = dispatchTowPlayerAction(session, {
       ...input,
-      id: [session.sessionId, session.revision, input.type, actorId, input.skillId, input.itemId]
+      id: [
+        session.sessionId,
+        session.revision,
+        input.type,
+        actorId,
+        input.skillId,
+        input.itemId,
+        input.anchorCell?.side,
+        input.anchorCell?.index,
+      ]
         .filter((part) => part !== null && part !== undefined)
         .join(":"),
       expectedRevision: session.revision,
@@ -3766,11 +3828,12 @@ export function Solitaire() {
     commitTowSession(sealed.ok ? sealed.session : result.session);
   }
 
-  const onCombatUseSkill = (skillId, targetId, actorId) => dispatchCombatCommand({
+  const onCombatUseSkill = (skillId, targetId, actorId, anchorCell = null) => dispatchCombatCommand({
     type: "use-skill",
     skillId,
     targetId: targetId ?? null,
     actorId: actorId ?? null,
+    anchorCell,
   });
   const onCombatUseItem = (itemId, targetId, actorId) => dispatchCombatCommand({
     type: "use-item",
@@ -4356,6 +4419,7 @@ export function Solitaire() {
         <PracticeFight
           receipt={practiceDraft.receipt}
           scenarioId={practiceDraft.scenarioId}
+          allyGroupId={practiceDraft.allyGroupId}
           skillRarities={practiceDraft.skillRarities}
           keepsakeId={practiceDraft.keepsakeId}
           onExit={() => setPracticeDraft(null)}
@@ -4380,7 +4444,10 @@ export function Solitaire() {
           onClose={() => setDeckOpen(false)}
           handlers={{
             // Party
-            onDismiss: handleDismiss, onMount: handleMount, onDismount: handleDismountRider,
+            onDismiss: handleDismiss,
+            onMount: handleMount,
+            onDismount: handleDismountRider,
+            onSetFormation: handleSetCombatFormation,
             // Character
             onCastBuff: handleCastBuff, onReset: handleResetCampaign,
             onBackToCampaigns: handleBackToCampaigns,
@@ -4576,6 +4643,13 @@ export function Solitaire() {
           encounter={combat}
           note={combatSession?.context?.source?.note}
           playerPortraitKey={state.character?.portraitKey}
+          sceneArt={sceneVisual}
+          artFor={(actor) => {
+            if (actor.id === combat.playerId || actor.side === "enemy") return null;
+            const companionId = combatSession?.context?.participantBindings?.[actor.id]?.campaignEntityId;
+            const companion = companionId ? state.world.codex.characters?.[companionId] : null;
+            return resolvePlayerCombatCutout(companion?.portraitKey, companion);
+          }}
           weaponFor={(actor) => {
             if (actor.id === combat.playerId) {
               return weaponPresentationForCharacter(state.character, state.world.codex);

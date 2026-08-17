@@ -66,6 +66,7 @@ const RESOLVABLE_COMMAND_TYPES = Object.freeze([
 
 const COMMAND_INPUT_KEYS = Object.freeze([
   "actorId",
+  "anchorCell",
   "expectedRevision",
   "id",
   "itemId",
@@ -73,14 +74,30 @@ const COMMAND_INPUT_KEYS = Object.freeze([
   "targetId",
   "type",
 ].sort());
+const PRIOR_COMMAND_INPUT_KEYS = Object.freeze(
+  COMMAND_INPUT_KEYS.filter((key) => key !== "anchorCell"),
+);
 const LEGACY_COMMAND_INPUT_KEYS = Object.freeze(
-  COMMAND_INPUT_KEYS.filter((key) => key !== "itemId"),
+  PRIOR_COMMAND_INPUT_KEYS.filter((key) => key !== "itemId"),
 );
 
 const MAX_IDENTIFIER_LENGTH = 256;
 
 function identifier(value) {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_IDENTIFIER_LENGTH;
+}
+
+function isAnchorCell(value) {
+  return value === null || (
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value).sort().join(",") === "index,side"
+    && (value.side === "player" || value.side === "enemy")
+    && Number.isSafeInteger(value.index)
+    && value.index >= 0
+    && value.index < 9
+  );
 }
 
 function refused(reason, session) {
@@ -99,6 +116,10 @@ export function towCommand(input = {}) {
     expectedRevision: input.expectedRevision,
     type: input.type,
     actorId: input.actorId ?? null,
+    anchorCell: input.anchorCell == null ? null : {
+      side: input.anchorCell.side,
+      index: input.anchorCell.index,
+    },
     itemId: input.itemId ?? null,
     skillId: input.skillId ?? null,
     targetId: input.targetId ?? null,
@@ -110,14 +131,17 @@ function isCommandInput(value) {
   const keys = Object.keys(value).sort();
   const current = keys.length === COMMAND_INPUT_KEYS.length
     && keys.every((key, index) => key === COMMAND_INPUT_KEYS[index]);
+  const prior = keys.length === PRIOR_COMMAND_INPUT_KEYS.length
+    && keys.every((key, index) => key === PRIOR_COMMAND_INPUT_KEYS[index]);
   const legacy = keys.length === LEGACY_COMMAND_INPUT_KEYS.length
     && keys.every((key, index) => key === LEGACY_COMMAND_INPUT_KEYS[index]);
-  if (!current && !legacy) return false;
+  if (!current && !prior && !legacy) return false;
   return identifier(value.id)
     && TOW_COMMAND_TYPES.includes(value.type)
     && Number.isSafeInteger(value.expectedRevision)
     && value.expectedRevision >= 0
     && (value.actorId === null || identifier(value.actorId))
+    && (value.anchorCell === undefined || isAnchorCell(value.anchorCell))
     && (value.itemId == null || identifier(value.itemId))
     && (value.skillId === null || identifier(value.skillId))
     && (value.targetId === null || identifier(value.targetId));
@@ -223,7 +247,13 @@ export function resolveTowCommandOnEncounter(before, command) {
   const actorId = command.actorId ?? before.playerId;
   let result;
   if (command.type === "use-skill") {
-    result = encounterUseSkill(before, command.skillId, command.targetId, actorId);
+    result = encounterUseSkill(
+      before,
+      command.skillId,
+      command.targetId,
+      actorId,
+      command.anchorCell ?? null,
+    );
   } else if (command.type === "use-item") {
     result = encounterUseCombatItem(before, command.itemId, command.targetId, actorId);
   } else if (command.type === "attempt-retreat") {
@@ -365,6 +395,7 @@ export function dispatchTowPlayerAction(session, input) {
     expectedRevision: primary.session.revision,
     type: "end-turn",
     actorId: null,
+    anchorCell: null,
     itemId: null,
     skillId: null,
     targetId: null,

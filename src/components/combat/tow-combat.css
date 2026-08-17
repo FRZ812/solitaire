@@ -45,13 +45,13 @@
   height: 106%;
   object-fit: cover;
   object-position: 50% 55%;
-  filter: saturate(0.38) brightness(0.26) contrast(1.14);
+  filter: saturate(0.56) brightness(0.42) contrast(1.08);
   transform: scale(1.03);
   transition: filter 320ms ease, transform 520ms cubic-bezier(.2,.72,.2,1);
 }
 
 .tow-combat.is-presenting-action .tow-combat__scene {
-  filter: saturate(0.5) brightness(0.3) contrast(1.2);
+  filter: saturate(0.64) brightness(0.46) contrast(1.14);
   transform: scale(1.045);
 }
 

@@ -37,7 +37,11 @@ import {
   getTrait,
   traitIds,
 } from "../../gameplay/tow/traits.js";
-import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
+import {
+  DEFAULT_PRACTICE_ALLY_GROUP_ID,
+  PRACTICE_ALLY_GROUPS,
+  PRACTICE_SCENARIOS,
+} from "../../gameplay/tow/practice-scenarios.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "../combat/tow-combat-ability-art.js";
 import { resolveTowKeepsakeArt } from "../combat/tow-keepsake-art.js";
 import { trapModalFocus, useModalFocus } from "../exploration/modalFocus.js";
@@ -801,11 +805,25 @@ function SelectLoadoutEditor({ selected, skillIds, skillRarities, onSkillChange,
   );
 }
 
-function ScenarioPicker({ value, onChange }) {
+function practiceFormationCount(option, kind) {
+  if (kind === "allies") return (option?.allies?.length || 0) + 1;
+  return option?.enemies?.length || 0;
+}
+
+function practiceFormationMeta(option, kind) {
+  const count = practiceFormationCount(option, kind);
+  if (kind === "allies") return `${count} combatant${count === 1 ? "" : "s"}`;
+  return [
+    option?.difficulty,
+    `${count} opponent${count === 1 ? "" : "s"}`,
+  ].filter(Boolean).join(" · ");
+}
+
+function PracticeFormationPicker({ label, value, options, kind, onChange }) {
   const listboxId = useId();
   const rootRef = useRef(null);
-  const selectedIndex = Math.max(0, PRACTICE_SCENARIOS.findIndex((entry) => entry.id === value));
-  const selected = PRACTICE_SCENARIOS[selectedIndex];
+  const selectedIndex = Math.max(0, options.findIndex((entry) => entry.id === value));
+  const selected = options[selectedIndex];
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
 
@@ -823,15 +841,15 @@ function ScenarioPicker({ value, onChange }) {
   }, [open]);
 
   const choose = (index) => {
-    const scenario = PRACTICE_SCENARIOS[index];
-    if (!scenario) return;
-    onChange?.(scenario.id);
+    const option = options[index];
+    if (!option) return;
+    onChange?.(option.id);
     setActiveIndex(index);
     setOpen(false);
   };
 
   const onKeyDown = (event) => {
-    const last = PRACTICE_SCENARIOS.length - 1;
+    const last = options.length - 1;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!open) {
@@ -840,7 +858,7 @@ function ScenarioPicker({ value, onChange }) {
         return;
       }
       const delta = event.key === "ArrowDown" ? 1 : -1;
-      setActiveIndex((index) => (index + delta + PRACTICE_SCENARIOS.length) % PRACTICE_SCENARIOS.length);
+      setActiveIndex((index) => (index + delta + options.length) % options.length);
       return;
     }
     if (event.key === "Home" || event.key === "End") {
@@ -862,13 +880,13 @@ function ScenarioPicker({ value, onChange }) {
   };
 
   return (
-    <div className="scenario-picker" ref={rootRef}>
-      <span className="scenario-picker__label">Practice opponent</span>
+    <div className="practice-formation-picker" ref={rootRef}>
+      <span className="practice-formation-picker__label">{label}</span>
       <button
         type="button"
-        className="scenario-picker__trigger"
+        className="practice-formation-picker__trigger"
         role="combobox"
-        aria-label="Practice opponent"
+        aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
@@ -878,7 +896,7 @@ function ScenarioPicker({ value, onChange }) {
       >
         <span>
           <strong>{selected.name}</strong>
-          <small>{selected.difficulty} · {selected.enemies.length === 1 ? selected.enemies[0].name : `${selected.enemies.length} opponents`}</small>
+          <small>{practiceFormationMeta(selected, kind)}</small>
         </span>
         <svg aria-hidden="true" viewBox="0 0 16 16" className={open ? "is-open" : ""}>
           <path d="m4 6 4 4 4-4" />
@@ -886,20 +904,20 @@ function ScenarioPicker({ value, onChange }) {
       </button>
 
       {open ? (
-        <div className="scenario-picker__list" id={listboxId} role="listbox" aria-label="Practice opponents">
-          {PRACTICE_SCENARIOS.map((scenario, index) => (
+        <div className="practice-formation-picker__list" id={listboxId} role="listbox" aria-label={`${label} choices`}>
+          {options.map((option, index) => (
             <button
               type="button"
               role="option"
               id={`${listboxId}-option-${index}`}
-              aria-selected={scenario.id === selected.id}
-              className={`${index === activeIndex ? "is-active" : ""}${scenario.id === selected.id ? " is-selected" : ""}`}
-              key={scenario.id}
+              aria-selected={option.id === selected.id}
+              className={`${index === activeIndex ? "is-active" : ""}${option.id === selected.id ? " is-selected" : ""}`}
+              key={option.id}
               onPointerEnter={() => setActiveIndex(index)}
               onClick={() => choose(index)}
             >
-              <span><strong>{scenario.name}</strong><small>{scenario.difficulty}</small></span>
-              <p>{scenario.summary}</p>
+              <span><strong>{option.name}</strong><small>{practiceFormationMeta(option, kind)}</small></span>
+              <p>{option.summary}</p>
             </button>
           ))}
         </div>
@@ -919,6 +937,8 @@ function CharacterDetails({
   unlockedAchievementIds,
   scenarioId,
   onScenarioChange,
+  allyGroupId,
+  onAllyGroupChange,
   onPractice,
   onClose,
   busy,
@@ -1054,7 +1074,22 @@ function CharacterDetails({
           </section>
 
           <section className="character-details__practice">
-            <ScenarioPicker value={scenarioId} onChange={onScenarioChange} />
+            <div className="character-details__practice-pickers">
+              <PracticeFormationPicker
+                label="Allied formation"
+                value={allyGroupId}
+                options={PRACTICE_ALLY_GROUPS}
+                kind="allies"
+                onChange={onAllyGroupChange}
+              />
+              <PracticeFormationPicker
+                label="Enemy formation"
+                value={scenarioId}
+                options={PRACTICE_SCENARIOS}
+                kind="enemies"
+                onChange={onScenarioChange}
+              />
+            </div>
             <button type="button" disabled={busy} onClick={onPractice}>
               Test in combat
               <span>Nothing is saved</span>
@@ -1080,6 +1115,7 @@ export function QuickStartLane({
   const selected = getStartingArchetype(normalized.archetypeId) || STARTING_ARCHETYPES[0];
   const selectedIndex = STARTING_ARCHETYPES.findIndex((entry) => entry.id === selected.id);
   const [scenarioId, setScenarioId] = useState(PRACTICE_SCENARIOS[0].id);
+  const [allyGroupId, setAllyGroupId] = useState(DEFAULT_PRACTICE_ALLY_GROUP_ID);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const rootRef = useRef(null);
   const railRef = useRef(null);
@@ -1352,7 +1388,9 @@ export function QuickStartLane({
           unlockedAchievementIds={unlockedAchievementIds}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
-          onPractice={() => onPractice?.(normalized, scenarioId)}
+          allyGroupId={allyGroupId}
+          onAllyGroupChange={setAllyGroupId}
+          onPractice={() => onPractice?.(normalized, scenarioId, allyGroupId)}
           onClose={() => setDetailsOpen(false)}
           busy={busy}
         />

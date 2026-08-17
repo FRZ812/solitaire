@@ -49,7 +49,15 @@ export function emptyMechanicsSidecar() {
  * hand the player a fight that never happened.
  */
 export function emptyTowMechanics() {
-  return { activeCombat: null, readiness: {}, companionReadiness: {} };
+  return {
+    activeCombat: null,
+    readiness: {},
+    companionReadiness: {},
+    formation: {
+      version: 1,
+      cells: [null, "wanderer", null, null, null, null, null, null, null],
+    },
+  };
 }
 
 export function hasMechanicsSidecar(state) {
@@ -92,6 +100,15 @@ export function migrateCampaignState(state) {
   // Backfilled separately: a campaign already carrying a sidecar from the build migration
   // still predates the combat slot, and would otherwise never gain one.
   if (!hasTowMechanics(next)) next.mechanics = { ...next.mechanics, tow: emptyTowMechanics() };
+  if (!next.mechanics.tow.formation) {
+    next.mechanics = {
+      ...next.mechanics,
+      tow: {
+        ...next.mechanics.tow,
+        formation: emptyTowMechanics().formation,
+      },
+    };
+  }
 
   return { ok: true, reason: null, state: next };
 }

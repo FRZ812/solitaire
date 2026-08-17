@@ -2,6 +2,7 @@ import { statusCount } from "../../gameplay/kernel/status-stack.js";
 import { PROVISIONAL_DAMAGE_POLICY } from "../../gameplay/kernel/tow-damage.js";
 import { getCombatItem } from "../../gameplay/tow/combat-items.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
+import { formationCellForActor } from "../../gameplay/tow/targeting.js";
 import { combatVfxForEvent, combatVfxForHit, combatVfxForStatus } from "./tow-combat-vfx.js";
 
 const DEFENCE_LABELS = Object.freeze({
@@ -722,15 +723,21 @@ function declarationLabel(encounter, event) {
  */
 export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
   const timeline = [];
+  const spatialActions = new Map();
   let actionKey = null;
   let actionIndex = -1;
   let groupEnd = 0;
   let groupMotion = "balanced";
 
   for (const event of events || []) {
+    if (event.type === "skill-committed") {
+      spatialActions.set(cueActionKey(event), event);
+      continue;
+    }
     const cues = combatCuesForEvent(encounter, event);
     if (cues.length === 0) continue;
     const nextKey = cueActionKey(event);
+    const spatial = spatialActions.get(nextKey) || null;
     const sameAction = nextKey === actionKey;
     let eventOffset;
 
@@ -746,6 +753,13 @@ export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
     const staged = cues.map((cue) => ({
       ...cue,
       actionIndex,
+      sourceCell: spatial?.sourceCell || formationCellForActor(encounter, cue.attackerId),
+      anchorCell: spatial?.anchorCell || formationCellForActor(encounter, cue.targetId),
+      targetCell: formationCellForActor(encounter, cue.targetId),
+      affectedCells: spatial?.affectedCells || [],
+      footprint: spatial?.footprint || "single",
+      castMode: spatial?.castMode || null,
+      presentationTier: spatial?.presentation || null,
       declarationLabel: declarationLabel(encounter, event),
       delayMs: eventOffset + (cue.delayMs || 0),
     }));

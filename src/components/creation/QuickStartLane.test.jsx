@@ -8,7 +8,11 @@ import {
   DEFAULT_STARTING_KEEPSAKE_ID,
   STARTING_KEEPSAKES,
 } from "../../gameplay/tow/keepsakes.js";
-import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
+import {
+  DEFAULT_PRACTICE_ALLY_GROUP_ID,
+  PRACTICE_ALLY_GROUPS,
+  PRACTICE_SCENARIOS,
+} from "../../gameplay/tow/practice-scenarios.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
 import {
   STARTING_ARCHETYPES,
@@ -47,6 +51,21 @@ async function render(element) {
 async function click(element) {
   expect(element).toBeTruthy();
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+}
+
+async function chooseAndConfirmCombatAction(mounted, action) {
+  await click(action);
+
+  const confirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
+  if (!confirmation) return;
+  const commit = confirmation.querySelector(".tow-combat__target-commit");
+  if (commit.disabled) {
+    const anchor = [...mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")]
+      .find((cell) => !cell.disabled);
+    await click(anchor);
+  }
+  expect(commit.disabled).toBe(false);
+  await click(commit);
 }
 
 async function keydown(element, key) {
@@ -169,7 +188,9 @@ describe("the simple grid-to-preview flow", () => {
   it("keeps loadout and practice controls behind an on-demand details drawer", async () => {
     const asked = [];
     const mounted = await render(
-      <ControlledStart onPractice={(draft, scenarioId) => asked.push([draft, scenarioId])} />,
+      <ControlledStart onPractice={(draft, scenarioId, allyGroupId) => (
+        asked.push([draft, scenarioId, allyGroupId])
+      )} />,
     );
     await click(mounted.querySelectorAll(".character-choice-card")[6]);
     expect(mounted.querySelector(".character-details")).toBeNull();
@@ -195,12 +216,19 @@ describe("the simple grid-to-preview flow", () => {
     expect(loadoutEditor.querySelectorAll(".ability-swap-picker__trigger")).toHaveLength(5);
     expect(loadoutEditor.querySelector("select")).toBeNull();
 
-    const picker = details.querySelector('[role="combobox"][aria-label="Practice opponent"]');
-    await click(picker);
-    const options = details.querySelectorAll("[role=option]");
-    expect(options).toHaveLength(PRACTICE_SCENARIOS.length);
-    await click(options[1]);
-    expect(picker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
+    const allyPicker = details.querySelector('[role="combobox"][aria-label="Allied formation"]');
+    await click(allyPicker);
+    const allyOptions = details.querySelectorAll('[role="listbox"][aria-label="Allied formation choices"] [role="option"]');
+    expect(allyOptions).toHaveLength(PRACTICE_ALLY_GROUPS.length);
+    await click(allyOptions[1]);
+    expect(allyPicker.textContent).toContain(PRACTICE_ALLY_GROUPS[1].name);
+
+    const enemyPicker = details.querySelector('[role="combobox"][aria-label="Enemy formation"]');
+    await click(enemyPicker);
+    const enemyOptions = details.querySelectorAll('[role="listbox"][aria-label="Enemy formation choices"] [role="option"]');
+    expect(enemyOptions).toHaveLength(PRACTICE_SCENARIOS.length);
+    await click(enemyOptions[1]);
+    expect(enemyPicker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
 
     await click(details.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([[
@@ -210,14 +238,15 @@ describe("the simple grid-to-preview flow", () => {
         preview: true,
       },
       PRACTICE_SCENARIOS[1].id,
+      PRACTICE_ALLY_GROUPS[1].id,
     ]]);
   });
 
-  it("supports keyboard selection in the custom practice opponent picker", async () => {
+  it("supports keyboard selection in the custom enemy formation picker", async () => {
     const mounted = await render(<ControlledStart />);
     await click(mounted.querySelectorAll(".character-choice-card")[0]);
     await click(mounted.querySelector(".character-preview__details-button"));
-    const picker = mounted.querySelector('[role="combobox"][aria-label="Practice opponent"]');
+    const picker = mounted.querySelector('[role="combobox"][aria-label="Enemy formation"]');
 
     await keydown(picker, "ArrowDown");
     expect(picker.getAttribute("aria-expanded")).toBe("true");
@@ -484,6 +513,29 @@ describe("every advertised character reaches the production fight", () => {
     }
   });
 
+  it("renders the selected three-member allied formation with portrait art", async () => {
+    const allyGroup = PRACTICE_ALLY_GROUPS.find((group) => group.allies.length === 2);
+    expect(allyGroup).toBeTruthy();
+    const compiled = compileCharacterBootstrap({ archetypeId: "arctic-knight", origin: "archetype" });
+    const mounted = await render(
+      <PracticeFight
+        receipt={compiled.receipt}
+        scenarioId="training-yard"
+        allyGroupId={allyGroup.id}
+        onExit={() => {}}
+      />,
+    );
+
+    const occupied = mounted.querySelectorAll(".tow-formation-cell[data-side='player'].has-unit");
+    expect(occupied).toHaveLength(3);
+    expect([...occupied].every((cell) => cell.querySelector(".tow-formation-unit__figure img")))
+      .toBe(true);
+    expect([...occupied].every((cell) => (
+      cell.querySelector(".tow-formation-unit__meter--hp")
+      && cell.querySelector(".tow-formation-unit__meter--resolve")
+    ))).toBe(true);
+  });
+
   it("plays out with a reproducible receipt and leaves the draft untouched", async () => {
     vi.useFakeTimers();
     try {
@@ -499,13 +551,14 @@ describe("every advertised character reaches the production fight", () => {
         // A control or hostile-Priority window intentionally has no commandable button.
         // Advance its automatic stand-down timer instead of mistaking that presentation
         // state for a deadlocked practice fight.
-        if (action) await click(action);
+        if (action) await chooseAndConfirmCombatAction(mounted, action);
         await act(async () => vi.runAllTimersAsync());
       }
 
       const result = mounted.querySelector(".practice-fight--result");
       expect(result).toBeTruthy();
       expect(result.querySelector(".practice-fight__receipt").textContent).toContain("verified");
+      expect(result.querySelector(".practice-fight__receipt").textContent).toContain("Solo");
       expect(result.textContent).toContain("Nothing here was written down");
       expect(JSON.stringify(compiled.receipt)).toBe(before);
     } finally {
@@ -518,7 +571,7 @@ describe("every advertised character reaches the production fight", () => {
     const begun = [];
     const mounted = await render(
       <ControlledStart
-        onPractice={(draft, scenarioId) => asked.push([draft, scenarioId])}
+        onPractice={(draft, scenarioId, allyGroupId) => asked.push([draft, scenarioId, allyGroupId])}
         onBegin={(draft) => begun.push(draft)}
       />,
     );
@@ -579,7 +632,7 @@ describe("every advertised character reaches the production fight", () => {
       keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
       preview: true,
       testSkillIds: expectedTestSkills,
-    }, PRACTICE_SCENARIOS[0].id]]);
+    }, PRACTICE_SCENARIOS[0].id, DEFAULT_PRACTICE_ALLY_GROUP_ID]]);
 
     await click(mounted.querySelector(".character-details__close"));
     await click(mounted.querySelector(".character-preview__begin"));

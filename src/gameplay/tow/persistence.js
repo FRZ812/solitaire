@@ -45,6 +45,8 @@ const LEGACY_COMMAND_KEYS = Object.freeze([
   "type",
 ].sort());
 const COMMAND_KEYS = Object.freeze([...LEGACY_COMMAND_KEYS, "itemId"].sort());
+const SPATIAL_COMMAND_KEYS = Object.freeze([...COMMAND_KEYS, "anchorCell"].sort());
+const SPATIAL_LEGACY_COMMAND_KEYS = Object.freeze([...LEGACY_COMMAND_KEYS, "anchorCell"].sort());
 
 const RECEIPT_KEYS = Object.freeze([
   "encounterChecksum",
@@ -107,7 +109,10 @@ function commandLogFailure(session) {
 
   for (let index = 0; index < commands.length; index += 1) {
     const command = commands[index];
-    if (!exactKeys(command, COMMAND_KEYS) && !exactKeys(command, LEGACY_COMMAND_KEYS)) {
+    if (!exactKeys(command, SPATIAL_COMMAND_KEYS)
+      && !exactKeys(command, SPATIAL_LEGACY_COMMAND_KEYS)
+      && !exactKeys(command, COMMAND_KEYS)
+      && !exactKeys(command, LEGACY_COMMAND_KEYS)) {
       return "invalid-command-record";
     }
     if (typeof command.id !== "string" || command.id.length === 0) return "invalid-command-record";
@@ -120,6 +125,16 @@ function commandLogFailure(session) {
     if (command.expectedRevision !== index) return "command-revision-mismatch";
     if (command.actorId !== null && typeof command.actorId !== "string") return "invalid-command-record";
     if (command.itemId != null && typeof command.itemId !== "string") return "invalid-command-record";
+    if (command.anchorCell !== undefined && command.anchorCell !== null && (
+      !command.anchorCell
+      || typeof command.anchorCell !== "object"
+      || Array.isArray(command.anchorCell)
+      || Object.keys(command.anchorCell).sort().join(",") !== "index,side"
+      || !["player", "enemy"].includes(command.anchorCell.side)
+      || !Number.isSafeInteger(command.anchorCell.index)
+      || command.anchorCell.index < 0
+      || command.anchorCell.index >= 9
+    )) return "invalid-command-record";
     if (command.skillId !== null && typeof command.skillId !== "string") return "invalid-command-record";
     if (command.targetId !== null && typeof command.targetId !== "string") return "invalid-command-record";
     if (typeof command.stateChecksum !== "string") return "invalid-command-record";

@@ -6,7 +6,17 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { openLabSession } from "./CombatLab.jsx";
 import { TowCombatView } from "./TowCombatView.jsx";
 import { resolveTowAbilityArt } from "./tow-combat-ability-art.js";
-import { getSkill } from "../../gameplay/tow/skills.js";
+import {
+  createSkillState,
+  getSkill,
+  maxRankOf,
+} from "../../gameplay/tow/skills.js";
+import {
+  encounterFormations,
+  formationCellForActor,
+  legalSkillAnchors,
+  resolveSkillTargets,
+} from "../../gameplay/tow/targeting.js";
 
 let root;
 let container;
@@ -21,6 +31,7 @@ afterEach(async () => {
   container?.remove();
   root = null;
   container = null;
+  vi.useRealTimers();
 });
 
 async function renderView(props = {}) {
@@ -52,6 +63,31 @@ function viewElement(encounter, props = {}) {
   );
 }
 
+function cellElement(mounted, { side, index }) {
+  return mounted.querySelector(
+    `.tow-formation-cell[data-side='${side}'][data-cell-index='${index}']`,
+  );
+}
+
+function cellCoordinates(elements) {
+  return elements.map((element) => ({
+    side: element.dataset.side,
+    index: Number(element.dataset.cellIndex),
+  }));
+}
+
+function replaceSkill(encounter, replacedId, skillId, rank = 1) {
+  return {
+    ...encounter,
+    build: {
+      ...encounter.build,
+      skills: encounter.build.skills.map((state) => (
+        state.id === replacedId ? createSkillState(skillId, rank) : state
+      )),
+    },
+  };
+}
+
 describe("compact combat HUD", () => {
   it("keeps full-art abilities clean while showing Resolve prices at the lower right", async () => {
     const mounted = await renderView();
@@ -71,7 +107,7 @@ describe("compact combat HUD", () => {
     expect(actions.map((action) => action.textContent).join("")).not.toContain("∞");
     expect(actions.every((action) => action.querySelector(".tow-combat__sr-only")?.textContent)).toBe(true);
     expect(actions.every((action) => action.classList.contains("production-combat__action"))).toBe(true);
-    const resolve = mounted.querySelector(".tow-combat__bar--resolve[role='meter']");
+    const resolve = mounted.querySelector(".tow-formation-unit__meter--resolve[role='meter']");
     expect(resolve).toBeTruthy();
     expect(resolve.getAttribute("aria-label")).toMatch(/Resolve$/);
     expect(resolve.getAttribute("aria-valuenow")).toBe(resolve.getAttribute("aria-valuemax"));
@@ -170,11 +206,12 @@ describe("compact combat HUD", () => {
       .toContain("4 kinds · 7 total");
   });
 
-  it("moves the incoming attack to one compact icon above the enemy", async () => {
-    const mounted = await renderView();
+  it("moves the incoming attack to one compact intent rail and marks its formation cell", async () => {
+    const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const mounted = await renderView({ encounter });
     const intent = mounted.querySelector("[data-testid='tow-enemy-intent']");
     expect(intent).toBeTruthy();
-    expect(intent.closest(".tow-combat__threat")).toBeTruthy();
+    expect(intent.closest(".tow-combat__formation-intents")).toBeTruthy();
     const intentArt = intent.querySelector(".tow-combat__intent-sigil img");
     expect(intentArt).toBeTruthy();
     const abilityId = intent.getAttribute("data-ability-id");
@@ -186,7 +223,9 @@ describe("compact combat HUD", () => {
     expect(mounted.querySelector(".tow-combat__telegraph")).toBeNull();
     expect(mounted.querySelector(".tow-combat__incoming")).toBeNull();
     expect(mounted.querySelector(".tow-combat__exchange")).toBeNull();
-    expect(mounted.querySelector(".tow-combat__plate--hero .tow-combat__record-trigger")).toBeTruthy();
+    const targetCell = formationCellForActor(encounter, encounter.playerId);
+    expect(targetCell).toBeTruthy();
+    expect(cellElement(mounted, targetCell).classList.contains("is-intent-target")).toBe(true);
   });
 
   it("reads a defensive enemy declaration as ward on self instead of fake damage", async () => {
@@ -207,83 +246,98 @@ describe("compact combat HUD", () => {
     expect(intent.querySelector(".tow-combat__intent-target").textContent).toBe("Self");
   });
 
-  it("shows active statuses as tappable icon art with persistent mechanical details", async () => {
-    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
-    const enemyId = base.enemyIds[0];
-    const sequence = base.sequence + 1;
-    const next = {
-      ...base,
-      sequence,
-      actors: {
-        ...base.actors,
-        [base.playerId]: {
-          ...base.actors[base.playerId],
-          statuses: [
-            { type: "initiative", count: 37 },
-            { type: "burn", count: 4 },
-          ],
-        },
-        [enemyId]: {
-          ...base.actors[enemyId],
-          statuses: [{ type: "initiative", count: 45 }],
-        },
-      },
-      events: [
-        ...base.events,
-        {
-          sequence,
-          type: "trait-fired",
-          actorId: base.playerId,
-          traitId: "gale",
-          status: "initiative",
-          amount: 37,
-        },
-      ],
-    };
-    const mounted = await renderView({ encounter: next });
-    const buttons = [...mounted.querySelectorAll(".tow-combat__plate--hero .tow-combat__status-button")];
+  it("renders two logical 3x3 formations with compact HP and Resolve on occupied cells", async () => {
+    const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const mounted = await renderView({ encounter });
+    const cells = [...mounted.querySelectorAll(".tow-formation-cell")];
+    const occupied = cells.filter((cell) => cell.classList.contains("has-unit"));
+    const empty = cells.filter((cell) => cell.classList.contains("is-empty"));
+    const expectedOccupied = 1 + encounter.allyIds.length + encounter.enemyIds.length;
 
-    expect(buttons).toHaveLength(2);
-    expect(buttons.every((button) => {
-      const art = button.querySelector(".tow-combat__status-art");
-      return art
-        && art.style.getPropertyValue("--tow-status-icon").includes(".png")
-        && /^(?:0|100)% (?:0|100)%$/.test(art.style.getPropertyValue("--tow-status-icon-position"));
-    })).toBe(true);
-    expect(buttons.map((button) => button.getAttribute("aria-label")))
-      .toEqual(expect.arrayContaining([
-        expect.stringMatching(/Initiative, 37 stacks/i),
-        expect.stringMatching(/Burn, 4 stacks/i),
-      ]));
-
-    const initiative = buttons.find((button) => /Initiative/.test(button.getAttribute("aria-label")));
-    await act(async () => initiative.click());
-    const detail = mounted.querySelector("[data-testid='tow-status-details']");
-    expect(detail).toBeTruthy();
-    expect(detail.textContent).toContain("Initiative");
-    expect(detail.textContent).toContain("100 Initiative converts into 1 Priority");
-    expect(detail.textContent).toContain("Your Gale grants 37 Initiative");
-    expect(initiative.getAttribute("aria-expanded")).toBe("true");
-
-    await act(async () => initiative.click());
-    expect(mounted.querySelector("[data-testid='tow-status-details']")).toBeNull();
-
-    const enemyInitiative = mounted.querySelector(".tow-combat__plate--enemy .tow-combat__status-button");
-    await act(async () => enemyInitiative.click());
-    const enemyDetail = mounted.querySelector("[data-testid='tow-status-details']");
-    expect(enemyDetail.classList.contains("tow-combat__status-details--intent-safe")).toBe(true);
-    expect(mounted.querySelector("[data-testid='tow-enemy-intent']")).toBeTruthy();
+    expect(cells).toHaveLength(18);
+    expect(occupied).toHaveLength(expectedOccupied);
+    expect(empty).toHaveLength(18 - expectedOccupied);
+    expect(occupied.every((cell) => (
+      cell.querySelectorAll(".tow-formation-unit__meter--hp[role='meter']").length === 1
+      && cell.querySelectorAll(".tow-formation-unit__meter--resolve[role='meter']").length === 1
+    ))).toBe(true);
+    expect(occupied.every((cell) => cell.querySelector(".tow-formation-unit__figure"))).toBe(true);
+    expect(empty.every((cell) => [
+      "is-valid-anchor",
+      "is-affected",
+      "is-selected-anchor",
+      "is-intent-target",
+    ].every((state) => !cell.classList.contains(state)))).toBe(true);
   });
 
-  it("moves readable receipts behind the compact combat-log icon", async () => {
-    const mounted = await renderView();
-    const trigger = mounted.querySelector(".tow-combat__plate--hero .tow-combat__record-trigger");
-    expect(trigger).toBeTruthy();
-    expect(mounted.querySelector(".tow-combat__record-list")).toBeNull();
-    await act(async () => trigger.click());
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(mounted.querySelector(".tow-combat__plate--hero .tow-combat__record-list")?.textContent.length)
-      .toBeGreaterThan(20);
+  it("reveals only exact legal anchors, previews an empty area cell, and clears them on Cancel", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const encounter = replaceSkill(base, "emergency-evasion", "north-king-whirlwind");
+    const formations = encounterFormations(encounter);
+    const expectedAnchors = legalSkillAnchors(
+      encounter,
+      "north-king-whirlwind",
+      encounter.playerId,
+    );
+    const emptyAnchor = expectedAnchors.find(({ side, index }) => !formations[side][index]);
+    const mounted = await renderView({ encounter, onUseSkill: vi.fn() });
+
+    expect(emptyAnchor).toBeTruthy();
+    expect(mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")).toHaveLength(0);
+    await act(async () => mounted.querySelector("[data-skill-id='north-king-whirlwind']").click());
+
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeTruthy();
+    expect(cellCoordinates([...mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")]))
+      .toEqual(expectedAnchors);
+    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(true);
+
+    await act(async () => cellElement(mounted, emptyAnchor).click());
+    const preview = resolveSkillTargets(
+      encounter,
+      "north-king-whirlwind",
+      encounter.playerId,
+      { anchorCell: emptyAnchor },
+    );
+    expect(cellElement(mounted, emptyAnchor).classList.contains("is-selected-anchor")).toBe(true);
+    expect(cellCoordinates([...mounted.querySelectorAll(".tow-formation-cell.is-affected")]))
+      .toEqual(preview.affectedCells);
+    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(false);
+
+    await act(async () => mounted.querySelector(".tow-combat__target-cancel").click());
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
+    expect(mounted.querySelectorAll(
+      ".tow-formation-cell.is-valid-anchor, .tow-formation-cell.is-affected, .tow-formation-cell.is-selected-anchor",
+    )).toHaveLength(0);
+  });
+
+  it("keeps a single-anchor multi-recipient ability behind footprint confirmation", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const skillId = "north-king-natures-intervention";
+    const encounter = replaceSkill(base, "emergency-evasion", skillId);
+    const anchors = legalSkillAnchors(encounter, skillId, encounter.playerId);
+    const preview = resolveSkillTargets(
+      encounter,
+      skillId,
+      encounter.playerId,
+      { anchorCell: anchors[0] },
+    );
+    const onUseSkill = vi.fn();
+    const mounted = await renderView({ encounter, onUseSkill });
+
+    expect(anchors).toHaveLength(1);
+    expect(preview.ok).toBe(true);
+    expect(preview.targetIds).toHaveLength(2);
+
+    await act(async () => mounted.querySelector(`[data-skill-id='${skillId}']`).click());
+
+    expect(onUseSkill).not.toHaveBeenCalled();
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeTruthy();
+    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(false);
+    const affectedCells = cellCoordinates([
+      ...mounted.querySelectorAll(".tow-formation-cell.is-affected"),
+    ]);
+    expect(affectedCells).toHaveLength(preview.affectedCells.length);
+    expect(affectedCells).toEqual(expect.arrayContaining(preview.affectedCells));
   });
 
   it("renders every multi-hit contact in its own staggered effect lane", async () => {
@@ -368,7 +422,9 @@ describe("compact combat HUD", () => {
       };
 
       await act(async () => root.render(viewElement(next)));
-      const meter = mounted.querySelector(".tow-combat__plate--enemy [role='meter']");
+      const meter = mounted.querySelector(
+        `.tow-formation-unit__meter--hp[aria-label='${base.actors[enemyId].name} health']`,
+      );
       expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp));
 
       await act(async () => vi.advanceTimersByTime(150));
@@ -376,72 +432,6 @@ describe("compact combat HUD", () => {
 
       await act(async () => vi.advanceTimersByTime(155));
       expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp - 9));
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("spends Protection on each contact beat instead of after the whole ability", async () => {
-    vi.useFakeTimers();
-    try {
-      const opened = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
-      const heroId = opened.playerId;
-      const enemyId = opened.enemyIds[0];
-      const base = {
-        ...opened,
-        actors: {
-          ...opened.actors,
-          [heroId]: { ...opened.actors[heroId], statuses: [{ type: "protection", count: 3 }] },
-        },
-      };
-      const mounted = await renderView({ encounter: base });
-      const sequence = base.sequence + 1;
-      const next = {
-        ...base,
-        sequence,
-        actors: {
-          ...base.actors,
-          [heroId]: { ...base.actors[heroId], statuses: [{ type: "protection", count: 1 }] },
-        },
-        events: [
-          ...base.events,
-          {
-            sequence,
-            type: "enemy-attack",
-            enemyId,
-            targetId: heroId,
-            attackId: base.enemyAttacks[enemyId][0].id,
-            hits: [
-              {
-                index: 0, damage: 4, toHp: 4, absorbed: 0, critical: false, dodged: false,
-                statusChanges: {
-                  attacker: [],
-                  defender: [{ type: "protection", before: 3, after: 2 }],
-                },
-              },
-              {
-                index: 1, damage: 5, toHp: 5, absorbed: 0, critical: false, dodged: false,
-                statusChanges: {
-                  attacker: [],
-                  defender: [{ type: "protection", before: 2, after: 1 }],
-                },
-              },
-            ],
-          },
-        ],
-      };
-
-      await act(async () => root.render(viewElement(next)));
-      const protectionCount = () => mounted
-        .querySelector(".tow-combat__plate--hero .tow-combat__status-button[aria-label^='Protection']")
-        ?.querySelector("strong")?.textContent;
-      expect(protectionCount()).toBe("3");
-
-      await act(async () => vi.advanceTimersByTime(150));
-      expect(protectionCount()).toBe("2");
-
-      await act(async () => vi.advanceTimersByTime(155));
-      expect(protectionCount()).toBe("1");
     } finally {
       vi.useRealTimers();
     }
@@ -483,22 +473,23 @@ describe("compact combat HUD", () => {
 
       await act(async () => root.render(viewElement(victory)));
       const combat = mounted.querySelector(".tow-combat");
-      const threat = mounted.querySelector(".tow-combat__threat");
+      const enemyCell = cellElement(mounted, formationCellForActor(base, enemyId));
+      const enemyUnit = enemyCell.querySelector(".tow-formation-unit");
       expect(combat.dataset.presentationPhase).toBe("resolution-hold");
       expect(combat.getAttribute("aria-busy")).toBe("true");
       expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
       expect(mounted.querySelector(".tow-combat__command")).toBeTruthy();
       expect(mounted.querySelectorAll(".tow-combat__effect")).toHaveLength(2);
-      expect(threat.classList.contains("is-down")).toBe(false);
+      expect(enemyUnit.classList.contains("is-down")).toBe(false);
       expect([...mounted.querySelectorAll(".tow-combat__action")].every((button) => button.disabled)).toBe(true);
 
       await act(async () => vi.advanceTimersByTime(1604));
       expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
-      expect(threat.classList.contains("is-down")).toBe(false);
+      expect(enemyUnit.classList.contains("is-down")).toBe(true);
 
       await act(async () => vi.advanceTimersByTime(1));
       expect(mounted.querySelector(".tow-combat__outcome")).toBeTruthy();
-      expect(mounted.querySelector(".tow-combat__threat").classList.contains("is-down")).toBe(true);
+      expect(enemyUnit.classList.contains("is-down")).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -535,20 +526,22 @@ describe("compact combat HUD", () => {
     expect(container.querySelector(".tow-combat__action-beat-copy")).toBeNull();
   });
 
-  it("keeps authored ability artwork in the command tile rather than floating it over combat", async () => {
+  it("keeps authored Strike art restrained and skips confirmation for its only target", async () => {
     vi.useFakeTimers();
-    try {
-      const mounted = await renderView();
-      const action = mounted.querySelector(".tow-combat__action");
-      const commandArt = action.querySelector(".tow-combat__ability-art img").getAttribute("src");
-      await act(async () => action.click());
-      expect(commandArt).toMatch(/\.(?:png|webp)$/);
-      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil")).toBeTruthy();
-      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img"))
-        .toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+    const onUseSkill = vi.fn();
+    const mounted = await renderView({ onUseSkill });
+    const strike = mounted.querySelector("[data-skill-id='strike']");
+    const commandArt = strike.querySelector(".tow-combat__ability-art img").getAttribute("src");
+
+    await act(async () => strike.click());
+
+    expect(commandArt).toMatch(/\.(?:png|webp)$/);
+    expect(onUseSkill).not.toHaveBeenCalled();
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
+    expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
+    expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeNull();
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(onUseSkill).toHaveBeenCalledTimes(1);
   });
 
   it("shows control in the rail and automatically forfeits the locked command", async () => {
@@ -567,7 +560,6 @@ describe("compact combat HUD", () => {
       };
       const onStandDown = vi.fn();
       const mounted = await renderView({ encounter: controlled, onStandDown });
-      expect(mounted.querySelector(".tow-combat__status-button[aria-label^='Paralyze']")).toBeTruthy();
       expect(mounted.querySelector(".tow-combat__command").classList.contains("is-forced")).toBe(true);
       expect(mounted.querySelector(".tow-combat__command-heading").textContent)
         .toContain("Paralyze · turn forfeited");
@@ -584,49 +576,86 @@ describe("compact combat HUD", () => {
     }
   });
 
-  it("separates compact HP and RP tracks from their aligned numeric readouts", async () => {
-    const mounted = await renderView();
-    const resources = [...mounted.querySelectorAll(".tow-combat__resource")];
-    expect(resources.length).toBeGreaterThanOrEqual(4);
-    expect(resources.every((resource) => /\d+\s*\/\s*\d+/.test(resource.querySelector(".tow-combat__bar-value")?.textContent)))
-      .toBe(true);
-    expect(mounted.querySelector(".tow-combat__resource--health .tow-combat__resource-label").textContent)
-      .toBe("HP");
-    expect(mounted.querySelector(".tow-combat__resource--resolve .tow-combat__resource-label").textContent)
-      .toBe("RP");
-    expect(mounted.querySelector(".tow-combat__hp")).toBeNull();
-  });
-
-  it("commits one command through anticipation, contact, and recovery", async () => {
+  it("dispatches one legal target without showing a redundant confirmation", async () => {
     vi.useFakeTimers();
     try {
+      const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
       const onUseSkill = vi.fn();
-      const mounted = await renderView({ onUseSkill });
-      const action = mounted.querySelector(".tow-combat__action");
+      const mounted = await renderView({ encounter, onUseSkill });
+      const strike = mounted.querySelector("[data-skill-id='strike']");
+      const anchorCell = legalSkillAnchors(encounter, "strike", encounter.playerId)[0];
+      const preview = resolveSkillTargets(encounter, "strike", encounter.playerId, { anchorCell });
 
-      await act(async () => {
-        action.click();
-        action.click();
-      });
+      await act(async () => strike.click());
 
       expect(onUseSkill).not.toHaveBeenCalled();
+      expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
-      expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeTruthy();
-      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img"))
-        .toBeNull();
-      expect(action.classList.contains("is-committed")).toBe(true);
-      expect(action.disabled).toBe(false);
-      expect([...mounted.querySelectorAll(".tow-combat__action")]
-        .filter((button) => button !== action)
-        .every((button) => button.disabled)).toBe(true);
-      expect(mounted.querySelector("[data-testid='tow-action-beat']").textContent).not.toContain("Consequence");
-      expect(mounted.querySelector(".tow-combat__action-beat-copy")).toBeNull();
+      expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeNull();
+      expect(strike.classList.contains("is-committed")).toBe(true);
 
-      await act(async () => vi.advanceTimersByTime(600));
+      await act(async () => vi.advanceTimersByTime(5000));
       expect(onUseSkill).toHaveBeenCalledTimes(1);
-      expect(onUseSkill).toHaveBeenCalledWith("strike", "foe-0", "wanderer");
-      expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("resolve");
-      expect(mounted.querySelector("[data-testid='tow-action-beat']")?.textContent).toMatch(/Strike|Slash/);
+      expect(onUseSkill).toHaveBeenCalledWith(
+        "strike",
+        preview.primaryTargetId,
+        encounter.playerId,
+        anchorCell,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds a promoted flexible Mythical behind a full-screen portrait declaration", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+      const encounter = replaceSkill(
+        base,
+        "emergency-evasion",
+        "penetration",
+        maxRankOf("penetration"),
+      );
+      const onUseSkill = vi.fn();
+      const mounted = await renderView({
+        encounter,
+        onUseSkill,
+        artFor: () => "/test-assets/mythical-portrait.webp",
+      });
+      const anchorCell = legalSkillAnchors(encounter, "penetration", encounter.playerId)[0];
+      const preview = resolveSkillTargets(
+        encounter,
+        "penetration",
+        encounter.playerId,
+        { anchorCell },
+      );
+
+      await act(async () => mounted.querySelector("[data-skill-id='penetration']").click());
+
+      const declaration = mounted.querySelector("[data-testid='tow-mythical-declaration']");
+      expect(declaration).toBeTruthy();
+      expect(declaration.querySelector("img")?.getAttribute("src")).toMatch(/\.(?:png|webp)$/);
+      expect(declaration.textContent).toMatch(/Mythical/i);
+      expect(declaration.textContent).toContain("Penetration");
+      expect(onUseSkill).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTime(1119));
+      expect(mounted.querySelector("[data-testid='tow-mythical-declaration']")).toBeTruthy();
+      expect(onUseSkill).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(mounted.querySelector("[data-testid='tow-mythical-declaration']")).toBeNull();
+      expect(onUseSkill).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTime(5000));
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
+      expect(onUseSkill).toHaveBeenCalledWith(
+        "penetration",
+        preview.primaryTargetId,
+        encounter.playerId,
+        anchorCell,
+      );
     } finally {
       vi.useRealTimers();
     }

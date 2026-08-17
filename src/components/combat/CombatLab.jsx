@@ -253,8 +253,8 @@ export function CombatLab({ onExit }) {
           encounter={session.encounter}
           note={`Lab — ${packageId} vs ${scenarioId}`}
           error={feedback}
-          onUseSkill={(skillId, targetId, actorId) => dispatch({
-            type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
+          onUseSkill={(skillId, targetId, actorId, anchorCell = null) => dispatch({
+            type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null, anchorCell,
           })}
           onStandDown={(actorId) => dispatch({ type: "stand-down", actorId: actorId ?? null })}
           onRetreat={(actorId) => dispatch({ type: "attempt-retreat", actorId: actorId ?? null })}
