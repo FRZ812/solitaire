@@ -723,6 +723,7 @@ function CombatEffects({ cues }) {
             data-vfx-frames={cue.visual?.flipbook?.frameCount || undefined}
             data-vfx-frame-range={cue.visual?.flipbook?.frameRange?.join("-") || undefined}
             data-vfx-choreography={cue.visual?.choreography || "single-sweep"}
+            data-vfx-travel={cue.visual?.travel || "stationary"}
             data-vfx-signature={cue.visual?.signatureKey || undefined}
             style={{
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,

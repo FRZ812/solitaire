@@ -14,7 +14,7 @@ import {
   combatVfxVariantForForm,
   combatVfxVariantForSkill,
 } from "./tow-combat-vfx.js";
-import { flipbookSupportsVisual } from "./TowCombatVfxCanvas.jsx";
+import { combatVfxPositionForCue, flipbookSupportsVisual } from "./TowCombatVfxCanvas.jsx";
 
 const ARCHETYPE_PREFIXES = Object.freeze([
   "arctic-",
@@ -91,6 +91,48 @@ describe("authored ImageGen flipbook combat VFX", () => {
     const slash = combatVfxVariantForSkill("blade-slash");
     expect(slash.asset).toBeNull();
     expect(slash.asset).not.toBe(resolveTowAbilityArt(getSkill("blade-slash")));
+  });
+
+  it("routes every Knight ability to its own generated atlas", () => {
+    const knightIds = skillIds().filter((id) => id.startsWith("arctic-"));
+    expect(knightIds).toHaveLength(23);
+    for (const skillId of knightIds) {
+      expect(combatVfxVariantForSkill(skillId).flipbook.id).toBe(skillId);
+    }
+  });
+
+  it("uses an available family atlas before the generic strike fallback", () => {
+    const visual = combatVfxForEvent({}, {
+      type: "environmental-effect",
+      skillId: "untracked-ember-burst",
+    });
+    expect(visual).toMatchObject({ family: "fire", flipbook: { id: "incineration" } });
+    expect(visual.flipbook.id).not.toBe("strike");
+  });
+
+  it("moves projectile sheets from the attacker to frame-five contact", () => {
+    const projectile = combatVfxVariantForSkill("demon-shoot");
+    const cue = {
+      attackerId: "hero",
+      targetId: "foe",
+      targetSide: "enemy",
+      visual: projectile,
+    };
+    expect(projectile.travel).toBe("source-to-target");
+
+    const launch = combatVfxPositionForCue(cue, 1_000, 600, 0);
+    const crossing = combatVfxPositionForCue(cue, 1_000, 600, 0.28);
+    const contact = combatVfxPositionForCue(cue, 1_000, 600, 0.52);
+    const aftermath = combatVfxPositionForCue(cue, 1_000, 600, 1);
+    expect(launch.x).toBeLessThan(crossing.x);
+    expect(crossing.x).toBeLessThan(contact.x);
+    expect(launch.y).toBeGreaterThan(crossing.y);
+    expect(crossing.y).toBeGreaterThan(contact.y);
+    expect(contact).toMatchObject({ x: aftermath.x, y: aftermath.y, travelProgress: 1 });
+
+    const strikeCue = { ...cue, visual: combatVfxVariantForSkill("arctic-strike") };
+    expect(combatVfxPositionForCue(strikeCue, 1_000, 600, 0))
+      .toEqual(combatVfxPositionForCue(strikeCue, 1_000, 600, 1));
   });
 
   it("authors the forward-compatible ability aliases named by the implementation plan", () => {

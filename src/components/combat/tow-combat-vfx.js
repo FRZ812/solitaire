@@ -52,7 +52,6 @@ function flipbookIdForVariant(variant) {
   if (!variant) return null;
   if (COMBAT_VFX_FLIPBOOK_ASSETS[variant]) return variant;
   return FLIPBOOK_IDS_BY_LENGTH.find((id) => variant.startsWith(`${id}-`))
-    || (COMBAT_VFX_FLIPBOOK_ASSETS.strike ? "strike" : FLIPBOOK_IDS_BY_LENGTH[0])
     || null;
 }
 
@@ -131,25 +130,29 @@ const FAMILY_PALETTES = Object.freeze({
 // reuse the closest authored ability flipbook instead of falling back to procedural marks.
 // Every current skill still resolves to its own exact `${skillId}-v1.webp` atlas first.
 const FAMILY_FLIPBOOK_IDS = Object.freeze({
-  afflict: "blade-of-curse",
-  arcane: "mage-magic-arrow",
-  evade: "emergency-evasion",
-  fire: "incineration",
-  frost: "rapid-cooling",
-  gash: "slaughter",
-  heal: "first-aid",
-  impact: "sudden-blow",
-  lightning: "rising-power",
-  mechanical: "automaton-impact-cannon",
-  nature: "mage-thorn-veil",
-  pierce: "penetration",
-  radiant: "priestess-holy-shock",
-  slash: "strike",
-  toxic: "demon-poison-bottle",
-  void: "witch-void-monster",
-  ward: "block",
-  wind: "north-king-whirlwind",
+  afflict: Object.freeze(["blade-of-curse", "threatening-cry"]),
+  arcane: Object.freeze(["mage-magic-arrow", "transcendence"]),
+  evade: Object.freeze(["emergency-evasion"]),
+  fire: Object.freeze(["incineration"]),
+  frost: Object.freeze(["rapid-cooling"]),
+  gash: Object.freeze(["slaughter"]),
+  heal: Object.freeze(["first-aid"]),
+  impact: Object.freeze(["sudden-blow"]),
+  lightning: Object.freeze(["rising-power"]),
+  mechanical: Object.freeze(["automaton-impact-cannon", "rising-power"]),
+  nature: Object.freeze(["mage-thorn-veil", "first-aid"]),
+  pierce: Object.freeze(["penetration"]),
+  radiant: Object.freeze(["priestess-holy-shock", "fist-of-justice"]),
+  slash: Object.freeze(["strike"]),
+  toxic: Object.freeze(["demon-poison-bottle", "penetration"]),
+  void: Object.freeze(["witch-void-monster", "judge-of-fate"]),
+  ward: Object.freeze(["block"]),
+  wind: Object.freeze(["north-king-whirlwind", "emergency-evasion"]),
 });
+
+function flipbookIdForFamily(family) {
+  return FAMILY_FLIPBOOK_IDS[family]?.find((id) => COMBAT_VFX_FLIPBOOK_ASSETS[id]) || null;
+}
 
 function prefixedChoreographies(prefix, entries) {
   return Object.fromEntries(Object.entries(entries).map(([id, choreography]) => [
@@ -786,6 +789,17 @@ const FAMILY_CHOREOGRAPHIES = Object.freeze({
   wind: Object.freeze(["wind-spiral", "rolling-wave", "afterimage-dash"]),
 });
 
+const SOURCE_TO_TARGET_MOTIONS = new Set(["barrage", "bolt", "pin", "projectile", "volley"]);
+
+function travelFor(spec, choreography) {
+  if (spec.travel) return spec.travel;
+  if (SOURCE_TO_TARGET_MOTIONS.has(spec.motion)) return "source-to-target";
+  if (/(?:projectile|railgun|blood-lance|ballistic)/.test(choreography || "")) {
+    return "source-to-target";
+  }
+  return "stationary";
+}
+
 function visualHash(value) {
   let hash = 2166136261;
   for (const character of String(value || "effect")) {
@@ -847,7 +861,7 @@ function withMotion(spec) {
   const choreography = choreographyFor(spec, profile);
   const inheritedFlipbookId = spec.flipbook?.id
     || flipbookIdForVariant(spec.variant)
-    || FAMILY_FLIPBOOK_IDS[spec.family]
+    || flipbookIdForFamily(spec.family)
     || "strike";
   const flipbook = spec.flipbook || flipbookForId(inheritedFlipbookId);
   return Object.freeze({
@@ -858,6 +872,7 @@ function withMotion(spec) {
     assetSource: flipbook ? "imagegen-flipbook" : "none",
     flipbook,
     choreography,
+    travel: travelFor(spec, choreography),
     authored: Boolean(
       flipbook
       || spec.choreography
