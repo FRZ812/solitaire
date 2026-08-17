@@ -34,6 +34,13 @@ export const ATTRIBUTE_SCALE_VERSION = 2;
 export const LIVING_WORLD_LEVEL_CAP = 60;
 export { PROFESSION_LEVEL_CAP, RACIAL_LEVEL_CAP, attributeCeilingForLevel };
 
+// Tower archetype builds advance through their replay-governed combat model,
+// not the legacy global level/advancement track. Keep the default permissive so
+// old saves and every non-Tower character retain their existing behaviour.
+export function usesLegacyCharacterProgression(character) {
+  return character?.progressionModel !== "tow-archetype";
+}
+
 export const AUTHORED_WORLD_LEVELS = Object.freeze({
   "demon-king": 100, "vale-king-asar": 48, "goblin-king": 52, "selenyan-speaker": 58,
   "glass-spire-master": 60, "great-wyrm": 100, "hawthorn-lord": 60, "witch-queen": 78,
