@@ -13,7 +13,12 @@ import { spoilState } from "./spoilage.js";
 import { ageState } from "./aging.js";
 import { itemTemplate } from "../data/catalog.js";
 import { TIERS, tierOrder, tierMult, tierLabel } from "../data/tiers.js";
-import { advanceProgression, earnedLevelGrowthText, projectCharacterProgression } from "./progression.js";
+import {
+  advanceProgression,
+  earnedLevelGrowthText,
+  projectCharacterProgression,
+  usesLegacyCharacterProgression,
+} from "./progression.js";
 
 export function blacksmithRank(state) {
   return state.character?.crafting?.blacksmith?.rank || 0;
@@ -108,18 +113,21 @@ export function applyForge(state, schematic, tier) {
     character: { ...state.character, inventory: { ...state.character.inventory, coins, carried } },
     world: { ...state.world, codex: { ...state.world.codex, items } },
   };
-  const progress = advanceProgression(next.character, Math.max(60, schematic.minutes || 60) * 2 + tierOrder(tier) * 50);
-  if (progress.earnedLevels > 0) {
-    next = {
-      ...next,
-      beats: [...(next.beats || []), {
-        id: `forge-level-${Date.now()}`,
-        type: "growth",
-        text: earnedLevelGrowthText(progress),
-      }],
-    };
+  const usesLegacyProgression = usesLegacyCharacterProgression(next.character);
+  if (usesLegacyProgression) {
+    const progress = advanceProgression(next.character, Math.max(60, schematic.minutes || 60) * 2 + tierOrder(tier) * 50);
+    if (progress.earnedLevels > 0) {
+      next = {
+        ...next,
+        beats: [...(next.beats || []), {
+          id: `forge-level-${Date.now()}`,
+          type: "growth",
+          text: earnedLevelGrowthText(progress),
+        }],
+      };
+    }
   }
-  return { ok: true, item: itemDef, state: projectCharacterProgression(next) };
+  return { ok: true, item: itemDef, state: usesLegacyProgression ? projectCharacterProgression(next) : next };
 }
 
 // Take the next apprenticeship step: pay the fee, live and labour at the forge
@@ -148,16 +156,25 @@ export function applyApprentice(state, step) {
   // characters who died of age during the apprenticeship surface as a notice.
   const ag = ageState(sp.state);
   let next = ag.state;
-  const progress = advanceProgression(next.character, Math.max(1, step.days || 1) * 60);
-  if (progress.earnedLevels > 0) {
-    next = {
-      ...next,
-      beats: [...(next.beats || []), {
-        id: `apprentice-level-${Date.now()}`,
-        type: "growth",
-        text: earnedLevelGrowthText(progress),
-      }],
-    };
+  const usesLegacyProgression = usesLegacyCharacterProgression(next.character);
+  if (usesLegacyProgression) {
+    const progress = advanceProgression(next.character, Math.max(1, step.days || 1) * 60);
+    if (progress.earnedLevels > 0) {
+      next = {
+        ...next,
+        beats: [...(next.beats || []), {
+          id: `apprentice-level-${Date.now()}`,
+          type: "growth",
+          text: earnedLevelGrowthText(progress),
+        }],
+      };
+    }
   }
-  return { ok: true, state: projectCharacterProgression(next), spoiled: sp.spoiled, aged: ag.aged, deaths: ag.deaths };
+  return {
+    ok: true,
+    state: usesLegacyProgression ? projectCharacterProgression(next) : next,
+    spoiled: sp.spoiled,
+    aged: ag.aged,
+    deaths: ag.deaths,
+  };
 }

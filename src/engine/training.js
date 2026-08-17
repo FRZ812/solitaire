@@ -7,7 +7,7 @@ import { ratingFromXp, proficiencyName } from "../data/proficiencies.js";
 import { advanceTime } from "./time.js";
 import { ageState } from "./aging.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
-import { advanceProgression, earnedLevelGrowthText } from "./progression.js";
+import { advanceProgression, earnedLevelGrowthText, usesLegacyCharacterProgression } from "./progression.js";
 
 // XP needed to reach a rating (ratingFromXp = floor(sqrt(xp/6)) → xp = 6·r²).
 const xpForRating = (r) => 6 * r * r;
@@ -43,19 +43,22 @@ export function applyTraining(state, profId, cap) {
     character: { ...state.character, proficiencies: profs, inventory: { ...state.character.inventory, coins } },
   });
   const next = ag.state;
-  const progress = advanceProgression(next.character, offer.xpGain * 10);
-  if (progress.earnedLevels > 0) {
-    next.beats = [
-      ...(next.beats || []),
-      {
-        id: `training-level-${Date.now()}`,
-        type: "growth",
-        text: earnedLevelGrowthText(progress),
-      },
-    ];
+  const usesLegacyProgression = usesLegacyCharacterProgression(next.character);
+  if (usesLegacyProgression) {
+    const progress = advanceProgression(next.character, offer.xpGain * 10);
+    if (progress.earnedLevels > 0) {
+      next.beats = [
+        ...(next.beats || []),
+        {
+          id: `training-level-${Date.now()}`,
+          type: "growth",
+          text: earnedLevelGrowthText(progress),
+        },
+      ];
+    }
   }
   const wanderer = next.world?.codex?.characters?.wanderer;
-  if (wanderer && next.character.progression) {
+  if (wanderer && usesLegacyProgression && next.character.progression) {
     next.world = {
       ...next.world,
       codex: {

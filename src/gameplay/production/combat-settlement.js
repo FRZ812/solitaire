@@ -1,6 +1,6 @@
 import { normalizeConditions } from "../../data/conditions.js";
 import { XP } from "../../data/proficiencies.js";
-import { advanceProgression } from "../../engine/progression.js";
+import { advanceProgression, usesLegacyCharacterProgression } from "../../engine/progression.js";
 import { cloneJsonData } from "../kernel/json-data.js";
 import { readProductionCombatSession } from "./combat-session.js";
 
@@ -84,7 +84,8 @@ export function settleProductionCombat(state, { campaignId } = {}) {
     character.proficiencies[id] = (character.proficiencies[id] || 0) + amount;
   }
   const progressionXp = Object.values(gains).reduce((sum, amount) => sum + amount, 0) * 10;
-  if (progressionXp > 0) advanceProgression(character, progressionXp);
+  const usesLegacyProgression = usesLegacyCharacterProgression(character);
+  if (progressionXp > 0 && usesLegacyProgression) advanceProgression(character, progressionXp);
 
   const npcId = session.initial.enemy.npcId;
   let world = state.world;
@@ -100,7 +101,7 @@ export function settleProductionCombat(state, { campaignId } = {}) {
     };
     characters[npcId] = npc;
     const wanderer = characters.wanderer;
-    if (wanderer && character.progression) {
+    if (wanderer && usesLegacyProgression && character.progression) {
       characters.wanderer = {
         ...wanderer,
         profession: character.profession,

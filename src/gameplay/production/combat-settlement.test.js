@@ -1,4 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { progressionXpForLevel } from "../../data/progression-paths.js";
+import {
+  advanceProgression,
+  normalizeCharacterProgression,
+  pendingLevelAllocations,
+  progressionLevel,
+} from "../../engine/progression.js";
 import { startProductionCombatSession, transitionProductionCombatSession } from "./combat-session.js";
 import { settleProductionCombat } from "./combat-settlement.js";
 
@@ -139,5 +146,36 @@ describe("production combat settlement", () => {
     expect(result.state.character.conditions.map((condition) => condition.name)).toEqual(
       expect.arrayContaining(["Bleeding", "Gravely Wounded"]),
     );
+  });
+
+  it("keeps combat proficiency gains but does not write legacy progression for a Tower archetype", () => {
+    const terminal = session();
+    const state = campaign(terminal);
+    normalizeCharacterProgression(state.character);
+    const currentLevel = progressionLevel(state.character);
+    const currentXp = state.character.progression?.xp ?? progressionXpForLevel(currentLevel);
+    advanceProgression(
+      state.character,
+      progressionXpForLevel(currentLevel + 1) - currentXp,
+    );
+    expect(pendingLevelAllocations(state.character)).not.toBeNull();
+    state.character.progressionModel = "tow-archetype";
+    state.world.codex.characters.wanderer = {
+      ...state.world.codex.characters.wanderer,
+      progressionModel: "tow-archetype",
+      progression: structuredClone(state.character.progression),
+    };
+    const beforeCharacterProgression = structuredClone(state.character.progression);
+    const beforeWandererProgression = structuredClone(state.world.codex.characters.wanderer.progression);
+    const beforePending = structuredClone(pendingLevelAllocations(state.character));
+
+    const result = settleProductionCombat(state, { campaignId: "campaign-7" });
+
+    expect(result.ok).toBe(true);
+    expect(result.state.character.proficiencies).toEqual({ "mastery-sword": 2 });
+    expect(result.receipt.proficiencyGains).toEqual({ "mastery-sword": 2 });
+    expect(result.state.character.progression).toEqual(beforeCharacterProgression);
+    expect(result.state.world.codex.characters.wanderer.progression).toEqual(beforeWandererProgression);
+    expect(pendingLevelAllocations(result.state.character)).toEqual(beforePending);
   });
 });

@@ -13,7 +13,12 @@ import { ageState } from "./aging.js";
 import { makeRng } from "./town-gen.js";
 import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
 import { COMPANION_LIST } from "../data/companions.js";
-import { advanceProgression, earnedLevelGrowthText, projectCharacterProgression } from "./progression.js";
+import {
+  advanceProgression,
+  earnedLevelGrowthText,
+  projectCharacterProgression,
+  usesLegacyCharacterProgression,
+} from "./progression.js";
 
 const clamp100 = (v) => Math.max(0, Math.min(100, v));
 
@@ -93,16 +98,19 @@ export function applyDayLabour(state, job) {
   // multi-day labour and keeps every time-advance site uniform.
   const ag = ageState(sp.state);
   let next = ag.state;
-  const progress = advanceProgression(next.character, Math.max(1, job.hours || 4) * 30);
-  if (progress.earnedLevels > 0) {
-    next = {
-      ...next,
-      beats: [...(next.beats || []), {
-        id: `labour-level-${Date.now()}`,
-        type: "growth",
-        text: earnedLevelGrowthText(progress),
-      }],
-    };
+  const usesLegacyProgression = usesLegacyCharacterProgression(next.character);
+  if (usesLegacyProgression) {
+    const progress = advanceProgression(next.character, Math.max(1, job.hours || 4) * 30);
+    if (progress.earnedLevels > 0) {
+      next = {
+        ...next,
+        beats: [...(next.beats || []), {
+          id: `labour-level-${Date.now()}`,
+          type: "growth",
+          text: earnedLevelGrowthText(progress),
+        }],
+      };
+    }
   }
-  return { ok: true, summary, state: projectCharacterProgression(next) };
+  return { ok: true, summary, state: usesLegacyProgression ? projectCharacterProgression(next) : next };
 }
