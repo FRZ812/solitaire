@@ -29,6 +29,7 @@ function open(overrides = {}) {
     }],
     build: { traits: {}, skills: ["strike", "block"], ...overrides.build },
     context: overrides.context,
+    ...(overrides.formations ? { formations: overrides.formations } : {}),
   });
   if (!opened.ok) throw new Error(opened.reason);
   return opened.session;
@@ -368,6 +369,39 @@ describe("the event log", () => {
     const opening = towSessionEvents(session);
     expect(opening.length).toBeGreaterThan(0);
     expect(opening.every((event) => event.commandId === null)).toBe(true);
+  });
+
+  it("owns one v2 round reflow inside end-turn and repeats it idempotently", () => {
+    const session = open({
+      build: { skills: ["clocktower-grenade-toss"] },
+      formations: {
+        version: 2,
+        player: ["wanderer", null, null, null, null, null, null, null, null],
+        enemy: ["foe-0", null, null, null, null, null, null, null, null],
+      },
+    });
+    const moved = endTurn(session, "round-reflow");
+    const event = moved.events.find((entry) => entry.type === "formation-moved");
+
+    expect(moved.ok).toBe(true);
+    expect(event).toMatchObject({ commandId: "round-reflow", round: 2, phase: "round-open" });
+    expect(moved.command.eventsFrom).toBeLessThan(event.eventSequence);
+    expect(moved.command.eventsTo).toBeGreaterThanOrEqual(event.eventSequence);
+    expect(Object.keys(moved.command.streams).every((name) => ["combat", "intent"].includes(name)))
+      .toBe(true);
+
+    const duplicate = dispatchTowCommand(moved.session, {
+      id: "round-reflow",
+      expectedRevision: 0,
+      type: "end-turn",
+      actorId: "wanderer",
+    });
+    expect(duplicate.ok).toBe(true);
+    expect(duplicate.duplicate).toBe(true);
+    expect(duplicate.session).toBe(moved.session);
+    expect(duplicate.events).toEqual(moved.events);
+    expect(duplicate.session.encounter.events.filter((entry) => entry.type === "formation-moved"))
+      .toHaveLength(1);
   });
 
   it("slices exactly one command's events", () => {

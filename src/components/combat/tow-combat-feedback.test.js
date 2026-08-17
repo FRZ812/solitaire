@@ -269,6 +269,64 @@ describe("combat feedback receipts", () => {
     expect(timeline[3]).toMatchObject({ attackerId: "foe", targetId: "hero" });
   });
 
+  it("anchors resolved effects to pre-move cells before presenting one atomic formation move", () => {
+    const state = encounter({
+      formations: {
+        version: 2,
+        player: [null, "hero", null, null, null, null, null, null, null],
+        enemy: [null, null, null, null, "foe", null, null, null, null],
+      },
+    });
+    const timeline = combatCueTimeline(state, [
+      {
+        sequence: 40,
+        type: "enemy-attack",
+        enemyId: "foe",
+        targetId: "hero",
+        attackId: "swing",
+        hits: [
+          { index: 0, dodged: false, critical: false, rawDamage: 13, damage: 13, toHp: 13 },
+        ],
+      },
+      {
+        sequence: 41,
+        type: "formation-moved",
+        round: 3,
+        phase: "round-open",
+        moves: [{ actorId: "hero", side: "player", fromCell: 4, toCell: 1 }],
+      },
+      {
+        sequence: 42,
+        type: "intent-retargeted",
+        enemyId: "foe",
+        fromTargetId: "hero",
+        targetId: "hero",
+      },
+    ]);
+
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({
+      kind: "hit",
+      sourceCell: { side: "enemy", index: 4 },
+      targetCell: { side: "player", index: 4 },
+    });
+    expect(timeline[1]).toMatchObject({
+      id: "41-formation-moved",
+      kind: "movement",
+      durationMs: 200,
+      moves: [{ actorId: "hero", side: "player", fromCell: 4, toCell: 1 }],
+      intentRetargets: [{
+        type: "intent-retargeted",
+        enemyId: "foe",
+        fromTargetId: "hero",
+        targetId: "hero",
+      }],
+    });
+    expect(timeline[1].formationsBefore.player[4]).toBe("hero");
+    expect(timeline[1].formationsBefore.player[1]).toBeNull();
+    expect(timeline[1].delayMs).toBeGreaterThan(timeline[0].delayMs);
+  });
+
   it("floats zero and names the defence when a hit is fully blocked", () => {
     const [cue] = combatCuesForEvent(encounter(), {
       sequence: 19,

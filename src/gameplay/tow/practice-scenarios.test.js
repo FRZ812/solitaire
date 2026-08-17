@@ -159,6 +159,8 @@ describe("authored practice formations", () => {
       expect(practice.ok, group.id).toBe(true);
       expect(practice.allyGroup).toBe(group);
       expect(practice.session.encounter.allyIds).toHaveLength(group.allies.length);
+      expect(practice.session.encounter.formations.version).toBe(2);
+      expect(practice.session.genesis.formations.version).toBe(2);
       expect(practice.session.encounter.formations.player).toEqual(group.formation);
       expect(practice.session.genesis.formations.player).toEqual(group.formation);
 
@@ -344,6 +346,7 @@ describe("opening a practice fight", () => {
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {
     for (const scenario of PRACTICE_SCENARIOS) {
       const encounter = createPracticeSession(receiptFor("fighter"), scenario.id).session.encounter;
+      expect(encounter.formations.version).toBe(2);
       expect(encounter.formations.enemy).toEqual(scenario.formation);
       for (const enemy of scenario.enemies) {
         const archetype = getStartingArchetype(enemy.archetypeId);

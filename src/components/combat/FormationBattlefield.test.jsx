@@ -7,6 +7,7 @@ import { FormationBattlefield } from "./FormationBattlefield.jsx";
 
 let root;
 let container;
+const originalMatchMedia = window.matchMedia;
 
 beforeAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -17,6 +18,8 @@ afterEach(async () => {
   container?.remove();
   root = null;
   container = null;
+  vi.useRealTimers();
+  window.matchMedia = originalMatchMedia;
 });
 
 async function renderFormation(props = {}) {
@@ -89,5 +92,105 @@ describe("formation battlefield", () => {
     await act(async () => selected.click());
     expect(onSelectCell).toHaveBeenCalledOnce();
     expect(onSelectCell).toHaveBeenCalledWith("enemy", 0);
+  });
+
+  it("holds pre-move cells until the cue, then swaps formation and intent atomically", async () => {
+    vi.useFakeTimers();
+    const actors = {
+      knight: { id: "knight", name: "Knight", hp: 84, maxHp: 100, resolve: 5, resolveMax: 8 },
+    };
+    const mounted = await renderFormation({
+      actors,
+      formations: {
+        version: 2,
+        player: [null, "knight", null, null, null, null, null, null, null],
+        enemy: Array(9).fill(null),
+      },
+      intentCells: [{ side: "player", index: 1 }],
+      intentCellsBeforeMove: [{ side: "player", index: 4 }],
+      feedbackCues: [{
+        id: "40-hit",
+        targetId: "knight",
+        hpChange: -16,
+        shieldChange: 0,
+        delayMs: 0,
+      }],
+      movementCue: {
+        id: "41-formation-moved",
+        delayMs: 300,
+        durationMs: 200,
+        moves: [{ actorId: "knight", side: "player", fromCell: 4, toCell: 1 }],
+        formationsBefore: {
+          version: 2,
+          player: [null, null, null, null, "knight", null, null, null, null],
+          enemy: Array(9).fill(null),
+        },
+      },
+    });
+    const focusKeeper = document.createElement("button");
+    document.body.appendChild(focusKeeper);
+    focusKeeper.focus();
+
+    expect(mounted.querySelector(".tow-formation-battlefield").dataset.movementPhase).toBe("pending");
+    expect(mounted.querySelector(".tow-formation-battlefield").getAttribute("aria-busy")).toBe("true");
+    expect(mounted.querySelector("[data-side='player'][data-cell-index='4']").textContent).toContain("Knight");
+    expect(mounted.querySelector("[data-side='player'][data-cell-index='4']").classList.contains("is-intent-target")).toBe(true);
+    expect(mounted.querySelector("[data-side='player'][data-cell-index='1']").textContent).not.toContain("Knight");
+
+    await act(async () => vi.advanceTimersByTime(300));
+
+    const destination = mounted.querySelector("[data-side='player'][data-cell-index='1']");
+    expect(mounted.querySelector(".tow-formation-battlefield").dataset.movementPhase).toBe("settling");
+    expect(destination.textContent).toContain("Knight");
+    expect(destination.classList.contains("is-intent-target")).toBe(true);
+    expect(destination.querySelector(".tow-formation-unit.is-arriving")).toBeTruthy();
+    expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeTruthy();
+    expect(destination.querySelector("[aria-label='Knight health']").getAttribute("aria-valuenow"))
+      .toBe("84");
+    expect(destination.querySelector(".tow-formation-unit.is-reacting")).toBeNull();
+    expect(mounted.querySelector(".tow-formation-battlefield__announcement").textContent)
+      .toBe("Knight moves from player row 2 column 2 to row 1 column 2.");
+    expect(document.activeElement).toBe(focusKeeper);
+
+    await act(async () => vi.advanceTimersByTime(200));
+    expect(mounted.querySelector(".tow-formation-battlefield").dataset.movementPhase).toBe("settled");
+    expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeNull();
+    expect(document.activeElement).toBe(focusKeeper);
+    focusKeeper.remove();
+  });
+
+  it("uses a direct final swap and static destination marker under reduced motion", async () => {
+    vi.useFakeTimers();
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    const mounted = await renderFormation({
+      actors: {
+        knight: { id: "knight", name: "Knight", hp: 84, maxHp: 100 },
+      },
+      formations: {
+        version: 2,
+        player: [null, "knight", null, null, null, null, null, null, null],
+        enemy: Array(9).fill(null),
+      },
+      movementCue: {
+        id: "42-formation-moved",
+        delayMs: 0,
+        durationMs: 200,
+        moves: [{ actorId: "knight", side: "player", fromCell: 4, toCell: 1 }],
+        formationsBefore: {
+          version: 2,
+          player: [null, null, null, null, "knight", null, null, null, null],
+          enemy: Array(9).fill(null),
+        },
+      },
+    });
+
+    await act(async () => vi.advanceTimersByTime(0));
+    const battlefield = mounted.querySelector(".tow-formation-battlefield");
+    const destination = mounted.querySelector("[data-side='player'][data-cell-index='1']");
+    expect(battlefield.dataset.reducedMotion).toBe("true");
+    expect(battlefield.dataset.movementPhase).toBe("settling");
+    expect(destination.textContent).toContain("Knight");
+    expect(destination.querySelector(".tow-formation-unit.is-arriving")).toBeNull();
+    expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeTruthy();
   });
 });

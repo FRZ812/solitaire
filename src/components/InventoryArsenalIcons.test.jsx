@@ -78,6 +78,16 @@ describe("inventory and arsenal atlas integration", () => {
   it("keeps a Knight archetype's real five-action Tower kit visible after creation", () => {
     const state = makeInitialState();
     state.character.progressionModel = "tow-archetype";
+    state.character.progression = singularSavantState().character.progression;
+    state.character.abilities = [
+      { id: "firebolt", tier: "epic" },
+      { id: "haste", tier: "common" },
+      { id: "bear-strength", tier: "rare" },
+      { id: "fly", tier: "rare" },
+      { id: "dimension-door", tier: "rare" },
+      { id: "gate", tier: "legendary" },
+    ];
+    state.character.proficiencies = { spellcasting: 25 };
     state.mechanics = {
       ...state.mechanics,
       build: {
@@ -86,7 +96,9 @@ describe("inventory and arsenal atlas integration", () => {
         runes: [],
       },
     };
+    const groups = arsenalAbilityGroups(state.character);
     const html = renderToStaticMarkup(<ArsenalView state={state} />);
+    expect(Object.values(groups).every((abilities) => abilities.length === 0)).toBe(true);
     expect(html).toContain('aria-label="Tower combat kit"');
     expect(html).toContain("Tower combat kit · 5");
     expect(html).toContain("Basic attack");
@@ -94,6 +106,18 @@ describe("inventory and arsenal atlas integration", () => {
     expect(html).toContain("Archetype ability");
     expect(html).toContain("Burning Reprisal");
     expect(html).toContain("Mortal Blow");
+    expect(html).toContain("Tower combat kit · world powers · proficiencies");
+    expect(html).toContain("World powers · 5");
+    expect(html).toContain("Haste");
+    expect(html).toContain("Bear&#x27;s Strength");
+    expect(html).toContain("Dimension Door");
+    expect(html).toContain("Gate");
+    expect(html).toContain("Spellcasting");
+    expect(html).not.toContain('aria-label="Skill categories"');
+    expect(html).not.toContain('aria-label="Earned progression capabilities"');
+    expect(html).not.toContain("Firebolt");
+    expect(html).not.toContain("Signature Utility Mode");
+    expect(html).not.toContain("core actions ·");
   });
 
   it("surfaces selected Sorcerer repertoire and authored utility modes", () => {

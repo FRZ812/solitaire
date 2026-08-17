@@ -34,7 +34,13 @@ import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
 import { getCombatItem, normalizeCombatItems } from "./combat-items.js";
 import { effectRecipient } from "./ability-targeting.js";
-import { normalizeFormation } from "./formation.js";
+import {
+  MOVING_FORMATION_RULES_VERSION,
+  STATIC_FORMATION_RULES_VERSION,
+  isFormationRulesVersion,
+  normalizeFormation,
+} from "./formation.js";
+import { reflowTowFormations } from "./movement.js";
 import { resolveSkillTargets } from "./targeting.js";
 import {
   createSkillState,
@@ -710,8 +716,14 @@ export function createTowEncounter({
     if (!formations || typeof formations !== "object" || Array.isArray(formations)) {
       throw new TypeError("invalid-formations");
     }
+    const formationVersion = Object.hasOwn(formations, "version")
+      ? formations.version
+      : STATIC_FORMATION_RULES_VERSION;
+    if (!isFormationRulesVersion(formationVersion)) {
+      throw new TypeError("invalid-formation-version");
+    }
     formationSnapshot = {
-      version: 1,
+      version: formationVersion,
       player: normalizeFormation(
         [playerActor.id, ...allyActors.map((ally) => ally.id)],
         formations.player || null,
@@ -897,6 +909,51 @@ function targetEnemyIntent(state, enemyId, intent) {
     ...intent,
     targetId: standing.includes(intent.targetId) ? intent.targetId : standing[0] ?? null,
   };
+}
+
+/**
+ * Re-resolve held actor targets after a moving formation reflows.
+ *
+ * Enemy rotations advance as soon as each hostile action lands, so most of the next round's
+ * intents already exist before the round boundary. Keep the promised attack and declaration
+ * index, but record any actor-target change rather than silently falling back after movement.
+ */
+function retargetHeldIntents(state) {
+  if (state.formations?.version !== MOVING_FORMATION_RULES_VERSION) return state;
+  let next = state;
+  for (const enemyId of state.enemyIds) {
+    if (next.actors[enemyId]?.hp <= 0) continue;
+    const held = next.intents[enemyId];
+    if (!held) continue;
+    const retargeted = targetEnemyIntent(next, enemyId, held);
+    if (retargeted.targetId === held.targetId) continue;
+    next = push(
+      { ...next, intents: { ...next.intents, [enemyId]: retargeted } },
+      "intent-retargeted",
+      {
+        enemyId,
+        attackId: held.attackId,
+        declarationIndex: held.declarationIndex,
+        fromTargetId: held.targetId,
+        targetId: retargeted.targetId,
+      },
+    );
+  }
+  return next;
+}
+
+function reflowRoundFormations(state) {
+  const reflowed = reflowTowFormations(state);
+  if (reflowed.moves.length === 0) return state;
+  return push(
+    { ...state, formations: reflowed.formations },
+    "formation-moved",
+    {
+      round: state.round,
+      phase: "round-open",
+      moves: reflowed.moves,
+    },
+  );
 }
 
 /**
@@ -1130,7 +1187,7 @@ export function isTowEncounter(value) {
     ))) return false;
   }
   if (value.formations !== undefined) {
-    if (!value.formations || value.formations.version !== 1
+    if (!value.formations || !isFormationRulesVersion(value.formations.version)
       || Object.keys(value.formations).sort().join(",") !== "enemy,player,version") return false;
     try {
       const expectedPlayer = normalizeFormation(
@@ -2573,10 +2630,16 @@ export function endTurn(state) {
     enemyBuilds: tickedEnemyBuilds,
   };
 
-  // Cadence traits fire before the action count is read, so a Swift proc this round is
-  // an extra action this round rather than next. The new round's telegraphs land last, so
-  // the player opens their turn already able to read the fight.
-  next = declareRoundIntents(withFreshTurn(fireTraits(next)));
+  // Cadence traits still fire before the action count is read, so a Swift proc this round is
+  // an extra action this round rather than next. Moving formations reflow once afterwards,
+  // from one snapshot, and held telegraphs are explicitly retargeted before the fresh player
+  // window is exposed. Static v1 formations take the byte-identical historical path.
+  next = fireTraits(next);
+  if (next.formations?.version === MOVING_FORMATION_RULES_VERSION) {
+    next = reflowRoundFormations(next);
+    next = retargetHeldIntents(next);
+  }
+  next = declareRoundIntents(withFreshTurn(next));
   return { ok: true, reason: null, state: settle(next) };
 }
 

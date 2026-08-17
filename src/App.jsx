@@ -100,6 +100,7 @@ import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-mi
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import { isTowBuild } from "./gameplay/tow/build.js";
+import { MOVING_FORMATION_RULES_VERSION } from "./gameplay/tow/formation.js";
 import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
 import { getSkill, replacementSkillIds, SKILL_SLOTS } from "./gameplay/tow/skills.js";
 import { refusalNotice } from "./gameplay/campaign/command-gateway.js";
@@ -3172,6 +3173,9 @@ export function Solitaire() {
       allies,
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
       formations: {
+        // New fights opt into deterministic round-boundary formation movement. The session
+        // keeps v1 snapshots static so an older recorded fight still replays byte for byte.
+        version: MOVING_FORMATION_RULES_VERSION,
         player: Array.from({ length: 9 }, (_, index) => {
           const campaignEntityId = campaignFormation[index] || null;
           if (campaignEntityId === "wanderer") return "wanderer";

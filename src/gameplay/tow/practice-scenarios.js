@@ -26,6 +26,7 @@ import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { isCharacterBootstrapReceipt } from "./character-bootstrap.js";
 import { buildCombatChronicle } from "./chronicle.js";
+import { MOVING_FORMATION_RULES_VERSION } from "./formation.js";
 import { sealTowTerminalReceipt } from "./outcomes.js";
 import {
   combatItemIdForKeepsake,
@@ -393,6 +394,8 @@ export function createPracticeSession(
     allies: allyGroup.allies.map((ally) => cloneJsonData(ally)),
     enemies: scenario.enemies.map((enemy) => cloneJsonData(enemy)),
     formations: {
+      // Practice teaches the same deterministic movement rules as campaign combat.
+      version: MOVING_FORMATION_RULES_VERSION,
       player: [...allyGroup.formation],
       enemy: [...scenario.formation],
     },

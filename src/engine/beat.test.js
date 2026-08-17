@@ -99,6 +99,145 @@ describe("applyBeat — inventory catalog gate", () => {
   });
 });
 
+describe("applyBeat — Tower legacy ability grant gate", () => {
+  it("keeps narrative discoveries and world powers while rejecting combat skills and spells", () => {
+    const base = fresh();
+    base.character.progressionModel = "tow-archetype";
+    const beat = {
+      discoveries: {
+        skills: [
+          { id: "power-strike", name: "Power Strike", tier: "rare" },
+          { id: "haste", name: "Haste", tier: "uncommon" },
+          { id: "field-lore", name: "Field Lore", rating: 2 },
+        ],
+        spells: [
+          { id: "firebolt", name: "Firebolt" },
+          { id: "dimension-door", name: "Dimension Door" },
+          { id: "invented-spell", name: "Invented Spell" },
+        ],
+      },
+    };
+    const input = structuredClone(beat);
+
+    const next = applyBeat(base, beat);
+
+    expect(next.world.codex.skills).not.toHaveProperty("power-strike");
+    expect(next.world.codex.skills).toMatchObject({
+      haste: { id: "haste", tier: "rare" },
+      "field-lore": { id: "field-lore", rating: 2 },
+    });
+    expect(next.world.codex.spells).not.toHaveProperty("firebolt");
+    expect(next.world.codex.spells).not.toHaveProperty("invented-spell");
+    expect(next.world.codex.spells).toHaveProperty("dimension-door");
+    expect(next.character.abilities).toContainEqual({ id: "haste", tier: "rare" });
+    expect(next.character.abilities.some((ability) => ability.id === "power-strike")).toBe(false);
+    expect(beat).toEqual(input);
+  });
+
+  it("applies the same Tower gate to the legacy discoveries.abilities alias", () => {
+    const base = fresh();
+    base.character.progressionModel = "tow-archetype";
+    const beat = {
+      discoveries: {
+        abilities: [
+          { id: "power-strike", name: "Power Strike", tier: "rare" },
+          { id: "haste", name: "Haste", tier: "common" },
+          { id: "field-lore", name: "Field Lore", rating: 1 },
+        ],
+      },
+    };
+    const input = structuredClone(beat);
+
+    const next = applyBeat(base, beat);
+
+    expect(next.world.codex.skills).not.toHaveProperty("power-strike");
+    expect(next.world.codex.skills).toHaveProperty("field-lore");
+    expect(next.character.abilities).toContainEqual({ id: "haste", tier: "rare" });
+    expect(beat).toEqual(input);
+  });
+
+  it("recognizes a Tower model declared by the same creation beat", () => {
+    const next = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Veyra",
+        race: "vampire",
+        profession: "rogue",
+        progressionModel: "tow-archetype",
+        abilities: ["power-strike", "invented-cut", "haste", "gate"],
+      },
+      discoveries: {
+        skills: [
+          { id: "firebolt", name: "Firebolt" },
+          { id: "night-court-etiquette", name: "Night Court Etiquette", rating: 1 },
+        ],
+        spells: [{ id: "firebolt", name: "Firebolt" }],
+      },
+    });
+
+    expect(next.character.progressionModel).toBe("tow-archetype");
+    expect(next.character.abilities).toContainEqual({ id: "haste", tier: "rare" });
+    expect(next.character.abilities).toContainEqual({ id: "gate", tier: "legendary" });
+    expect(next.character.abilities.some(({ id }) => ["power-strike", "invented-cut", "firebolt", "blood-siphon"].includes(id))).toBe(false);
+    expect(next.world.codex.skills).toHaveProperty("night-court-etiquette");
+    expect(next.world.codex.skills).not.toHaveProperty("firebolt");
+    expect(next.world.codex.spells).not.toHaveProperty("firebolt");
+  });
+
+  it("leaves the legacy creation path unchanged", () => {
+    const next = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Veyra",
+        race: "vampire",
+        profession: "rogue",
+        abilities: ["power-strike"],
+      },
+    });
+
+    expect(next.character.abilities).toEqual(expect.arrayContaining([
+      { id: "power-strike", tier: "common" },
+      { id: "blood-siphon", tier: "common" },
+    ]));
+  });
+
+  it("preserves authored legacy racial tiers instead of applying combat floors", () => {
+    const next = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Seldra",
+        race: "elf",
+        subrace: "drow",
+        profession: "rogue",
+      },
+    });
+
+    expect(next.character.abilities).toContainEqual({ id: "shadowstep", tier: "common" });
+  });
+
+  it("filters a Tower kindred's starting spell from both the usable and Codex records", () => {
+    const tower = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Ilyra",
+        race: "elf",
+        subrace: "high",
+        profession: "wizard",
+        progressionModel: "tow-archetype",
+      },
+    });
+    const legacy = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Ilyra",
+        race: "elf",
+        subrace: "high",
+        profession: "wizard",
+      },
+    });
+
+    expect(tower.character.abilities.some(({ id }) => id === "firebolt")).toBe(false);
+    expect(tower.world.codex.spells).not.toHaveProperty("firebolt");
+    expect(legacy.character.abilities).toContainEqual({ id: "firebolt", tier: "common" });
+    expect(legacy.world.codex.spells).toHaveProperty("firebolt");
+  });
+});
+
 describe("applyBeat — needs depletion", () => {
   it("depletes needs as the clock turns (no food in the empty starting pack)", () => {
     const base = fresh();

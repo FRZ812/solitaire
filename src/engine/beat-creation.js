@@ -4,7 +4,13 @@
 // (identity, attributes, abilities, racial kit, derived pools). No import back
 // into beat.js, so no cycle.
 import { resolveRace } from "../data/races.js";
-import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
+import {
+  classifyLegacyAbilityGrant,
+  clampAbilityTier,
+  clampWorldAbilityTier,
+  getAbilityDef,
+  worldAbilityGrantDefinition,
+} from "../data/abilities.js";
 import { proficiencyDef } from "../data/proficiencies.js";
 import { withoutSelectedPlayableCharacter } from "../data/playable-roster.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
@@ -98,6 +104,7 @@ export function applyCreation({ beat, character, world, created }) {
       enforceLevelAttributeScale: cs.progressionModel !== "tow-archetype",
       preserveValidAttributeShape: true,
     });
+    const usesTowerProgression = character.progressionModel === "tow-archetype";
     // Grant any starting abilities the concept calls for — martial techniques, or
     // spells if the player explicitly built a magical character. Accepts an
     // `abilities` array (ids or {id,tier}) and/or a legacy single `ability`.
@@ -110,7 +117,12 @@ export function applyCreation({ beat, character, world, created }) {
       const idOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of startAbilities) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
-        if (entry.id) entry.tier = clampAbilityTier(entry.id, entry.tier); // honour tier floors
+        if (usesTowerProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
+        if (entry.id) {
+          entry.tier = usesTowerProgression
+            ? clampWorldAbilityTier(entry.id, entry.tier)
+            : clampAbilityTier(entry.id, entry.tier); // honour tier floors
+        }
         if (entry.id && !list.some((x) => idOf(x) === entry.id)) list.push(entry);
       }
       character.abilities = list;
@@ -131,13 +143,16 @@ export function applyCreation({ beat, character, world, created }) {
       const ridOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of [...kit.innateAbilities, ...kit.startingSpells]) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
+        if (usesTowerProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
+        if (entry.id && usesTowerProgression) entry.tier = clampWorldAbilityTier(entry.id, entry.tier);
         if (entry.id && !rlist.some((x) => ridOf(x) === entry.id)) rlist.push(entry);
       }
       character.abilities = rlist;
       if (kit.startingSpells.length) {
         const spells = { ...(world.codex.spells || {}) };
         for (const sid of kit.startingSpells) {
-          const def = getAbilityDef(sid);
+          if (usesTowerProgression && classifyLegacyAbilityGrant(sid) !== "world") continue;
+          const def = usesTowerProgression ? worldAbilityGrantDefinition(sid) : getAbilityDef(sid);
           if (def && !spells[sid]) spells[sid] = { id: sid, name: def.name, description: def.desc || "An innate spell of your kindred.", acquisition: "innate to your kindred" };
         }
         world = { ...world, codex: { ...world.codex, spells } };

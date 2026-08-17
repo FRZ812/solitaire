@@ -54,6 +54,45 @@ function play(session, rounds = 3) {
   return current;
 }
 
+function openMoving(version) {
+  const opened = createTowSession({
+    sessionId: `moving-v${version}`,
+    rootSeed: `moving-seed-v${version}`,
+    player: {
+      id: "wanderer",
+      name: "Wanderer",
+      maxHp: 500,
+      stats: { attack: 12, defense: 13, critRate: 0, dodgeRate: 0 },
+    },
+    enemies: [{
+      id: "foe-0",
+      name: "Bandit",
+      maxHp: 500,
+      stats: { attack: 1, defense: 0, critRate: 0, dodgeRate: 0 },
+      attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 1 }],
+    }],
+    build: { traits: {}, skills: ["clocktower-grenade-toss"], runes: [] },
+    formations: {
+      version,
+      player: ["wanderer", null, null, null, null, null, null, null, null],
+      enemy: ["foe-0", null, null, null, null, null, null, null, null],
+    },
+  });
+  if (!opened.ok) throw new Error(opened.reason);
+  return opened.session;
+}
+
+function advanceMoving(session) {
+  const result = dispatchTowCommand(session, {
+    id: "end-moving-round",
+    expectedRevision: session.revision,
+    type: "end-turn",
+    actorId: "wanderer",
+  });
+  if (!result.ok) throw new Error(result.reason);
+  return result.session;
+}
+
 describe("replaying from genesis", () => {
   it("reproduces the live encounter byte for byte", () => {
     const session = play(open());
@@ -61,6 +100,29 @@ describe("replaying from genesis", () => {
     expect(replayed.ok).toBe(true);
     expect(replayed.encounter).toEqual(session.encounter);
     expect(gameplayChecksum(replayed.encounter)).toBe(gameplayChecksum(session.encounter));
+  });
+
+  it("replays a v2 round reflow byte for byte from the authored formation", () => {
+    const session = advanceMoving(openMoving(2));
+    const replayed = replayTowCombatSession(session.genesis, session.commands);
+
+    expect(session.genesis.formations.player[0]).toBe("wanderer");
+    expect(session.encounter.formations.player[3]).toBe("wanderer");
+    expect(session.encounter.events.some((event) => event.type === "formation-moved")).toBe(true);
+    expect(replayed).toMatchObject({ ok: true, replayedCommands: 1 });
+    expect(replayed.encounter).toEqual(session.encounter);
+    expect(verifyTowSession(session)).toEqual({ ok: true, reason: null, divergence: null });
+  });
+
+  it("keeps the same movement-eligible command byte-static under v1 rules", () => {
+    const opened = openMoving(1);
+    const session = advanceMoving(opened);
+    const replayed = replayTowCombatSession(session.genesis, session.commands);
+
+    expect(session.encounter.formations).toEqual(opened.encounter.formations);
+    expect(session.encounter.events.some((event) => event.type === "formation-moved")).toBe(false);
+    expect(replayed.ok).toBe(true);
+    expect(replayed.encounter).toEqual(session.encounter);
   });
 
   it("reproduces the terminal receipt too", () => {

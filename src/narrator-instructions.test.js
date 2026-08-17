@@ -5,6 +5,8 @@ import {
   NARRATOR_CHARACTER_CUE_MANNERS,
   NARRATOR_SCENE_CUE_TEXT,
 } from "./engine/narrator-story-cues.js";
+import { makeInitialState } from "./data/initial-state.js";
+import { buildStateContext } from "./engine/api.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 
 const moduleUrl = new URL("./narrator-instructions.js", import.meta.url);
@@ -100,9 +102,31 @@ describe("narrator instruction library", () => {
 
     const world = NARRATOR_SKILLS.find(({ id }) => id === "world-and-travel");
     const progression = NARRATOR_SKILLS.find(({ id }) => id === "progression-and-professions");
+    const magic = NARRATOR_SKILLS.find(({ id }) => id === "magic-and-mounts");
     const combat = NARRATOR_SKILLS.find(({ id }) => id === "combat-and-consequences");
     expect(world.content).toContain("GEOGRAPHY KNOWN BY LEGEND");
     expect(progression.content.startsWith("PROGRESSION — engine-owned")).toBe(true);
+    expect(creation.content).toContain("TOWER ARCHETYPE OVERRIDE — CLOSED COMBAT KIT");
+    expect(magic.content).toContain("[GRANTABLE WORLD POWERS] is present, it is the COMPLETE grant catalogue");
+
+    const tower = makeInitialState();
+    tower.created = true;
+    tower.character.progressionModel = "tow-archetype";
+    tower.mechanics = {
+      ...tower.mechanics,
+      build: {
+        traits: {},
+        skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration", "arctic-mortal-blow"],
+        runes: [],
+      },
+    };
+    const towerContext = buildStateContext(tower);
+    const towerTeachingContract = `${magic.content}\n${towerContext}`;
+    expect(towerTeachingContract).toContain("[TOWER COMBAT KIT —");
+    expect(towerTeachingContract).toContain("[GRANTABLE WORLD POWERS —");
+    expect(towerContext).not.toContain("[GRANTABLE ABILITIES —");
+    expect(towerTeachingContract).toContain("never narrate teaching a legacy combat action that the engine will reject");
+
     expect(combat.content).toContain("The engine has already settled every defeat consequence");
     expect(combat.content).not.toContain("Decide an aftermath");
     expect(combat.content).not.toContain("strip coin and maybe loot");

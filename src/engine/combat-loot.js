@@ -177,7 +177,10 @@ export function applyLoot(state, manifest) {
   if (coinParts.length) { invLines.push(coinParts.join(", ")); takenParts.push(coinParts.join(", ")); }
   if (invLines.length) beats.push({ id: `lt${now}`, type: "inventory_delta", lines: invLines });
 
-  if (manifest.ability) {
+  // rollLoot has already spent its deterministic stream to author this
+  // manifest. Tower characters still take every material reward, but do not
+  // project its retired combat-technique entry into either player or Codex.
+  if (manifest.ability && next.character.progressionModel !== "tow-archetype") {
     next.character.abilities = Array.isArray(next.character.abilities) ? [...next.character.abilities] : [];
     next.character.abilities.push({ id: manifest.ability.id, tier: manifest.ability.tier });
     const def = getAbilityDef(manifest.ability.id);

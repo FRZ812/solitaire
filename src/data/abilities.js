@@ -1359,7 +1359,38 @@ const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 // definition and silently removed Haste from every deck.
 const ALL_BY_ID = { ...TRAVEL_SPELLS, ...BUFF_SPELLS, ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
+// These powers belong to the campaign/world layer even when an id (notably
+// Haste) also has a canonical combat definition. Tower archetypes keep access
+// to world traversal and utility, but never ingest the legacy combat library.
+const LEGACY_WORLD_ABILITY_GRANTS = new Set([
+  "fly",
+  "dimension-door",
+  "gate",
+  "haste",
+  "bear-strength",
+]);
+
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
+
+export function classifyLegacyAbilityGrant(id) {
+  if (LEGACY_WORLD_ABILITY_GRANTS.has(id)) return "world";
+  return getAbilityDef(id) ? "combat" : "narrative-skill";
+}
+
+// Resolve the campaign-layer definition rather than the combat definition when
+// an id exists in both registries. Haste is the important overlap: its road boon
+// is rare while the retired combat spell is very-rare.
+export function worldAbilityGrantDefinition(id) {
+  if (!LEGACY_WORLD_ABILITY_GRANTS.has(id)) return null;
+  return TRAVEL_SPELLS[id] || BUFF_SPELLS[id] || null;
+}
+
+export function clampWorldAbilityTier(id, tierId) {
+  const def = worldAbilityGrantDefinition(id);
+  const t = tierId || "common";
+  if (!def?.minTier) return t;
+  return tierInfo(t).order < tierInfo(def.minTier).order ? def.minTier : t;
+}
 
 // Raise a granted/dropped tier up to an ability's floor (if it has one), so a
 // floored apex power can never be handed out below its minimum grade.

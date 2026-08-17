@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyBeat } from "../../engine/beat.js";
 import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
+import { classifyLegacyAbilityGrant } from "../../data/abilities.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
 import { characterAbilitiesFor } from "./character-abilities.js";
 import { DEFAULT_STARTING_KEEPSAKE_ID, STARTING_KEEPSAKES } from "./keepsakes.js";
@@ -240,6 +241,21 @@ describe("one atomic modular-archetype start", () => {
       names.add(setup.name);
     }
     expect(names.size).toBe(TOWER_ROSTER_SIZE);
+  });
+
+  it("keeps every Tower start free of legacy combat grants, including Vampire blood siphon", () => {
+    for (const archetype of STARTING_ARCHETYPES) {
+      const setup = characterSetupForArchetype({ archetypeId: archetype.id });
+      const built = applyBeat(makeInitialState(), { character_setup: setup });
+      const leaked = built.character.abilities
+        .map((ability) => typeof ability === "string" ? ability : ability.id)
+        .filter((id) => classifyLegacyAbilityGrant(id) === "combat");
+
+      expect(leaked, archetype.id).toEqual([]);
+      if (archetype.id === "vampire") {
+        expect(built.character.abilities.some((ability) => ability.id === "blood-siphon")).toBe(false);
+      }
+    }
   });
 
   it("migrates legacy ids while allowing authored identity to remain independent", () => {
