@@ -210,6 +210,10 @@ export function narratorAssassinationAttemptCapabilities(state, presentCharacter
   const codex = state?.world?.codex;
   const characters = codex?.characters || {};
   const playerRecord = { ...(characters[player?.id || "wanderer"] || {}), ...(player || {}) };
+  // The narrator assassination resolver belongs to the retired freeform combat
+  // model. Tower archetypes must never expose it, even while a just-loaded save
+  // still carries legacy learned abilities in either character record.
+  if (playerRecord.progressionModel === "tow-archetype") return {};
   const playerId = player?.id || "wanderer";
   const party = new Set(state?.party || []);
   if (!hasCompleteStatBlock(player)
@@ -240,6 +244,7 @@ export function narratorAssassinationCapabilities(state, presentCharacterIds) {
   const codex = state?.world?.codex;
   const characters = codex?.characters || {};
   const playerRecord = { ...(characters[player?.id || "wanderer"] || {}), ...(player || {}) };
+  if (playerRecord.progressionModel === "tow-archetype") return {};
   const playerId = player?.id || "wanderer";
   const party = new Set(state?.party || []);
   if (!hasCompleteStatBlock(player)

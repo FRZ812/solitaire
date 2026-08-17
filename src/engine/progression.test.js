@@ -8,20 +8,24 @@ import {
   migrateProgressionState,
   normalizeCharacterProgression,
   pendingLevelAllocations,
+  pendingProfessionChoices,
   pendingProgressionChoices,
   professionProgressionLevel,
   progressionEntitlements,
   progressionLevel,
+  projectCharacterProgression,
   progressionSummary,
   racialProgressionLevel,
   resolveProfessionChoice,
   resolveLevelAllocationChoice,
+  resolveLevelAllocation,
   resolveRacialProgressionChoice,
   resolveProgressionGrantChoice,
+  stripTowLegacyProgression,
 } from "./progression.js";
 import { PROFESSION_PROFILES, progressionXpForLevel } from "../data/progression-paths.js";
 
-describe("progression v3 class allocation", () => {
+describe("progression v4 class allocation", () => {
   it("derives a 100 total from an independent 70/30 allocation", () => {
     const progression = createProgression({ professionId: "wizard", raceId: "vampire", level: 100 });
     expect(progression).toMatchObject({ version: PROGRESSION_VERSION, professionId: "wizard", racial: { raceId: "vampire" } });
@@ -110,6 +114,149 @@ describe("progression v3 class allocation", () => {
     };
     advanceProgression(character, progressionXpForLevel(71) - progressionXpForLevel(70));
     expect(pendingLevelAllocations(character).options.map((option) => option.optionId)).toEqual(["racial:evolution"]);
+  });
+});
+
+describe("Tower legacy progression firewall", () => {
+  const retiredKeys = [
+    "progression", "level",
+    "subclass",
+    "professionPlan", "profession_plan",
+    "racialLevels", "racial_levels",
+    "progressionChoices", "progression_choices",
+    "signatureSpell", "signature_spell", "signatureSpellId", "signature_spell_id",
+    "signatureSpellIds", "signature_spell_ids", "signatureSpells", "signature_spells",
+    "metamagic", "metamagicId", "metamagic_id",
+    "metamagicIds", "metamagic_ids", "metamagicProfiles", "metamagic_profiles",
+  ];
+
+  function contaminatedTowCharacter(overrides = {}) {
+    return {
+      id: "wanderer",
+      profession: "ranger",
+      archetype: "ranger",
+      combatArchetypeId: "ranger",
+      progressionModel: "tow-archetype",
+      towBaseStats: { hp: 96, resolve: 8 },
+      attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+      abilities: [
+        { id: "gate", tier: "legendary" },
+        { id: "power-strike", tier: "rare" },
+        { id: "field-lore", rating: 2 },
+      ],
+      racialPassives: ["darkvision"],
+      progression: createProgression({ professionId: "ranger", level: 25 }),
+      level: 25,
+      subclass: "old-ranger-specialization",
+      professionPlan: [{ profession: "ranger", levels: 25 }],
+      profession_plan: [{ profession: "ranger", levels: 25 }],
+      racialLevels: 2,
+      racial_levels: 2,
+      progressionChoices: { metamagic: ["quickened-signature"] },
+      progression_choices: { signatureSpellId: "fireball" },
+      signatureSpell: "fireball",
+      signature_spell: "fireball",
+      signatureSpellId: "fireball",
+      signature_spell_id: "fireball",
+      signatureSpellIds: ["fireball"],
+      signature_spell_ids: ["fireball"],
+      signatureSpells: ["fireball"],
+      signature_spells: ["fireball"],
+      metamagic: ["quickened-signature"],
+      metamagicId: "quickened-signature",
+      metamagic_id: "quickened-signature",
+      metamagicIds: ["quickened-signature"],
+      metamagic_ids: ["quickened-signature"],
+      metamagicProfiles: { fireball: ["quickened-signature"] },
+      metamagic_profiles: { fireball: ["quickened-signature"] },
+      ...overrides,
+    };
+  }
+
+  function expectCleanTowCharacter(character) {
+    for (const key of retiredKeys) expect(character).not.toHaveProperty(key);
+    expect(character).toMatchObject({
+      profession: "ranger",
+      archetype: "ranger",
+      combatArchetypeId: "ranger",
+      progressionModel: "tow-archetype",
+      towBaseStats: { hp: 96, resolve: 8 },
+      attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+      abilities: [{ id: "gate", tier: "legendary" }],
+      racialPassives: ["darkvision"],
+    });
+  }
+
+  it("strips retired fields idempotently while preserving Tower identity, stats, and world powers", () => {
+    const character = contaminatedTowCharacter();
+    expect(stripTowLegacyProgression(character)).toBe(character);
+    expectCleanTowCharacter(character);
+    const once = structuredClone(character);
+    stripTowLegacyProgression(character);
+    expect(character).toEqual(once);
+  });
+
+  it("keeps direct normalize, advance, and summary APIs from recreating a legacy track", () => {
+    const normalized = contaminatedTowCharacter();
+    normalizeCharacterProgression(normalized);
+    expectCleanTowCharacter(normalized);
+
+    const advanced = contaminatedTowCharacter();
+    expect(advanceProgression(advanced, progressionXpForLevel(50))).toMatchObject({
+      character: advanced,
+      beforeLevel: 0,
+      afterLevel: 0,
+      earnedLevels: 0,
+      unspentLevels: 0,
+      pendingChoices: [],
+    });
+    expectCleanTowCharacter(advanced);
+
+    const summarized = contaminatedTowCharacter();
+    expect(progressionSummary(summarized)).toBeNull();
+    expectCleanTowCharacter(summarized);
+
+    const projected = projectCharacterProgression({
+      character: contaminatedTowCharacter(),
+      world: { codex: { characters: { wanderer: contaminatedTowCharacter() } } },
+    });
+    expectCleanTowCharacter(projected.character);
+    expectCleanTowCharacter(projected.world.codex.characters.wanderer);
+  });
+
+  it("cleans contaminated ledgers before pending reads or choice mutations can expose them", () => {
+    const pendingCases = [
+      [pendingProfessionChoices, []],
+      [pendingProgressionChoices, []],
+      [pendingLevelAllocations, null],
+    ];
+    for (const [readPending, expected] of pendingCases) {
+      const character = contaminatedTowCharacter();
+      const ledger = structuredClone(character.progression);
+      expect(readPending(character)).toEqual(expected);
+      expect(character.progression).toEqual(ledger);
+    }
+
+    const resolverCases = [
+      (character) => resolveProfessionChoice(character, {
+        professionId: "ranger", choiceId: "ranger-field-practice", optionId: "hunter",
+      }),
+      (character) => resolveRacialProgressionChoice(character, {
+        choiceId: "vampire-dark-legacy", optionId: "night-stalker",
+      }),
+      (character) => resolveProgressionGrantChoice(character, {
+        professionId: "ranger", grantId: "retired-grant", optionId: "retired-option",
+      }),
+      (character) => resolveLevelAllocationChoice(character, {
+        choiceId: "level-allocation-26", optionId: "profession:ranger",
+      }),
+      (character) => resolveLevelAllocation(character, { track: "profession", professionId: "ranger" }),
+    ];
+    for (const resolve of resolverCases) {
+      const character = contaminatedTowCharacter();
+      expect(() => resolve(character)).toThrow("Tower archetypes do not use legacy progression choices");
+      expectCleanTowCharacter(character);
+    }
   });
 });
 
@@ -526,6 +673,150 @@ describe("migration", () => {
     expect(state.pools.codex[0].characters.pooled.progression.version).toBe(PROGRESSION_VERSION);
   });
 
+  it("purges Tower player projections throughout live, timeline, and pooled state without touching world powers", () => {
+    const contaminated = (overrides = {}) => ({
+      id: "wanderer",
+      profession: "ranger",
+      archetype: "ranger",
+      combatArchetypeId: "ranger",
+      progressionModel: "tow-archetype",
+      towBaseStats: { hp: 96, resolve: 8 },
+      attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+      abilities: [
+        { id: "gate", tier: "legendary" },
+        { id: "power-strike", tier: "rare" },
+        { id: "field-lore", rating: 2 },
+      ],
+      racialPassives: ["darkvision"],
+      progression: createProgression({ professionId: "ranger", level: 25 }),
+      level: 25,
+      subclass: "old-ranger-specialization",
+      profession_plan: [{ profession: "ranger", levels: 25 }],
+      signature_spell: "fireball",
+      metamagic: ["quickened-signature"],
+      ...overrides,
+    });
+    const unmarkedProjection = (overrides = {}) => {
+      const projection = contaminated(overrides);
+      delete projection.progressionModel;
+      return projection;
+    };
+    const nonTower = (version, marker) => {
+      const progression = createProgression({ professionId: "fighter", level: 10 });
+      progression.version = version;
+      progression.professions[0].choices.saveMarker = marker;
+      return { id: marker, profession: "fighter", race: "human", attributes: {}, progression };
+    };
+    const state = {
+      progressionVersion: 3,
+      attributeScaleVersion: ATTRIBUTE_SCALE_VERSION,
+      character: (() => {
+        const root = unmarkedProjection({ kind: "player" });
+        delete root.combatArchetypeId;
+        delete root.towBaseStats;
+        return root;
+      })(),
+      world: { codex: { characters: {
+        wanderer: contaminated(),
+        towerCompanion: contaminated({ id: "towerCompanion" }),
+        legacyV2: nonTower(2, "v2-choice"),
+        legacyV3: nonTower(3, "v3-choice"),
+      } } },
+      turns: [{
+        char: unmarkedProjection({ kind: "player" }),
+        world: { codex: { characters: { wanderer: unmarkedProjection() } } },
+      }],
+      pools: { codex: [{ characters: {
+        wanderer: unmarkedProjection(),
+        towerCompanion: contaminated({ id: "towerCompanion" }),
+      } }] },
+    };
+
+    migrateProgressionState(state);
+
+    const towerSnapshots = [
+      state.character,
+      state.world.codex.characters.wanderer,
+      state.world.codex.characters.towerCompanion,
+      state.turns[0].char,
+      state.turns[0].world.codex.characters.wanderer,
+      state.pools.codex[0].characters.wanderer,
+      state.pools.codex[0].characters.towerCompanion,
+    ];
+    for (const character of towerSnapshots) {
+      expect(character).toMatchObject({
+        profession: "ranger",
+        archetype: "ranger",
+        combatArchetypeId: "ranger",
+        progressionModel: "tow-archetype",
+        towBaseStats: { hp: 96, resolve: 8 },
+        attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+        abilities: [{ id: "gate", tier: "legendary" }],
+        racialPassives: ["darkvision"],
+      });
+      for (const key of ["progression", "level", "subclass", "profession_plan", "signature_spell", "metamagic"]) {
+        expect(character).not.toHaveProperty(key);
+      }
+    }
+    expect(state.world.codex.characters.legacyV2.progression).toMatchObject({
+      version: PROGRESSION_VERSION,
+      professions: [expect.objectContaining({ choices: expect.objectContaining({ saveMarker: "v2-choice" }) })],
+    });
+    expect(state.world.codex.characters.legacyV3.progression).toMatchObject({
+      version: PROGRESSION_VERSION,
+      professions: [expect.objectContaining({ choices: expect.objectContaining({ saveMarker: "v3-choice" }) })],
+    });
+    const once = structuredClone(state);
+    migrateProgressionState(state);
+    expect(state).toEqual(once);
+  });
+
+  it("recognizes an unmarked historical Tower projection from its combat archetype id", () => {
+    const legacyProgression = createProgression({ professionId: "fighter", level: 18 });
+    const projection = (overrides = {}) => ({
+      id: "wanderer",
+      profession: "fighter",
+      archetype: "knight",
+      combatArchetypeId: "arctic-knight",
+      towBaseStats: { hp: 186, resolve: 8 },
+      attributes: { body: 8, reflex: 5, vigor: 9, mind: 3, wit: 4, presence: 5 },
+      progression: structuredClone(legacyProgression),
+      level: 18,
+      subclass: "retired-knight-specialization",
+      ...overrides,
+    });
+    const state = {
+      progressionVersion: 3,
+      attributeScaleVersion: ATTRIBUTE_SCALE_VERSION,
+      character: projection({ kind: "player" }),
+      world: { codex: { characters: { wanderer: projection() } } },
+      turns: [{
+        char: projection({ kind: "player" }),
+        world: { codex: { characters: { wanderer: projection() } } },
+      }],
+      pools: { codex: [{ characters: { wanderer: projection() } }] },
+    };
+
+    migrateProgressionState(state);
+
+    for (const character of [
+      state.character,
+      state.world.codex.characters.wanderer,
+      state.turns[0].char,
+      state.turns[0].world.codex.characters.wanderer,
+      state.pools.codex[0].characters.wanderer,
+    ]) {
+      expect(character).toMatchObject({
+        progressionModel: "tow-archetype",
+        combatArchetypeId: "arctic-knight",
+        towBaseStats: { hp: 186, resolve: 8 },
+      });
+      expect(character).not.toHaveProperty("progression");
+      expect(character).not.toHaveProperty("level");
+      expect(character).not.toHaveProperty("subclass");
+    }
+  });
+
   it("preserves compact v2 multiclass tracks without rebuilding a graph", () => {
     const legacy = createProgression({
       level: 3,
@@ -544,6 +835,31 @@ describe("migration", () => {
     expect(character.progression).not.toHaveProperty("professionTree");
     expect(character.progression.professions.map((track) => [track.professionId, Object.values(track.paths).reduce((sum, rank) => sum + rank, 0)]))
       .toEqual([["fighter", 2], ["artisan", 1]]);
+  });
+
+  it("preserves v3 structured choices while advancing the schema version", () => {
+    const saved = createProgression({ professionId: "sorcerer", level: 25 });
+    saved.version = 3;
+    saved.professions[0].choices = {
+      ...saved.professions[0].choices,
+      signatureSpellId: "fireball",
+      metamagicIds: ["empowered-signature"],
+      saveMarker: "v3-choice",
+    };
+    const character = { race: "human", profession: "sorcerer", attributes: {}, progression: saved };
+
+    normalizeCharacterProgression(character);
+
+    expect(character.progression).toMatchObject({
+      version: PROGRESSION_VERSION,
+      professions: [expect.objectContaining({
+        choices: expect.objectContaining({
+          signatureSpellId: "fireball",
+          metamagicIds: ["empowered-signature"],
+          saveMarker: "v3-choice",
+        }),
+      })],
+    });
   });
 
   it("collapses retired v3 graph allocations into class levels and prunes unreachable branch choices", () => {

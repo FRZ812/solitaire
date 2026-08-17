@@ -129,6 +129,47 @@ describe("settling a victory", () => {
       .toBeGreaterThan(before.character.proficiencies?.["mastery-sword"] || 0);
   });
 
+  it("does not revive retired progression or combat proficiency for an archetype player", () => {
+    const encounter = wonFight();
+    const before = campaign();
+    before.character = {
+      ...before.character,
+      progressionModel: "tow-archetype",
+      combatArchetypeId: "arctic-knight",
+      towBaseStats: { maxHp: 186, resolveMax: 8, attack: 18, defense: 16 },
+      level: 47,
+    };
+    before.world.codex.characters.wanderer = {
+      ...before.world.codex.characters.wanderer,
+      progression: before.character.progression,
+      level: 47,
+    };
+    const proficiencyBefore = { ...(before.character.proficiencies || {}) };
+
+    const result = settleTowEncounter(before, encounter, {
+      encounterId: "archetype-fight",
+      proficiencyId: "mastery-sword",
+    });
+
+    expect(result.receipt.proficiencyGains).toEqual({});
+    expect(result.state.character.proficiencies).toEqual(proficiencyBefore);
+    expect(result.state.character).toMatchObject({
+      progressionModel: "tow-archetype",
+      combatArchetypeId: "arctic-knight",
+      towBaseStats: before.character.towBaseStats,
+    });
+    expect(result.state.character).not.toHaveProperty("progression");
+    expect(result.state.character).not.toHaveProperty("level");
+    expect(result.state.world.codex.characters.wanderer).toMatchObject({
+      progressionModel: "tow-archetype",
+      combatArchetypeId: "arctic-knight",
+      towBaseStats: before.character.towBaseStats,
+    });
+    expect(result.state.world.codex.characters.wanderer).not.toHaveProperty("progression");
+    expect(result.state.world.codex.characters.wanderer).not.toHaveProperty("level");
+    expect(result.state.beats.some((beat) => beat.type === "growth")).toBe(false);
+  });
+
   it("marks every fallen foe dead in the codex, not just the first", () => {
     // The single-enemy settlement this replaces would have left the raider untouched.
     const encounter = wonFight({ enemies: [foe("brigand"), foe("raider")] });

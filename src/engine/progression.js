@@ -27,18 +27,76 @@ import {
   slug,
 } from "../data/progression-paths.js";
 import { normalizeBranchChoices } from "../data/profession-branches.js";
+import { classifyLegacyAbilityGrant } from "../data/abilities.js";
 import { recomputeCarryCapacity, recomputeResolveMax, recomputeVitalityMax } from "./attributes.js";
 
-export const PROGRESSION_VERSION = 3;
+export const PROGRESSION_VERSION = 4;
 export const ATTRIBUTE_SCALE_VERSION = 2;
 export const LIVING_WORLD_LEVEL_CAP = 60;
 export { PROFESSION_LEVEL_CAP, RACIAL_LEVEL_CAP, attributeCeilingForLevel };
+
+const TOW_PROGRESSION_MODEL = "tow-archetype";
+const LEGACY_ARCHETYPE_FIELD = "sub" + "class";
+const RETIRED_TOW_PROGRESSION_FIELDS = Object.freeze([
+  "progression",
+  "level",
+  LEGACY_ARCHETYPE_FIELD,
+  "professionPlan", "profession_plan",
+  "racialLevels", "racial_levels",
+  "progressionChoices", "progression_choices",
+  "signatureSpell", "signature_spell",
+  "signatureSpellId", "signature_spell_id",
+  "signatureSpellIds", "signature_spell_ids", "signatureSpells", "signature_spells",
+  "metamagic", "metamagicId", "metamagic_id",
+  "metamagicIds", "metamagic_ids", "metamagicProfiles", "metamagic_profiles",
+]);
 
 // Tower archetype builds advance through their replay-governed combat model,
 // not the legacy global level/advancement track. Keep the default permissive so
 // old saves and every non-Tower character retain their existing behaviour.
 export function usesLegacyCharacterProgression(character) {
-  return character?.progressionModel !== "tow-archetype";
+  return character?.progressionModel !== TOW_PROGRESSION_MODEL;
+}
+
+// This is the authoritative persistence boundary between Tower archetype
+// progression and the retired global level/profession track. `forceTow` is
+// reserved for known player projections whose older snapshots predate the
+// progressionModel marker.
+export function stripTowLegacyProgression(character, { forceTow = false } = {}) {
+  if (!character || (!forceTow && usesLegacyCharacterProgression(character))) return character;
+  if (forceTow) character.progressionModel = TOW_PROGRESSION_MODEL;
+  for (const key of RETIRED_TOW_PROGRESSION_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(character, key)) delete character[key];
+  }
+  if (Array.isArray(character.abilities)) {
+    character.abilities = character.abilities.filter((ability) => (
+      classifyLegacyAbilityGrant(typeof ability === "string" ? ability : ability?.id) === "world"
+    ));
+  }
+  return character;
+}
+
+function cloneTowProjectionField(value) {
+  if (Array.isArray(value)) return [...value];
+  return value && typeof value === "object" ? { ...value } : value;
+}
+
+function synchronizeTowPlayerProjection(character, projection) {
+  if (!character || !projection) return;
+  for (const key of ["profession", "archetype", "combatArchetypeId", "towBaseStats", "attributes"]) {
+    const value = character[key] ?? projection[key];
+    if (value == null) continue;
+    character[key] = cloneTowProjectionField(value);
+    projection[key] = cloneTowProjectionField(value);
+  }
+  character.progressionModel = TOW_PROGRESSION_MODEL;
+  projection.progressionModel = TOW_PROGRESSION_MODEL;
+}
+
+function rejectTowLegacyProgressionMutation(value) {
+  if (!value || usesLegacyCharacterProgression(value)) return;
+  stripTowLegacyProgression(value);
+  throw new Error("Tower archetypes do not use legacy progression choices");
 }
 
 export const AUTHORED_WORLD_LEVELS = Object.freeze({
@@ -156,7 +214,7 @@ function availableGrantOptions(track, grant) {
 }
 
 function isStructuredProgression(progression) {
-  return (progression?.version === 2 || progression?.version === PROGRESSION_VERSION)
+  return (Number.isInteger(progression?.version) && progression.version >= 2 && progression.version <= PROGRESSION_VERSION)
     && Array.isArray(progression.professions) && progression.racial;
 }
 
@@ -558,6 +616,7 @@ export function normalizeCharacterProgression(character, {
   preserveValidAttributeShape = false,
 } = {}) {
   if (!character) return character;
+  if (!usesLegacyCharacterProgression(character)) return stripTowLegacyProgression(character);
   const legacyKey = "sub" + "class";
   const oldProgression = character.progression;
   const hadStructuredProgression = isStructuredProgression(oldProgression);
@@ -637,20 +696,33 @@ export function migrateProgressionState(state, { alignAuthoredAttributes = false
   const previousProgressionVersion = Number(state.progressionVersion) || 0;
   const previousAttributeVersion = state.attributeScaleVersion ?? (previousProgressionVersion >= 1 ? ATTRIBUTE_SCALE_VERSION : 1);
   const convertAttributes = previousAttributeVersion < ATTRIBUTE_SCALE_VERSION;
-  const migrate = (character, isPlayerProjection = false) => normalizeCharacterProgression(character, {
-    convertLegacyAttributes: convertAttributes,
-    enforceLevelAttributeScale: convertAttributes && !alignAuthoredAttributes,
-    alignAttributesToProgression: alignAuthoredAttributes && !isPlayerProjection && character?.kind !== "mount",
-  });
+  const liveWanderer = state.world?.codex?.characters?.wanderer;
+  const rootUsesTowProgression = Boolean(
+    state.character && (
+      !usesLegacyCharacterProgression(state.character)
+      || Boolean(state.character.combatArchetypeId)
+      || Boolean(liveWanderer?.combatArchetypeId)
+      || (state.character.progressionModel == null && liveWanderer && !usesLegacyCharacterProgression(liveWanderer))
+    )
+  );
+  if (rootUsesTowProgression && liveWanderer) synchronizeTowPlayerProjection(state.character, liveWanderer);
+  const migrate = (character, isPlayerProjection = false, forceTow = false) => {
+    if (forceTow) return stripTowLegacyProgression(character, { forceTow: true });
+    return normalizeCharacterProgression(character, {
+      convertLegacyAttributes: convertAttributes,
+      enforceLevelAttributeScale: convertAttributes && !alignAuthoredAttributes,
+      alignAttributesToProgression: alignAuthoredAttributes && !isPlayerProjection && character?.kind !== "mount",
+    });
+  };
   if (state.character) {
     if (!state.character.id) state.character.id = "wanderer";
     if (!state.character.kind) state.character.kind = "player";
-    migrate(state.character, true);
+    migrate(state.character, true, rootUsesTowProgression);
   }
-  for (const character of Object.values(state.world?.codex?.characters || {})) {
-    const playerProjection = character?.id === "wanderer";
-    migrate(character, playerProjection);
-    if (playerProjection && state.character?.progression) {
+  for (const [characterId, character] of Object.entries(state.world?.codex?.characters || {})) {
+    const playerProjection = characterId === "wanderer" || character?.id === "wanderer";
+    migrate(character, playerProjection, rootUsesTowProgression && playerProjection);
+    if (playerProjection && state.character?.progression && usesLegacyCharacterProgression(character)) {
       character.profession = state.character.profession;
       character.archetype = state.character.archetype;
       character.attributes = { ...(state.character.attributes || {}) };
@@ -658,10 +730,27 @@ export function migrateProgressionState(state, { alignAuthoredAttributes = false
     }
   }
   for (const turn of state.turns || []) {
-    if (turn?.char) migrate(turn.char, true);
-    for (const character of Object.values(turn?.world?.codex?.characters || {})) migrate(character);
+    const turnWanderer = turn?.world?.codex?.characters?.wanderer;
+    const turnUsesTowProgression = Boolean(turn?.char && (
+      rootUsesTowProgression
+      || !usesLegacyCharacterProgression(turn.char)
+      || Boolean(turn.char.combatArchetypeId)
+      || Boolean(turnWanderer?.combatArchetypeId)
+      || (turn.char.progressionModel == null && turnWanderer && !usesLegacyCharacterProgression(turnWanderer))
+    ));
+    if (turnUsesTowProgression && turnWanderer) synchronizeTowPlayerProjection(turn.char, turnWanderer);
+    if (turn?.char) migrate(turn.char, true, turnUsesTowProgression);
+    for (const [characterId, character] of Object.entries(turn?.world?.codex?.characters || {})) {
+      const playerProjection = characterId === "wanderer" || character?.id === "wanderer";
+      migrate(character, playerProjection, turnUsesTowProgression && playerProjection);
+    }
   }
-  for (const pooledCodex of state.pools?.codex || []) for (const character of Object.values(pooledCodex?.characters || {})) migrate(character);
+  for (const pooledCodex of state.pools?.codex || []) {
+    for (const [characterId, character] of Object.entries(pooledCodex?.characters || {})) {
+      const playerProjection = characterId === "wanderer" || character?.id === "wanderer";
+      migrate(character, playerProjection, rootUsesTowProgression && playerProjection);
+    }
+  }
   state.progressionVersion = PROGRESSION_VERSION;
   state.attributeScaleVersion = ATTRIBUTE_SCALE_VERSION;
   return state;
@@ -721,12 +810,14 @@ function pendingBranchesForProgression(progression) {
 }
 
 export function pendingProfessionChoices(value, professionId = null) {
+  if (value && !usesLegacyCharacterProgression(value)) return [];
   const progression = value?.progression || value;
   if (!isStructuredProgression(progression)) return [];
   return pendingBranchesForProgression(progression).filter((choice) => !professionId || choice.professionId === canonicalProfessionId(professionId));
 }
 
 export function pendingProgressionChoices(value) {
+  if (value && !usesLegacyCharacterProgression(value)) return [];
   const progression = value?.progression || value;
   if (!isStructuredProgression(progression)) return [];
   const pending = [...pendingBranchesForProgression(progression)];
@@ -761,6 +852,7 @@ export function pendingProgressionChoices(value) {
 }
 
 export function pendingLevelAllocations(value) {
+  if (value && !usesLegacyCharacterProgression(value)) return null;
   const progression = value?.progression || value;
   if (!isStructuredProgression(progression)) return null;
   const allocatedLevel = allocatedProgressionLevel(progression);
@@ -809,6 +901,7 @@ export function pendingLevelAllocations(value) {
 }
 
 export function resolveProfessionChoice(value, { professionId, choiceId, optionId }) {
+  rejectTowLegacyProgressionMutation(value);
   const character = value?.progression ? value : null;
   const progression = cloneProgression(character?.progression || value);
   const canonical = canonicalProfessionId(professionId || progression.activeProfessionId);
@@ -829,6 +922,7 @@ export function resolveProfessionChoice(value, { professionId, choiceId, optionI
 }
 
 export function resolveRacialProgressionChoice(value, { choiceId, optionId }) {
+  rejectTowLegacyProgressionMutation(value);
   const character = value?.progression ? value : null;
   const progression = cloneProgression(character?.progression || value);
   progression.racial.branchChoices = { ...resolveRacialBranchChoice(
@@ -844,6 +938,7 @@ export function resolveRacialProgressionChoice(value, { choiceId, optionId }) {
 }
 
 export function resolveProgressionGrantChoice(value, { professionId, grantId, optionId }) {
+  rejectTowLegacyProgressionMutation(value);
   const character = value?.progression ? value : null;
   const progression = cloneProgression(character?.progression || value);
   const canonical = canonicalProfessionId(professionId || progression.activeProfessionId);
@@ -880,6 +975,20 @@ export function resolveProgressionGrantChoice(value, { professionId, grantId, op
 }
 
 export function advanceProgression(character, xpGain) {
+  if (character && !usesLegacyCharacterProgression(character)) {
+    stripTowLegacyProgression(character);
+    return {
+      character,
+      beforeLevel: 0,
+      afterLevel: 0,
+      beforeEarnedLevel: 0,
+      afterEarnedLevel: 0,
+      earnedLevels: 0,
+      unspentLevels: 0,
+      gained: [],
+      pendingChoices: [],
+    };
+  }
   const beforeAllocated = allocatedProgressionLevel(character);
   const beforeEarnedLevel = earnedProgressionLevel(character);
   if (!character || !(Number(xpGain) > 0)) return {
@@ -961,6 +1070,7 @@ function allocateOneLevel(value, option, specializationId = null) {
 }
 
 export function resolveLevelAllocationChoice(value, { choiceId, optionId, specializationId = null }) {
+  rejectTowLegacyProgressionMutation(value);
   const progression = value?.progression || value;
   const pending = pendingLevelAllocations(progression);
   if (!pending || pending.choiceId !== choiceId) throw new Error(`Level allocation ${choiceId} is not pending`);
@@ -970,6 +1080,7 @@ export function resolveLevelAllocationChoice(value, { choiceId, optionId, specia
 }
 
 export function resolveLevelAllocation(value, selection) {
+  rejectTowLegacyProgressionMutation(value);
   const pending = pendingLevelAllocations(value);
   if (!pending) throw new Error("No earned level is waiting for allocation");
   const optionId = selection.optionId || (selection.track === "racial" ? "racial:evolution" : `profession:${canonicalProfessionId(selection.professionId)}`);
@@ -1030,7 +1141,23 @@ export function progressionEntitlements(value) {
 export function projectCharacterProgression(state) {
   const character = state?.character;
   const wanderer = state?.world?.codex?.characters?.wanderer;
-  if (!character?.progression || !wanderer) return state;
+  if (!character || !wanderer) return state;
+  if (!usesLegacyCharacterProgression(character)) {
+    const projectedCharacter = { ...character };
+    const projectedWanderer = { ...wanderer };
+    synchronizeTowPlayerProjection(projectedCharacter, projectedWanderer);
+    stripTowLegacyProgression(projectedCharacter);
+    stripTowLegacyProgression(projectedWanderer);
+    return {
+      ...state,
+      character: projectedCharacter,
+      world: { ...state.world, codex: { ...state.world.codex, characters: {
+        ...state.world.codex.characters,
+        wanderer: projectedWanderer,
+      } } },
+    };
+  }
+  if (!character.progression) return state;
   return {
     ...state,
     world: { ...state.world, codex: { ...state.world.codex, characters: {
@@ -1042,6 +1169,10 @@ export function projectCharacterProgression(state) {
 
 export function progressionSummary(character) {
   if (!character) return null;
+  if (!usesLegacyCharacterProgression(character)) {
+    stripTowLegacyProgression(character);
+    return null;
+  }
   normalizeCharacterProgression(character);
   const progression = character.progression;
   const professionLevel = professionProgressionLevel(progression);

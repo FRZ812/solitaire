@@ -59,4 +59,18 @@ describe("Solitaire hook order", () => {
     expect(source).toContain("Replace invalid save");
     expect(source).toContain("referenceGameplay.reason");
   });
+
+  it("keeps the retired progression handler inert for archetype characters", () => {
+    const source = fs.readFileSync(appPath, "utf8");
+    const handler = source.indexOf("function handleProgressionChoice");
+    const guard = source.indexOf(
+      'if (current.character?.progressionModel === "tow-archetype") return current;',
+      handler,
+    );
+    const pendingLookup = source.indexOf("pendingProgressionChoices(current.character)", handler);
+
+    expect(handler).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(handler);
+    expect(guard).toBeLessThan(pendingLookup);
+  });
 });
