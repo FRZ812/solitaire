@@ -3,7 +3,7 @@ import { gameplayChecksum } from "../kernel/replay.js";
 import { dispatchTowCommand } from "./commands.js";
 import { sealTowTerminalReceipt } from "./outcomes.js";
 import { firstJsonDifference, replayTowCombatSession, verifyTowSession } from "./replay.js";
-import { createTowSession } from "./session.js";
+import { createTowSession, markTowSessionSettled, spendTowSessionStream } from "./session.js";
 
 function open(context = {}) {
   const opened = createTowSession({
@@ -235,6 +235,32 @@ describe("verifying a saved session", () => {
     const verified = verifyTowSession(tampered);
     expect(verified.ok).toBe(false);
     expect(verified.reason).toBe("replay-receipt-divergence");
+  });
+
+  it("verifies a sealed receipt after settlement legitimately spends its own streams", () => {
+    const terminal = sealTowTerminalReceipt(
+      play(open({ lethalPolicy: "nonlethal" }), 40),
+    ).session;
+    const endpoint = {
+      ...terminal.streams.loot,
+      state: (terminal.streams.loot.state + 1) >>> 0,
+    };
+    const spent = spendTowSessionStream(terminal, "loot", endpoint);
+    expect(spent.ok).toBe(true);
+    const closed = markTowSessionSettled(spent.session, terminal.sessionId);
+    expect(closed.ok).toBe(true);
+    expect(verifyTowSession(closed.session)).toEqual({
+      ok: true,
+      reason: null,
+      divergence: null,
+    });
+
+    const forged = JSON.parse(JSON.stringify(closed.session));
+    forged.terminalReceipt.streamEndpoints.loot.state = endpoint.state;
+    expect(verifyTowSession(forged)).toMatchObject({
+      ok: false,
+      reason: "replay-receipt-divergence",
+    });
   });
 
   it("reports a command the current rules would no longer accept", () => {

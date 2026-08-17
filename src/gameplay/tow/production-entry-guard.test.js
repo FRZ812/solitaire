@@ -19,8 +19,9 @@ describe("one way into a fight", () => {
     // Every live fight is admitted, sessioned and settled through the same path. A second
     // entry point is how a fight ends up outside the durability, the telegraph, and the
     // gateway all at once.
-    expect(appSource).toContain("createTowSession({");
-    expect(appSource.match(/createTowSession\(\{/g)).toHaveLength(1);
+    expect(appSource).toContain("createTowRuntimeSession(TOW_V1_RUNTIME_IDENTITY, {");
+    expect(appSource.match(/createTowRuntimeSession\(TOW_V1_RUNTIME_IDENTITY, \{/g))
+      .toHaveLength(1);
     // And the reducer is only ever reached through the command boundary.
     expect(appSource).not.toMatch(/[^a-zA-Z]useSkill\(/);
     expect(appSource).not.toMatch(/[^a-zA-Z]endTurn\(/);
@@ -30,14 +31,14 @@ describe("one way into a fight", () => {
     // Admission is what carries conditions in and keeps unsupported content out; a start
     // that skipped it would be a fight the player's state never reached.
     const start = appSource.indexOf("admitTowEncounter({");
-    const session = appSource.indexOf("createTowSession({");
+    const session = appSource.indexOf("createTowRuntimeSession(TOW_V1_RUNTIME_IDENTITY, {");
     expect(start).toBeGreaterThan(-1);
     expect(start).toBeLessThan(session);
   });
 
   it("dispatches every player action through the command boundary", () => {
-    expect(appSource).toContain("dispatchTowPlayerAction(session, {");
-    expect(appSource.match(/dispatchTowPlayerAction\(/g)).toHaveLength(1);
+    expect(appSource).toContain("dispatchTowRuntimePlayerAction(session, {");
+    expect(appSource.match(/dispatchTowRuntimePlayerAction\(/g)).toHaveLength(1);
   });
 });
 

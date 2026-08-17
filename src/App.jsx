@@ -120,17 +120,20 @@ import {
   chronicleSummary,
   renderCombatChronicle,
 } from "./gameplay/tow/chronicle.js";
-import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
 import { combatItemsFromInventory } from "./gameplay/tow/combat-items.js";
 import { DEFAULT_PRACTICE_ALLY_GROUP_ID } from "./gameplay/tow/practice-scenarios.js";
-import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
-import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import {
-  createTowSession,
-  markTowSessionSettled,
-  spendTowSessionStream,
-  streamSequencer,
-} from "./gameplay/tow/session.js";
+  TOW_V1_RUNTIME_IDENTITY,
+  createTowRuntimeSession,
+  createTowRuntimeStreamSequencer,
+  decodeTowRuntimeSession,
+  dispatchTowRuntimePlayerAction,
+  markTowRuntimeSessionSettled,
+  sealTowRuntimeTerminalReceipt,
+  settleTowRuntimeEncounter,
+  spendTowRuntimeSessionStream,
+  towRuntimeWorldFates,
+} from "./gameplay/tow/runtime.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
 import { towBuildForCharacter } from "./gameplay/tow/professions.js";
 import { activeTowItemIds, effectiveTowBuild } from "./gameplay/tow/start-items.js";
@@ -141,7 +144,6 @@ import {
   practiceBuildForArchetypeDraft,
   practiceSkillRaritiesForArchetypeDraft,
 } from "./gameplay/tow/starting-archetypes.js";
-import { settleTowEncounter } from "./gameplay/tow/settlement.js";
 import {
   pendingLevelAllocations,
   pendingProgressionChoices,
@@ -732,7 +734,7 @@ export function Solitaire() {
   const towCombat = useMemo(
     () => (storedTowCombat == null
       ? { ok: false, reason: "no-active-tow-combat", session: null }
-      : decodeTowSession(storedTowCombat)),
+      : decodeTowRuntimeSession(storedTowCombat)),
     [storedTowCombat],
   );
   const combatSession = towCombat.ok ? towCombat.session : null;
@@ -3177,7 +3179,7 @@ export function Solitaire() {
       setError(`A companion could not take the field: ${error?.message || error}.`);
       return;
     }
-    const opened = createTowSession({
+    const opened = createTowRuntimeSession(TOW_V1_RUNTIME_IDENTITY, {
       sessionId: `${currentCampaignId || "local"}:combat:${seed}`,
       rootSeed: seed,
       mode: "campaign",
@@ -3474,10 +3476,14 @@ export function Solitaire() {
     // Already settled means the campaign has this fight's outcome; running again would
     // narrate a second aftermath for one fight.
     if (!combatSession || combatSession.status === "settled") return;
-    const session = combatSession;
+    const activeSession = combatSession;
+    const sealed = activeSession.terminalReceipt
+      ? { ok: true, session: activeSession }
+      : sealTowRuntimeTerminalReceipt(activeSession);
+    const session = sealed.ok ? sealed.session : activeSession;
     const cs = session.encounter;
     const ctx = session.context;
-    const receipt = session.terminalReceipt || sealTowTerminalReceipt(session).session?.terminalReceipt;
+    const receipt = session.terminalReceipt;
     if (!receipt) {
       setTowCombatFeedback("The fight is not over yet.");
       return;
@@ -3494,14 +3500,19 @@ export function Solitaire() {
         .filter(([, binding]) => binding.campaignEntityId)
         .map(([actorId, binding]) => [actorId, binding.campaignEntityId]),
     );
-    const settled = settleTowEncounter(state, cs, {
+    const fates = towRuntimeWorldFates(session);
+    if (!fates.ok) {
+      setError(`The fight outcome could not be read: ${fates.reason}.`);
+      return;
+    }
+    const settled = settleTowRuntimeEncounter(state, session, {
       encounterId: session.sessionId,
       proficiencyId: ctx.rewardPolicy.proficiencyId,
       npcIds,
       lethal,
       // Per-participant fates win over the blanket flag: one duel inside a brawl can be
       // real while the rest is fists, and the codex has to record each person correctly.
-      worldFates: worldFatesByParticipant(receipt),
+      worldFates: fates.worldFates,
     });
     if (!settled.ok && settled.reason !== "tow-encounter-already-settled") {
       setError(`The fight could not be settled: ${settled.reason}.`);
@@ -3521,7 +3532,12 @@ export function Solitaire() {
         .map((enemyId) => ctx.lootPolicy.sources[enemyId])
         .filter(Boolean);
       if (fallen.length > 0) {
-        const spoils = streamSequencer(session.streams.loot);
+        const sequenced = createTowRuntimeStreamSequencer(session, "loot");
+        if (!sequenced.ok) {
+          setError(`The fight's loot stream could not be read: ${sequenced.reason}.`);
+          return;
+        }
+        const spoils = sequenced.sequencer;
         const manifest = rollLoot(fallen, {
           maxLootTier: ctx.lootPolicy.maxLootTier,
           region: ctx.lootPolicy.region,
@@ -3529,7 +3545,7 @@ export function Solitaire() {
           coinBonus: ctx.lootPolicy.coinBonus,
           random: spoils.random,
         });
-        const spent = spendTowSessionStream(closing, "loot", spoils.endpoint());
+        const spent = spendTowRuntimeSessionStream(closing, "loot", spoils.endpoint());
         if (spent.ok) closing = spent.session;
         next = { ...next, pendingLoot: manifest };
       }
@@ -3539,7 +3555,12 @@ export function Solitaire() {
     // — and, like the spoils, what the draw spent is written back rather than forgotten.
     let pendingReward = next.pendingReward ?? null;
     if (cs.phase === "victory" && !epicDeath && next.mechanics?.build) {
-      const rewards = streamSequencer(closing.streams.rewards);
+      const sequenced = createTowRuntimeStreamSequencer(closing, "rewards");
+      if (!sequenced.ok) {
+        setError(`The fight's reward stream could not be read: ${sequenced.reason}.`);
+        return;
+      }
+      const rewards = sequenced.sequencer;
       const seed = rewardSeedFor(closing.sessionId, closing.streams.rewards);
       const compiled = compileRewardOffer(next.mechanics.build, {
         sourceReceiptId: closing.sessionId,
@@ -3548,14 +3569,14 @@ export function Solitaire() {
       // No eligible reward is a real state, not a failure: a build at every cap has earned
       // being told so rather than being handed an empty offer.
       if (compiled.ok) pendingReward = compiled.offer;
-      const spentRewards = spendTowSessionStream(closing, "rewards", rewards.endpoint());
+      const spentRewards = spendTowRuntimeSessionStream(closing, "rewards", rewards.endpoint());
       if (spentRewards.ok) closing = spentRewards.session;
     }
 
     // The session stays in state, marked settled, so a reload between here and the
     // aftermath lands on a fight that is already decided and already folded in — the
     // settlement receipt refuses a second attempt either way.
-    const closed = markTowSessionSettled(closing, closing.sessionId);
+    const closed = markTowRuntimeSessionSettled(closing, closing.sessionId);
     next = withTowMechanics(
       // A permanent death ends the run before anything is narrated. Presentation renders a
       // fact that is already canonical; it never gets to decide one.
@@ -3801,7 +3822,9 @@ export function Solitaire() {
   // revision. The ID makes a double-tap free; the revision makes a swing at a fight that has
   // already moved on impossible. Neither was true when a click called the reducer directly.
   function dispatchCombatCommand(input) {
-    const current = decodeTowSession(liveStateRef.current.mechanics?.tow?.activeCombat ?? null);
+    const current = decodeTowRuntimeSession(
+      liveStateRef.current.mechanics?.tow?.activeCombat ?? null,
+    );
     if (!current.ok) {
       setTowCombatFeedback(`The fight could not be read: ${current.reason}.`);
       return;
@@ -3812,7 +3835,7 @@ export function Solitaire() {
     // mistaken for a repeat of the other — and what stops a double-tap becoming two swings
     // is the turn budget the encounter already enforces, not a dropped command.
     const actorId = input.actorId ?? session.encounter.playerId;
-    const result = dispatchTowPlayerAction(session, {
+    const result = dispatchTowRuntimePlayerAction(session, {
       ...input,
       id: [
         session.sessionId,
@@ -3840,7 +3863,7 @@ export function Solitaire() {
     // that has to be judged again.
     const sealed = result.session.encounter.phase === "player"
       ? { ok: true, session: result.session }
-      : sealTowTerminalReceipt(result.session);
+      : sealTowRuntimeTerminalReceipt(result.session);
     commitTowSession(sealed.ok ? sealed.session : result.session);
   }
 

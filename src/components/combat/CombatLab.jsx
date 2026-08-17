@@ -17,17 +17,21 @@
 import "./production-combat.css";
 import React, { useCallback, useMemo, useState } from "react";
 import { TowCombatView } from "./TowCombatView.jsx";
-import { dispatchTowPlayerAction, towSessionEvents } from "../../gameplay/tow/commands.js";
 import { buildCombatChronicle, renderCombatChronicle } from "../../gameplay/tow/chronicle.js";
 import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstrap.js";
 import { declaredIntents } from "../../gameplay/tow/encounter.js";
-import { sealTowTerminalReceipt } from "../../gameplay/tow/outcomes.js";
-import { decodeTowSession, encodeTowSession } from "../../gameplay/tow/persistence.js";
 import {
   PRACTICE_SCENARIOS,
   createPracticeSession,
 } from "../../gameplay/tow/practice-scenarios.js";
-import { verifyTowSession } from "../../gameplay/tow/replay.js";
+import {
+  decodeTowRuntimeSession,
+  dispatchTowRuntimePlayerAction,
+  encodeTowRuntimeSession,
+  sealTowRuntimeTerminalReceipt,
+  towRuntimeSessionEvents,
+  verifyTowRuntimeSession,
+} from "../../gameplay/tow/runtime.js";
 import { startingPackageIds } from "../../gameplay/tow/starting-packages.js";
 
 /**
@@ -47,7 +51,7 @@ export function openLabSession({ packageId, scenarioId, attemptIndex = 0 }) {
 
 /** A session as a portable fixture, through the same codec a save crosses. */
 export function exportLabFixture(session) {
-  const encoded = encodeTowSession(session);
+  const encoded = encodeTowRuntimeSession(session);
   if (!encoded.ok) return { ok: false, reason: encoded.reason, json: null };
   return { ok: true, reason: null, json: JSON.stringify(encoded.payload, null, 1) };
 }
@@ -60,7 +64,7 @@ export function importLabFixture(json) {
   } catch {
     return { ok: false, reason: "invalid-fixture-json", session: null };
   }
-  return decodeTowSession(parsed);
+  return decodeTowRuntimeSession(parsed);
 }
 
 export function CombatLab({ onExit }) {
@@ -90,7 +94,7 @@ export function CombatLab({ onExit }) {
       if (!current?.ok) return current;
       const session = current.session;
       const actorId = input.actorId ?? session.encounter.playerId;
-      const result = dispatchTowPlayerAction(session, {
+      const result = dispatchTowRuntimePlayerAction(session, {
         ...input,
         id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
           .filter((part) => part !== null && part !== undefined)
@@ -105,7 +109,7 @@ export function CombatLab({ onExit }) {
       setFeedback(null);
       const sealed = result.session.encounter.phase === "player"
         ? { ok: true, session: result.session }
-        : sealTowTerminalReceipt(result.session);
+        : sealTowRuntimeTerminalReceipt(result.session);
       return { ...current, session: sealed.ok ? sealed.session : result.session };
     });
   }, []);
@@ -120,7 +124,8 @@ export function CombatLab({ onExit }) {
   }
 
   const { session } = opened;
-  const verification = verifyTowSession(session);
+  const verification = verifyTowRuntimeSession(session);
+  const projectedEvents = towRuntimeSessionEvents(session);
   const chronicle = session.terminalReceipt
     ? buildCombatChronicle(session, session.terminalReceipt)
     : null;
@@ -204,7 +209,7 @@ export function CombatLab({ onExit }) {
 
           <h3>Events</h3>
           <ol className="combat-lab__events">
-            {towSessionEvents(session).slice(-12).map((event) => (
+            {(projectedEvents.ok ? projectedEvents.events : []).slice(-12).map((event) => (
               <li key={event.eventSequence}>
                 r{event.round} {event.type} <code>{event.commandId ?? "opening"}</code>
               </li>

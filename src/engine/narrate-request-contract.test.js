@@ -302,9 +302,9 @@ describe("narrator application trust boundary", () => {
   it("settles combat defeat and permanent death before presentation narration", () => {
     expect(appSource).not.toContain("Choose a fate that fits WHO beat you and WHERE");
     // The engine settles the fight before a word of it is narrated. The settlement moved
-    // from applyCombatResult to settleTowEncounter when the deck engine retired; the
-    // invariant — settle first, narrate second — is unchanged.
-    expect(appSource).toContain("settleTowEncounter(state, cs,");
+    // from applyCombatResult to the ruleset-routed Tower settlement when the deck engine
+    // retired; the invariant — settle first, narrate second — is unchanged.
+    expect(appSource).toContain("settleTowRuntimeEncounter(state, session,");
     // Permanent death is read off the terminal receipt, which read it off the admission
     // recorded before the first blow. It is never re-derived at settlement from how the
     // fight happened to go — that would mean the answer to "can I die here" only existed
