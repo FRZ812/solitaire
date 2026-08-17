@@ -293,7 +293,12 @@ export function collectEquippedPassives(character, codex) {
   // Allocated racial progression is authoritative for earned progression-only
   // traits. Legacy freeform racialPassives (or a forged item) cannot smuggle an
   // Adaptable/Dragon Heart/Regeneration id around its level threshold.
-  enabled.push(...progressionPassiveEntries(character));
+  // Tower archetypes derive combat identity from their formation kit. Keep a
+  // consumer-side firewall as well as the entitlement projection so a stale
+  // profession/racial ledger can never affect their combat stats during load.
+  if (character?.progressionModel !== "tow-archetype") {
+    enabled.push(...progressionPassiveEntries(character));
+  }
   const nonProgressionExclusive = (entry) => !passiveDef(entry?.id)?.progressionExclusive;
   // Baseline racial passives remain innate and always on — no item requirement.
   if (Array.isArray(character?.racialPassives) && character.racialPassives.length) {

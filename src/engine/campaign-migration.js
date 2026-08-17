@@ -2,9 +2,9 @@
 //
 // The durable build needs somewhere to live in campaign state. Adding it is a schema
 // change, and a schema change is the one failure mode that can cost a player their
-// campaign — `listCampaigns` filters on an exact `schema_version`, so a naive bump does
-// not corrupt saves, it makes them invisible, which is worse because it looks like data
-// loss and invites a support answer of "start again".
+// campaign. Readers therefore enumerate every supported `schema_version`; a naive
+// current-only filter would not corrupt old saves, but would make them invisible and
+// look lost.
 //
 // So: readers accept every known version, the migration is pure and idempotent, and a
 // migrated payload is verified against its original before anything is written back. If
@@ -70,9 +70,40 @@ export function hasMechanicsSidecar(state) {
   );
 }
 
-function hasTowMechanics(state) {
-  const tow = state?.mechanics?.tow;
-  return Boolean(tow && typeof tow === "object" && !Array.isArray(tow) && "activeCombat" in tow);
+function isPlainRecord(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function owns(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function validSavedFormation(value) {
+  return isPlainRecord(value)
+    && value.version === 1
+    && Array.isArray(value.cells)
+    && value.cells.length === 9
+    && value.cells.every((cell) => cell === null || typeof cell === "string");
+}
+
+// Cheap, non-mutating write-time check. Hydration performs the expensive clone +
+// read-back proof once; autosave only needs to prove that the required current
+// sidecar shape is present before stamping the database schema version.
+export function hasCurrentMechanicsState(state) {
+  const sidecar = state?.mechanics;
+  const tow = sidecar?.tow;
+  return isPlainRecord(sidecar)
+    && sidecar.version === MECHANICS_SIDECAR_VERSION
+    && owns(sidecar, "bootstrapId")
+    && (sidecar.bootstrapId === null || typeof sidecar.bootstrapId === "string")
+    && owns(sidecar, "build")
+    && (sidecar.build === null || isPlainRecord(sidecar.build))
+    && isPlainRecord(tow)
+    && owns(tow, "activeCombat")
+    && (tow.activeCombat === null || isPlainRecord(tow.activeCombat))
+    && isPlainRecord(tow.readiness)
+    && isPlainRecord(tow.companionReadiness)
+    && validSavedFormation(tow.formation);
 }
 
 /**
@@ -96,16 +127,50 @@ export function migrateCampaignState(state) {
     return { ok: false, reason: "invalid-campaign-state", state: null };
   }
 
-  if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
-  // Backfilled separately: a campaign already carrying a sidecar from the build migration
-  // still predates the combat slot, and would otherwise never gain one.
-  if (!hasTowMechanics(next)) next.mechanics = { ...next.mechanics, tow: emptyTowMechanics() };
-  if (!next.mechanics.tow.formation) {
+  if (!owns(next, "mechanics")) {
+    next.mechanics = emptyMechanicsSidecar();
+  } else {
+    // Never reinterpret or replace a sidecar written by a newer client. Losing a
+    // durable build or active combat is worse than refusing to open the campaign.
+    if (!isPlainRecord(next.mechanics) || next.mechanics.version !== MECHANICS_SIDECAR_VERSION) {
+      return { ok: false, reason: "unsupported-mechanics-sidecar", state: null };
+    }
+    if ((owns(next.mechanics, "bootstrapId")
+      && next.mechanics.bootstrapId !== null
+      && typeof next.mechanics.bootstrapId !== "string")
+      || (owns(next.mechanics, "build")
+        && next.mechanics.build !== null
+        && !isPlainRecord(next.mechanics.build))) {
+      return { ok: false, reason: "invalid-build-mechanics", state: null };
+    }
+    if (owns(next.mechanics, "tow") && !isPlainRecord(next.mechanics.tow)) {
+      return { ok: false, reason: "invalid-tow-mechanics", state: null };
+    }
+    const suppliedTow = next.mechanics.tow || {};
+    if ((owns(suppliedTow, "activeCombat")
+      && suppliedTow.activeCombat !== null
+      && !isPlainRecord(suppliedTow.activeCombat))
+      || (owns(suppliedTow, "readiness") && !isPlainRecord(suppliedTow.readiness))
+      || (owns(suppliedTow, "companionReadiness")
+        && !isPlainRecord(suppliedTow.companionReadiness))) {
+      return { ok: false, reason: "invalid-tow-mechanics", state: null };
+    }
+    if (owns(next.mechanics.tow || {}, "formation")
+      && !validSavedFormation(next.mechanics.tow.formation)) {
+      return { ok: false, reason: "unsupported-saved-formation", state: null };
+    }
+
+    // Older v1 sidecars may predate one or more Tower fields. Backfill only
+    // absent keys; every existing value and every unknown key survives exactly.
+    const defaults = emptyTowMechanics();
+    const existingTow = next.mechanics.tow || {};
     next.mechanics = {
+      bootstrapId: null,
+      build: null,
       ...next.mechanics,
       tow: {
-        ...next.mechanics.tow,
-        formation: emptyTowMechanics().formation,
+        ...defaults,
+        ...existingTow,
       },
     };
   }
@@ -145,14 +210,43 @@ export function verifyMigrationReadBack(original, migrated) {
     return { ok: false, reason: "migration-invented-a-build" };
   }
 
+  if (original_) {
+    // Compare the whole pre-existing sidecar after removing only the exact v1
+    // defaults this migration is allowed to add. This proves an active combat,
+    // build, readiness map, or future extension was not rewritten in transit.
+    let comparable;
+    try {
+      comparable = cloneJsonData(sidecar, "unverifiable-payload");
+    } catch {
+      return { ok: false, reason: "unverifiable-payload" };
+    }
+    if (!owns(original_, "tow")) {
+      delete comparable.tow;
+    } else {
+      for (const key of Object.keys(emptyTowMechanics())) {
+        if (!owns(original_.tow, key)) delete comparable.tow[key];
+      }
+    }
+    for (const key of ["bootstrapId", "build"]) {
+      if (!owns(original_, key)) delete comparable[key];
+    }
+    try {
+      if (!equalJsonData(original_, comparable)) {
+        return { ok: false, reason: "migration-altered-existing-mechanics" };
+      }
+    } catch {
+      return { ok: false, reason: "unverifiable-payload" };
+    }
+  }
+
   return { ok: true, reason: null };
 }
 
 /**
  * The safe upgrade path: migrate, verify, and only then hand back something writable.
  *
- * On any failure the original payload is returned unchanged, so a bad migration degrades
- * to "campaign still loads on the old shape" rather than to a damaged save.
+ * On failure the original payload is returned unchanged only for diagnostics or an
+ * explicit recovery/export path. It is never writable or safe to hydrate as current.
  */
 export function upgradeCampaignPayload(state) {
   const migrated = migrateCampaignState(state);

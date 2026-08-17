@@ -99,6 +99,43 @@ describe("narrator assassination authority", () => {
     expect(policy.allowedEffects).not.toContain("start_combat");
   });
 
+  it("exposes no legacy assassination surface for a contaminated Tower archetype", () => {
+    const state = assassinationState();
+    state.character = {
+      ...state.character,
+      progressionModel: "tow-archetype",
+      abilities: [
+        { id: "execute", tier: "rare" },
+        { id: "firebolt", tier: "rare" },
+        { id: "blood-siphon", tier: "rare" },
+        { id: "haste", tier: "rare" },
+        { id: "gate", tier: "legendary" },
+      ],
+      progression: {
+        professions: [{
+          professionId: "sorcerer",
+          paths: { "stale-sorcerer-track": 20 },
+          choices: { signatureSpellId: "firebolt" },
+          metamagic: ["quickened-signature"],
+        }],
+      },
+    };
+    state.world.codex.characters.wanderer = {
+      ...state.world.codex.characters.wanderer,
+      ...state.character,
+      worn: ["iron-dagger"],
+    };
+
+    expect(narratorAssassinationAttemptCapabilities(state, ["mark"])).toEqual({});
+    expect(narratorAssassinationCapabilities(state, ["mark"])).toEqual({});
+
+    const projection = buildNarratorProjection(state);
+    expect(projection.assassinationAttempts).toEqual({});
+    expect(projection.assassinationTargets).toEqual({});
+    expect(projection.context).not.toContain("mark:basic");
+    expect(projection.context).not.toContain("mark:execute");
+  });
+
   it("fails closed for absent, incomplete, already-dead, and protected targets", () => {
     const state = assassinationState();
     const current = state.world.currentTile;

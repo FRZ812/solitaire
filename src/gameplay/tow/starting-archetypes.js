@@ -427,9 +427,6 @@ export function characterSetupForArchetype(draft) {
       keepsakeFamily: keepsake.family,
       keepsakeRarity: keepsake.rarity,
     },
-    // World progression remains a compatibility shell. Combat power comes from the
-    // base-stat chassis, five-action build, and equipment rather than character level.
-    level: 1,
   };
 }
 

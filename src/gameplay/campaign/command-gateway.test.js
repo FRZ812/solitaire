@@ -402,6 +402,23 @@ describe("purchases, party and items", () => {
     expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "racial" })), "progression_focus").status)
       .toBe(INTENT_STATUS.APPLIED);
   });
+
+  it("refuses every legacy growth steer for an archetype character", () => {
+    const tow = rich({
+      character: {
+        ...rich().character,
+        progressionModel: "tow-archetype",
+        combatArchetypeId: "arctic-knight",
+      },
+    });
+    const result = resolveNarratorIntents(tow, turnWith({ progression_focus: "racial" }));
+
+    expect(receiptFor(result, "progression_focus")).toMatchObject({
+      status: INTENT_STATUS.REFUSED,
+      reason: "progression-retired-for-archetype",
+    });
+    expect(result.turn.progression_focus).toBeNull();
+  });
 });
 
 describe("the map", () => {

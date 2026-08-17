@@ -312,6 +312,9 @@ const ENFORCED = Object.freeze({
   /** Steers growth, and the only steer the progression system understands is racial. */
   progression_focus(state, value) {
     if (value === null || value === undefined) return allow();
+    if (state?.character?.progressionModel === "tow-archetype") {
+      return refuse("progression-retired-for-archetype");
+    }
     if (value !== "racial") return refuse("unknown-progression-focus", { asked: value });
     return allow();
   },

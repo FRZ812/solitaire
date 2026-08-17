@@ -176,11 +176,15 @@ describe("one atomic modular-archetype start", () => {
       portraitKey: archetype.character.portraitKey,
       towBaseStats: archetype.baseStats,
     });
+    expect(built.character).not.toHaveProperty("progression");
+    expect(built.character).not.toHaveProperty("level");
     expect(built.world.codex.characters.wanderer).toMatchObject({
       portraitKey: archetype.character.portraitKey,
       towBaseStats: archetype.baseStats,
       worn,
     });
+    expect(built.world.codex.characters.wanderer).not.toHaveProperty("progression");
+    expect(built.world.codex.characters.wanderer).not.toHaveProperty("level");
     expect(built.mechanics.bootstrapOrigin).toBe("archetype");
     expect(built.mechanics.build).toEqual(compiled.receipt.build);
   });
@@ -231,7 +235,12 @@ describe("one atomic modular-archetype start", () => {
         legacyArchetypeId: archetype.legacyId,
       });
       expect(setup).not.toHaveProperty("templateId");
-      expect(setup.level).toBe(1);
+      expect(setup).not.toHaveProperty("level");
+      expect(setup).not.toHaveProperty("progression");
+      expect(setup).not.toHaveProperty("professionPlan");
+      expect(setup).not.toHaveProperty("profession_plan");
+      expect(setup).not.toHaveProperty("signatureSpell");
+      expect(setup).not.toHaveProperty("metamagic");
       expect(setup.progressionModel).toBe("tow-archetype");
       const types = archetype.build.skills.map((id) => getSkill(id).abilityType);
       expect(types).toHaveLength(5);
@@ -252,6 +261,12 @@ describe("one atomic modular-archetype start", () => {
         .filter((id) => classifyLegacyAbilityGrant(id) === "combat");
 
       expect(leaked, archetype.id).toEqual([]);
+      for (const character of [built.character, built.world.codex.characters.wanderer]) {
+        for (const key of [
+          "progression", "level", "professionPlan", "profession_plan",
+          "signatureSpell", "signature_spell", "metamagic", "metamagicIds", "metamagic_ids",
+        ]) expect(character, `${archetype.id}:${key}`).not.toHaveProperty(key);
+      }
       if (archetype.id === "vampire") {
         expect(built.character.abilities.some((ability) => ability.id === "blood-siphon")).toBe(false);
       }

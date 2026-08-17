@@ -9,7 +9,12 @@
 
 import { normalizeConditions } from "../../data/conditions.js";
 import { XP } from "../../data/proficiencies.js";
-import { advanceProgression, earnedLevelGrowthText } from "../../engine/progression.js";
+import {
+  advanceProgression,
+  earnedLevelGrowthText,
+  stripTowLegacyProgression,
+  usesLegacyCharacterProgression,
+} from "../../engine/progression.js";
 import { cloneJsonData } from "../kernel/json-data.js";
 import { settleCombatItems, spentCombatItems } from "./combat-items.js";
 
@@ -87,6 +92,8 @@ export function settleTowEncounter(state, encounter, context = {}) {
   } catch {
     return rejected("invalid-tow-settlement-campaign-state", state);
   }
+  const usesLegacyProgression = usesLegacyCharacterProgression(character);
+  if (!usesLegacyProgression) stripTowLegacyProgression(character);
 
   const player = encounter.actors[encounter.playerId];
   // A defeat leaves the player alive at one vitality — losing a fight is a setback the
@@ -114,7 +121,10 @@ export function settleTowEncounter(state, encounter, context = {}) {
     character.conditions = normalizeConditions([...conditions]);
   }
 
-  const gains = proficiencyGains(encounter, proficiencyId);
+  // The Tower archetype model owns its combat growth. Feeding these encounters back into
+  // the retired proficiency/level ledger would create a second, invisible advancement
+  // system even though the old progression screen is no longer mounted.
+  const gains = usesLegacyProgression ? proficiencyGains(encounter, proficiencyId) : {};
   character.proficiencies = { ...(character.proficiencies || {}) };
   for (const [id, amount] of Object.entries(gains)) {
     character.proficiencies[id] = (character.proficiencies[id] || 0) + amount;
@@ -123,7 +133,7 @@ export function settleTowEncounter(state, encounter, context = {}) {
   // Earning a level has to say so. The old combat result emitted this growth beat, and a
   // level that arrived silently would leave the player with unspent allocations and no
   // idea they had them.
-  const progress = progressionXp > 0 && character.progressionModel !== "tow-archetype"
+  const progress = progressionXp > 0 && usesLegacyProgression
     ? advanceProgression(character, progressionXp)
     : null;
   const growthText = progress ? earnedLevelGrowthText(progress) : null;
@@ -171,14 +181,21 @@ export function settleTowEncounter(state, encounter, context = {}) {
   // foe in this fight was a codex person — otherwise a level earned against nameless
   // bandits leaves the projection stale.
   const wanderer = characters.wanderer;
-  if (wanderer && character.progression) {
-    characters.wanderer = {
+  if (wanderer) {
+    const projection = {
       ...wanderer,
       profession: character.profession,
       archetype: character.archetype,
       attributes: { ...(character.attributes || {}) },
-      progression: cloneJsonData(character.progression),
+      ...(character.progressionModel ? { progressionModel: character.progressionModel } : {}),
+      ...(character.combatArchetypeId ? { combatArchetypeId: character.combatArchetypeId } : {}),
+      ...(character.towBaseStats ? { towBaseStats: cloneJsonData(character.towBaseStats) } : {}),
+      ...(usesLegacyProgression && character.progression
+        ? { progression: cloneJsonData(character.progression) }
+        : {}),
     };
+    if (!usesLegacyProgression) stripTowLegacyProgression(projection, { forceTow: true });
+    characters.wanderer = projection;
     codexTouched = true;
   }
   if (codexTouched) {

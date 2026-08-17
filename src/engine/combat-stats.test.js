@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   weaponCategory, armorClass, itemCombatStats, weaponHands,
-  equipSlot, slotCapacity, SLOTS, deriveCombatStats,
+  equipSlot, slotCapacity, SLOTS, collectEquippedPassives, deriveCombatStats,
 } from "./combat-stats.js";
 import { enemyFromNPC } from "../data/bestiary.js";
 import { attributeThresholdMods } from "../data/attribute-tiers.js";
@@ -114,5 +114,27 @@ describe("expanded attribute combat bounds", () => {
 
     expect(enemy.resolveMax).toBe(resolvePoolForMind(90) + thresholdBonus);
     expect(enemy.resolveMax).toBe(enemy.resolve);
+  });
+});
+
+describe("Tower progression passive firewall", () => {
+  const codex = { characters: { wanderer: { worn: [] } }, items: {} };
+  const contaminated = {
+    race: "human",
+    progression: {
+      racial: { raceId: "human", paths: { "stale-human-track": 6 } },
+    },
+  };
+
+  it("keeps a stale racial progression passive out of Tower combat stats", () => {
+    const legacy = collectEquippedPassives(contaminated, codex);
+    const tower = collectEquippedPassives({
+      ...contaminated,
+      progressionModel: "tow-archetype",
+    }, codex);
+
+    expect(legacy.enabled).toContainEqual(expect.objectContaining({ id: "adaptable" }));
+    expect(tower.enabled).toEqual([]);
+    expect(tower.disabled).toEqual([]);
   });
 });

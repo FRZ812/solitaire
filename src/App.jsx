@@ -96,7 +96,11 @@ import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
-import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
+import {
+  emptyMechanicsSidecar,
+  hasMechanicsSidecar,
+  upgradeCampaignPayload,
+} from "./engine/campaign-migration.js";
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import { isTowBuild } from "./gameplay/tow/build.js";
@@ -303,10 +307,17 @@ function convertLegacyV10ToHex(legacy) {
   return out;
 }
 
-function prepareCampaignState(loaded) {
+export function prepareCampaignState(loaded) {
+  const upgraded = upgradeCampaignPayload(loaded);
+  if (!upgraded.ok || !upgraded.writable) {
+    const error = new Error(`Campaign migration failed: ${upgraded.reason || "unwritable-payload"}`);
+    error.code = "CAMPAIGN_MIGRATION_FAILED";
+    error.reason = upgraded.reason || "unwritable-payload";
+    throw error;
+  }
   // Pull forward any codex entries (races, professions, named NPCs) added to
   // initial-state.js since the snapshot was written.
-  const migrated = migrateCodex(loaded);
+  const migrated = migrateCodex(upgraded.state);
   if (migrated?.character) {
     recomputeVitalityMax(migrated.character);
     recomputeResolveMax(migrated.character);
@@ -1025,7 +1036,7 @@ export function Solitaire() {
               setCampaignBusy(true);
               try {
                 const charName = legacy.character.name || "Imported save";
-                const migrated = convertLegacyV10ToHex(legacy);
+                const migrated = prepareCampaignState(convertLegacyV10ToHex(legacy));
                 await saveCampaign(null, migrated, { name: charName });
                 await storeDel(STORAGE_KEY);
                 const refreshed = await listCampaigns();
@@ -1636,6 +1647,7 @@ export function Solitaire() {
   // school, specialization, signature spell, or metamagic for the player.
   function handleProgressionChoice(professionId, choiceId, optionId) {
     setState((current) => {
+      if (current.character?.progressionModel === "tow-archetype") return current;
       const pending = pendingProgressionChoices(current.character).find((entry) => (
         entry.id === choiceId && (!professionId || entry.professionId === professionId)
       ));

@@ -157,12 +157,44 @@ describe("applyBeat — Tower legacy ability grant gate", () => {
   });
 
   it("recognizes a Tower model declared by the same creation beat", () => {
-    const next = applyBeat(makeInitialState(), {
+    const base = makeInitialState();
+    base.character.progression = { version: 3, paths: { legacy: 25 } };
+    base.character.level = 25;
+    base.character.professionPlan = [{ profession: "rogue", levels: 25 }];
+    base.character.signatureSpellId = "fireball";
+    base.character.metamagicIds = ["quickened-signature"];
+    base.character.abilities = [
+      { id: "power-strike", tier: "rare" },
+      { id: "gate", tier: "legendary" },
+    ];
+    base.world.codex.characters.wanderer = {
+      ...base.world.codex.characters.wanderer,
+      progression: { version: 3, paths: { legacy: 25 } },
+      level: 25,
+      profession_plan: [{ profession: "rogue", levels: 25 }],
+      signature_spell: "fireball",
+      metamagic: ["quickened-signature"],
+      abilities: [
+        { id: "power-strike", tier: "rare" },
+        { id: "gate", tier: "legendary" },
+      ],
+    };
+    const next = applyBeat(base, {
       character_setup: {
         name: "Veyra",
         race: "vampire",
         profession: "rogue",
+        archetype: "ranger",
+        combatArchetypeId: "ranger",
         progressionModel: "tow-archetype",
+        towBaseStats: { hp: 96, resolve: 8 },
+        attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+        level: 25,
+        racial_levels: 0,
+        profession_plan: [{ profession: "rogue", specialization: "ranger", levels: 25 }],
+        signature_spell: "fireball",
+        metamagic: ["quickened-signature"],
+        progression: { malformed: "must never be normalized for Tower" },
         abilities: ["power-strike", "invented-cut", "haste", "gate"],
       },
       discoveries: {
@@ -181,6 +213,29 @@ describe("applyBeat — Tower legacy ability grant gate", () => {
     expect(next.world.codex.skills).toHaveProperty("night-court-etiquette");
     expect(next.world.codex.skills).not.toHaveProperty("firebolt");
     expect(next.world.codex.spells).not.toHaveProperty("firebolt");
+    expect(next.character).toMatchObject({
+      profession: "rogue",
+      archetype: "ranger",
+      combatArchetypeId: "ranger",
+      progressionModel: "tow-archetype",
+      towBaseStats: { hp: 96, resolve: 8 },
+      attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+    });
+    expect(next.world.codex.characters.wanderer).toMatchObject({
+      profession: "rogue",
+      archetype: "ranger",
+      combatArchetypeId: "ranger",
+      progressionModel: "tow-archetype",
+      towBaseStats: { hp: 96, resolve: 8 },
+      attributes: { body: 6, reflex: 8, vigor: 5, mind: 3, wit: 7, presence: 4 },
+      abilities: [{ id: "gate", tier: "legendary" }],
+    });
+    for (const character of [next.character, next.world.codex.characters.wanderer]) {
+      for (const key of [
+        "progression", "level", "professionPlan", "profession_plan",
+        "signatureSpellId", "signature_spell", "metamagicIds", "metamagic",
+      ]) expect(character).not.toHaveProperty(key);
+    }
   });
 
   it("leaves the legacy creation path unchanged", () => {

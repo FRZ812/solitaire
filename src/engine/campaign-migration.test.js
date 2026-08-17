@@ -10,6 +10,7 @@ import {
   CURRENT_CAMPAIGN_SCHEMA,
   emptyMechanicsSidecar,
   hasMechanicsSidecar,
+  hasCurrentMechanicsState,
   isReadableCampaignSchema,
   migrateCampaignState,
   READABLE_CAMPAIGN_SCHEMAS,
@@ -50,6 +51,24 @@ describe("migration is pure and idempotent", () => {
     expect(migrated.ok).toBe(true);
     expect(hasMechanicsSidecar(migrated.state)).toBe(true);
     expect(migrated.state.mechanics).toEqual(emptyMechanicsSidecar());
+    expect(hasCurrentMechanicsState(migrated.state)).toBe(true);
+  });
+
+  it("distinguishes a complete current sidecar from partial or malformed state cheaply", () => {
+    const current = migrateCampaignState(legacyCampaign()).state;
+    expect(hasCurrentMechanicsState(current)).toBe(true);
+
+    const partial = JSON.parse(JSON.stringify(current));
+    delete partial.mechanics.tow.formation;
+    expect(hasCurrentMechanicsState(partial)).toBe(false);
+
+    const malformed = JSON.parse(JSON.stringify(current));
+    malformed.mechanics.tow.readiness = [];
+    expect(hasCurrentMechanicsState(malformed)).toBe(false);
+
+    const malformedBuild = JSON.parse(JSON.stringify(current));
+    malformedBuild.mechanics.build = "forged";
+    expect(hasCurrentMechanicsState(malformedBuild)).toBe(false);
   });
 
   it("does not mutate the payload it migrates", () => {
@@ -73,6 +92,80 @@ describe("migration is pure and idempotent", () => {
     const again = migrateCampaignState(state).state;
     expect(again.mechanics.bootstrapId).toBe(receipt.id);
     expect(again.mechanics.build).toEqual(receipt.build);
+  });
+
+  it("adds only absent Tower defaults to a partial v1 sidecar", () => {
+    const state = legacyCampaign();
+    state.mechanics = {
+      version: 1,
+      bootstrapId: "0123456789abcdef",
+      build: { version: 1, marker: "keep-build" },
+      futureKey: { marker: "keep-extension" },
+      tow: {
+        activeCombat: { sessionId: "keep-combat" },
+        readiness: { strike: 2 },
+      },
+    };
+
+    const migrated = migrateCampaignState(state);
+
+    expect(migrated.ok).toBe(true);
+    expect(migrated.state.mechanics).toMatchObject({
+      bootstrapId: "0123456789abcdef",
+      build: { version: 1, marker: "keep-build" },
+      futureKey: { marker: "keep-extension" },
+      tow: {
+        activeCombat: { sessionId: "keep-combat" },
+        readiness: { strike: 2 },
+        companionReadiness: {},
+        formation: emptyMechanicsSidecar().tow.formation,
+      },
+    });
+    expect(verifyMigrationReadBack(state, migrated.state)).toEqual({ ok: true, reason: null });
+  });
+
+  it("fails closed instead of replacing an unknown mechanics version", () => {
+    const state = legacyCampaign();
+    const futureMechanics = {
+      version: 2,
+      bootstrapId: "future-build",
+      build: { version: 2 },
+      tow: { activeCombat: { sessionId: "future-combat" } },
+    };
+    state.mechanics = futureMechanics;
+
+    expect(migrateCampaignState(state)).toMatchObject({
+      ok: false,
+      reason: "unsupported-mechanics-sidecar",
+      state: null,
+    });
+    const upgraded = upgradeCampaignPayload(state);
+    expect(upgraded).toMatchObject({ ok: false, writable: false, state });
+    expect(state.mechanics).toEqual(futureMechanics);
+  });
+
+  it("fails closed instead of replacing an invalid existing Tower slot or formation", () => {
+    const invalidTow = legacyCampaign();
+    invalidTow.mechanics = { ...emptyMechanicsSidecar(), tow: "future-slot" };
+    expect(migrateCampaignState(invalidTow)).toMatchObject({
+      ok: false,
+      reason: "invalid-tow-mechanics",
+    });
+
+    const invalidFormation = legacyCampaign();
+    invalidFormation.mechanics = emptyMechanicsSidecar();
+    invalidFormation.mechanics.tow.formation = { version: 2, cells: Array(9).fill(null) };
+    expect(migrateCampaignState(invalidFormation)).toMatchObject({
+      ok: false,
+      reason: "unsupported-saved-formation",
+    });
+
+    const invalidBuild = legacyCampaign();
+    invalidBuild.mechanics = { ...emptyMechanicsSidecar(), build: "forged" };
+    expect(migrateCampaignState(invalidBuild)).toMatchObject({
+      ok: false,
+      reason: "invalid-build-mechanics",
+    });
   });
 
   it("quarantines a legacy active session rather than converting or discarding it", () => {
@@ -118,6 +211,19 @@ describe("read-back verification", () => {
       .toMatchObject({ ok: false, reason: "migration-invented-a-build" });
   });
 
+  it("catches a migration that altered an existing build or active combat", () => {
+    const original = migrateCampaignState(legacyCampaign()).state;
+    original.mechanics.tow.activeCombat = { sessionId: "combat-1" };
+    const tampered = JSON.parse(JSON.stringify(original));
+    tampered.mechanics.build = { forged: true };
+    tampered.mechanics.tow.activeCombat.sessionId = "combat-2";
+
+    expect(verifyMigrationReadBack(original, tampered)).toMatchObject({
+      ok: false,
+      reason: "migration-altered-existing-mechanics",
+    });
+  });
+
   it("refuses a missing payload rather than assuming success", () => {
     expect(verifyMigrationReadBack(null, {})).toMatchObject({ ok: false, reason: "missing-payload" });
     expect(verifyMigrationReadBack({}, null)).toMatchObject({ ok: false, reason: "missing-payload" });
@@ -134,7 +240,7 @@ describe("the safe upgrade path", () => {
   it("hands back the original, unwritable, when the payload is not a campaign", () => {
     const bad = "not-a-campaign";
     const upgraded = upgradeCampaignPayload(bad);
-    // Degrading to "loads on the old shape" is the correct failure; a damaged save is not.
+    // Preserve evidence for diagnostics/recovery, but never authorize hydration or a write.
     expect(upgraded).toMatchObject({ ok: false, writable: false });
     expect(upgraded.state).toBe(bad);
   });

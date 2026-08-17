@@ -15,7 +15,14 @@ import { proficiencyDef } from "../data/proficiencies.js";
 import { withoutSelectedPlayableCharacter } from "../data/playable-roster.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { ATTRIBUTE_CAP } from "../config.js";
-import { createProgression, inferProgressionLevel, normalizeCharacterProgression, progressionLevel } from "./progression.js";
+import {
+  createProgression,
+  inferProgressionLevel,
+  normalizeCharacterProgression,
+  progressionLevel,
+  stripTowLegacyProgression,
+  usesLegacyCharacterProgression,
+} from "./progression.js";
 import { canonicalProfessionId, isBroadProfessionName } from "../data/progression-paths.js";
 import { sanitizeProfessionPlan } from "./discoveries.js";
 
@@ -67,44 +74,47 @@ export function applyCreation({ beat, character, world, created }) {
       }
       character.proficiencies = proficiencies;
     }
-    // Ready-made builds bring an authored stack; freeform creation receives a
-    // deterministic level appropriate to the described attribute magnitude.
-    const suppliedLevel = cs.progression ? progressionLevel(cs.progression) : 0;
-    const declaredLevel = Number.isFinite(Number(cs.level)) ? Number(cs.level) : 0;
-    const racialLevels = Math.max(0, Math.min(30, Math.floor(Number(cs.racial_levels ?? cs.racialLevels) || 0)));
-    const plannedProfessionLevels = professionPlan.reduce((sum, entry) => sum + entry.levels, 0);
-    const plannedLevel = racialLevels + plannedProfessionLevels;
-    const startingLevel = suppliedLevel || (professionPlan.length ? plannedLevel : declaredLevel)
-      || inferProgressionLevel({ ...character, profession: professionId });
-    character.progression = createProgression({
-      professionId,
-      archetypeId: archetype || cs.progression?.archetypeId,
-      raceId: cs.race || character.race || "human",
-      level: startingLevel,
-      ...(professionPlan.length ? {
-        professions: professionPlan.map((entry) => ({
-          professionId: entry.profession,
-          specializationId: entry.specialization || null,
-          levels: entry.levels,
-        })),
-        racialLevels,
-      } : {}),
-      signatureSpellId: cs.signature_spell || cs.signatureSpell || null,
-      metamagicIds: Array.isArray(cs.metamagic)
-        ? cs.metamagic
-        : Array.isArray(cs.metamagic_ids) ? cs.metamagic_ids : [],
-      xp: cs.progression?.xp,
-    });
-    character.archetype = archetype || character.progression.archetypeId;
-    normalizeCharacterProgression(character, {
-      // A TOW archetype is deliberately level-free: its authored base attributes are part
-      // of the selected chassis, while gear/fusions supply the power band. The legacy
-      // progression record remains only as a world-system compatibility shell and must not
-      // shrink that chassis to the level-one envelope.
-      enforceLevelAttributeScale: cs.progressionModel !== "tow-archetype",
-      preserveValidAttributeShape: true,
-    });
-    const usesTowerProgression = character.progressionModel === "tow-archetype";
+    const usesTowerProgression = !usesLegacyCharacterProgression(character);
+    if (usesTowerProgression) {
+      // Tower builds own their combat growth outright. Do not create a dormant
+      // legacy level graph: even a compatibility shell becomes live again when
+      // a generic normalize, summary, or XP path sees it later.
+      stripTowLegacyProgression(character);
+    } else {
+      // Ready-made builds bring an authored stack; freeform creation receives a
+      // deterministic level appropriate to the described attribute magnitude.
+      const suppliedLevel = cs.progression ? progressionLevel(cs.progression) : 0;
+      const declaredLevel = Number.isFinite(Number(cs.level)) ? Number(cs.level) : 0;
+      const racialLevels = Math.max(0, Math.min(30, Math.floor(Number(cs.racial_levels ?? cs.racialLevels) || 0)));
+      const plannedProfessionLevels = professionPlan.reduce((sum, entry) => sum + entry.levels, 0);
+      const plannedLevel = racialLevels + plannedProfessionLevels;
+      const startingLevel = suppliedLevel || (professionPlan.length ? plannedLevel : declaredLevel)
+        || inferProgressionLevel({ ...character, profession: professionId });
+      character.progression = createProgression({
+        professionId,
+        archetypeId: archetype || cs.progression?.archetypeId,
+        raceId: cs.race || character.race || "human",
+        level: startingLevel,
+        ...(professionPlan.length ? {
+          professions: professionPlan.map((entry) => ({
+            professionId: entry.profession,
+            specializationId: entry.specialization || null,
+            levels: entry.levels,
+          })),
+          racialLevels,
+        } : {}),
+        signatureSpellId: cs.signature_spell || cs.signatureSpell || null,
+        metamagicIds: Array.isArray(cs.metamagic)
+          ? cs.metamagic
+          : Array.isArray(cs.metamagic_ids) ? cs.metamagic_ids : [],
+        xp: cs.progression?.xp,
+      });
+      character.archetype = archetype || character.progression.archetypeId;
+      normalizeCharacterProgression(character, {
+        enforceLevelAttributeScale: true,
+        preserveValidAttributeShape: true,
+      });
+    }
     // Grant any starting abilities the concept calls for — martial techniques, or
     // spells if the player explicitly built a magical character. Accepts an
     // `abilities` array (ids or {id,tier}) and/or a legacy single `ability`.
@@ -168,7 +178,9 @@ export function applyCreation({ beat, character, world, created }) {
       origin: cs.origin || w.origin,
       profession: professionId,
       archetype: character.archetype || w.archetype,
-      progression: { ...character.progression, paths: { ...character.progression.paths } },
+      ...(!usesTowerProgression ? {
+        progression: { ...character.progression, paths: { ...character.progression.paths } },
+      } : {}),
       gender: cs.gender ?? w.gender,
       age: cs.age != null ? cs.age : w.age,
       agingMode: cs.agingMode ?? w.agingMode ?? "mortal",
@@ -193,6 +205,7 @@ export function applyCreation({ beat, character, world, created }) {
       // knowledge_updates before the final sheet repeats it — don't list it twice.
       knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
+    if (usesTowerProgression) stripTowLegacyProgression(merged, { forceTow: true });
     const characters = withoutSelectedPlayableCharacter(
       { ...world.codex.characters, wanderer: merged },
       merged.templateId,
