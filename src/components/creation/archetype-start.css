@@ -1052,6 +1052,37 @@
   text-transform: uppercase;
 }
 
+.ability-tactical-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: 2px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.ability-tactical-meta__cost,
+.ability-tactical-meta__target,
+.ability-tactical-meta__action,
+.ability-tactical-meta__role,
+.ability-tactical-meta__join,
+.ability-tactical-meta__separator {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ability-tactical-meta__roles {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
+.ability-tactical-meta__separator {
+  padding: 0 2px;
+}
+
 .ability-swap-picker__change {
   display: flex;
   align-items: center;

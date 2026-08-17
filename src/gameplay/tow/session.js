@@ -26,11 +26,9 @@ import { createRng, nextFloat } from "../kernel/rng.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createTowEncounter, isTowEncounter } from "./encounter.js";
 import { normalizeFormation } from "./formation.js";
+import { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
 
-export const TOW_SESSION_VERSION = 1;
-
-/** Pinned on every session: a release may not reinterpret a fight already in progress. */
-export const TOW_RULESET_ID = "solitaire-tow-v1";
+export { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
 
 /** The generator behind every stream. Bumping this invalidates replay on purpose. */
 export const TOW_RNG_VERSION = "mulberry32-v1";
