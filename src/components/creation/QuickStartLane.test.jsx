@@ -215,6 +215,8 @@ describe("the simple grid-to-preview flow", () => {
     const loadoutEditor = details.querySelector('[aria-label="Selectable loadout"]');
     expect(loadoutEditor.querySelectorAll(".ability-swap-picker__trigger")).toHaveLength(5);
     expect(loadoutEditor.querySelector("select")).toBeNull();
+    expect(loadoutEditor.querySelector(".ability-swap-picker__trigger-uses").textContent)
+      .toContain("No Resolve · Damage · One enemy");
 
     const allyPicker = details.querySelector('[role="combobox"][aria-label="Allied formation"]');
     await click(allyPicker);
@@ -240,6 +242,28 @@ describe("the simple grid-to-preview flow", () => {
       PRACTICE_SCENARIOS[1].id,
       PRACTICE_ALLY_GROUPS[1].id,
     ]]);
+  });
+
+  it("keeps the longest multi-role ability metadata structured and complete", async () => {
+    const mounted = await render(<ControlledStart />);
+    await click(mounted.querySelectorAll(".character-choice-card")[10]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+
+    const editor = mounted.querySelector('[aria-label="Selectable loadout"]');
+    const triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
+    await click(triggers[2]);
+    const option = document.querySelector('[data-skill-id="vampire-endless-will"]');
+    const metadata = option?.querySelector(".ability-swap-picker__option-meta");
+
+    expect(metadata).toBeTruthy();
+    expect(metadata.classList.contains("ability-tactical-meta")).toBe(true);
+    expect(metadata.querySelectorAll(".ability-tactical-meta__role")).toHaveLength(3);
+    expect(metadata.querySelector(".ability-tactical-meta__cost").textContent).toBe("4 Resolve");
+    expect(metadata.querySelector(".ability-tactical-meta__target").textContent)
+      .toBe("One party member");
+    expect(metadata.textContent)
+      .toBe("4 Resolve · Guard / control + Empower + Cleanse · One party member · uses action");
+    expect(metadata.getAttribute("aria-label")).toBe(metadata.textContent);
   });
 
   it("supports keyboard selection in the custom enemy formation picker", async () => {

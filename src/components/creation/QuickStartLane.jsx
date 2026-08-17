@@ -18,6 +18,10 @@ import {
   describeCharacterAbilityEffect,
 } from "../../gameplay/tow/character-abilities.js";
 import {
+  abilityProfile,
+  abilityRoleLabel,
+} from "../../gameplay/tow/ability-profile.js";
+import {
   generalAbilityIds,
   getSkill,
   resolveCost,
@@ -122,6 +126,52 @@ const PRACTICE_SLOT_LABELS = Object.freeze([
 function abilityResolveLabel(definition, rank = 1) {
   const cost = resolveCost(definition.id, rank);
   return cost > 0 ? `${cost} Resolve` : "No Resolve";
+}
+
+function abilityTargetLabel(targeting) {
+  if (targeting.anchorSide === "self") {
+    return targeting.footprint === "all" ? "All combatants" : "Self";
+  }
+  const ally = targeting.anchorSide === "ally";
+  const singular = ally ? "party member" : "enemy";
+  const adjective = ally ? "allied" : "enemy";
+  if (targeting.footprint === "single") return `One ${singular}`;
+  if (targeting.footprint === "all") return ally ? "All allies" : "All enemies";
+  if (targeting.footprint === "row") return `${adjective} row`;
+  if (targeting.footprint === "column") return `${adjective} column`;
+  if (targeting.footprint === "cross-short") return `Nearby ${adjective} cross`;
+  return `Full ${adjective} cross`;
+}
+
+function AbilityTacticalMeta({ definition, rank = 1, actionLabel = null, className = "" }) {
+  const profile = abilityProfile(definition, rank);
+  const roleLabels = profile.roles.map((role) => abilityRoleLabel(role, definition, rank));
+  const roleText = roleLabels.join(" + ") || "No active effect";
+  const cost = abilityResolveLabel(definition, rank);
+  const target = abilityTargetLabel(profile.targeting);
+  const fullLabel = [cost, roleText, target, actionLabel].filter(Boolean).join(" · ");
+  return (
+    <span className={`ability-tactical-meta ${className}`.trim()} aria-label={fullLabel}>
+      <span className="ability-tactical-meta__cost" aria-hidden="true">{cost}</span>
+      <span className="ability-tactical-meta__separator" aria-hidden="true"> · </span>
+      <span className="ability-tactical-meta__roles" aria-hidden="true">
+        {roleLabels.length > 0 ? roleLabels.map((label, index) => (
+          <React.Fragment key={`${profile.roles[index]}-${label}`}>
+            {index > 0 ? <span className="ability-tactical-meta__join"> + </span> : null}
+            <span className="ability-tactical-meta__role">{label}</span>
+          </React.Fragment>
+        )) : <span className="ability-tactical-meta__role">No active effect</span>}
+      </span>
+      <span className="ability-tactical-meta__separator" aria-hidden="true"> · </span>
+      <span className="ability-tactical-meta__target" aria-hidden="true">{target}</span>
+      {actionLabel ? (
+        <>
+          <span className="ability-tactical-meta__separator" aria-hidden="true"> · </span>
+          <span className="ability-tactical-meta__action" aria-hidden="true">{actionLabel}</span>
+        </>
+      ) : null}
+    </span>
+  );
 }
 
 function AbilitySwapPicker({
@@ -288,9 +338,12 @@ function AbilitySwapPicker({
             <small>{titleCase(rarity)}</small>
           </span>
           <span className="ability-swap-picker__trigger-summary">{selectedSummary}</span>
-          <span className="ability-swap-picker__trigger-uses">
-            {abilityResolveLabel(selected, selectedRank)}{selected.consumesTurn ? "" : " · swift"}
-          </span>
+          <AbilityTacticalMeta
+            className="ability-swap-picker__trigger-uses"
+            definition={selected}
+            rank={selectedRank}
+            actionLabel={selected.consumesTurn ? null : "swift"}
+          />
         </span>
         <span className="ability-swap-picker__change" aria-hidden="true">
           <small>Change</small>
@@ -387,9 +440,12 @@ function AbilitySwapPicker({
                         <small>{titleCase(previewRarity)}</small>
                       </span>
                       <span className="ability-swap-picker__option-summary">{summary}</span>
-                      <span className="ability-swap-picker__option-meta">
-                        {abilityResolveLabel(skill, previewRank)}{skill.consumesTurn ? " · uses action" : " · swift action"}
-                      </span>
+                      <AbilityTacticalMeta
+                        className="ability-swap-picker__option-meta"
+                        definition={skill}
+                        rank={previewRank}
+                        actionLabel={skill.consumesTurn ? "uses action" : "swift action"}
+                      />
                     </span>
                     <span className="ability-swap-picker__availability">
                       {candidate ? "Selected" : equipped ? "Equipped" : unavailable ? `In slot ${unavailableSlot + 1}` : "Available"}
