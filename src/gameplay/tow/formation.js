@@ -11,6 +11,9 @@
 
 export const FORMATION_WIDTH = 3;
 export const FORMATION_CELL_COUNT = FORMATION_WIDTH * FORMATION_WIDTH;
+export const FORMATION_RULES_VERSIONS = Object.freeze([1, 2]);
+export const STATIC_FORMATION_RULES_VERSION = 1;
+export const MOVING_FORMATION_RULES_VERSION = 2;
 export const FORMATION_CELLS = Object.freeze(
   Array.from({ length: FORMATION_CELL_COUNT }, (_, cell) => cell),
 );
@@ -25,6 +28,10 @@ export const FORMATION_FOOTPRINTS = Object.freeze([
 
 const MAX_ACTOR_ID_LENGTH = 256;
 const FOOTPRINT_SET = new Set(FORMATION_FOOTPRINTS);
+
+export function isFormationRulesVersion(value) {
+  return FORMATION_RULES_VERSIONS.includes(value);
+}
 
 function isActorId(value) {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_ACTOR_ID_LENGTH;

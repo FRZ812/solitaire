@@ -46,9 +46,9 @@ function open(formations = undefined) {
 }
 
 describe("formation session compatibility", () => {
-  it("pins custom formations in genesis and rebuilds the same cells", () => {
+  it.each([1, 2])("pins v%s custom formations in genesis and rebuilds the same cells", (version) => {
     const formations = {
-      version: 1,
+      version,
       player: [null, null, "ally-0", null, null, null, null, null, "player-0"],
       enemy: [null, null, "enemy-0", null, null, null, null, null, "enemy-1"],
     };

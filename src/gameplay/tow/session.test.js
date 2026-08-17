@@ -9,6 +9,7 @@ import {
   isTowSession,
   markTowSessionSettled,
   participantIsLethal,
+  sealTowSession,
   towCombatContext,
   towSessionChecksum,
   towStreamEndpoints,
@@ -44,6 +45,7 @@ function open(overrides = {}) {
     enemies: overrides.enemies || [foe()],
     build: { traits: {}, skills: ["strike", "block"], ...overrides.build },
     context: overrides.context,
+    ...(Object.hasOwn(overrides, "formations") ? { formations: overrides.formations } : {}),
     ...(overrides.mode ? { mode: overrides.mode } : {}),
   });
 }
@@ -134,6 +136,40 @@ describe("genesis", () => {
     const second = encounterFromGenesis(session.genesis);
     expect(first).toEqual(second);
     expect(first).toEqual(session.encounter);
+  });
+
+  it("pins moving formation rules in genesis and preserves them on rebuild", () => {
+    const formations = {
+      version: 2,
+      player: [null, null, null, null, null, null, null, null, "wanderer"],
+      enemy: [null, null, "foe-0", null, null, null, null, null, null],
+    };
+    const opened = open({ formations });
+
+    expect(opened.ok).toBe(true);
+    expect(opened.session.genesis.formations).toEqual(formations);
+    expect(opened.session.encounter.formations).toEqual(formations);
+    expect(encounterFromGenesis(opened.session.genesis).formations).toEqual(formations);
+  });
+
+  it("rejects unsupported or mismatched formation rules versions", () => {
+    for (const formations of [null, "v2", [], 42, { version: null }, { version: 3 }]) {
+      expect(open({ formations }), JSON.stringify(formations)).toMatchObject({
+        ok: false,
+        reason: "invalid-session-genesis",
+      });
+    }
+
+    const opened = open({ formations: { version: 2 } }).session;
+    const mismatched = sealTowSession({
+      ...opened,
+      encounter: {
+        ...opened.encounter,
+        formations: { ...opened.encounter.formations, version: 1 },
+      },
+      checksum: null,
+    });
+    expect(isTowSession(mismatched)).toBe(false);
   });
 
   it("holds an empty intent schedule until the telegraph phase fills it", () => {

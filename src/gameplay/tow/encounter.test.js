@@ -150,6 +150,14 @@ describe("starting an encounter", () => {
     expect(() => createTowEncounter({
       seed: "s", player: knight(), enemies: [foe({ id: "arctic-knight" })],
     })).toThrow(/duplicate-actor-id/);
+    for (const formations of [null, "v2", [], 42]) {
+      expect(() => createTowEncounter({
+        seed: "s", player: knight(), enemies: [foe()], formations,
+      }), JSON.stringify(formations)).toThrow(/invalid-formations/);
+    }
+    expect(() => createTowEncounter({
+      seed: "s", player: knight(), enemies: [foe()], formations: { version: null },
+    })).toThrow(/invalid-formation-version/);
   });
 });
 
@@ -758,6 +766,112 @@ describe("ending the turn", () => {
     });
     const after = endTurn(state).state;
     expect(after.events.some((e) => e.type === "enemy-attack")).toBe(true);
+  });
+});
+
+describe("moving formation round boundary", () => {
+  function movingFight(version = 2, enemyOverrides = {}) {
+    return createTowEncounter({
+      seed: `moving-formation-v${version}`,
+      player: knight({ resolveMax: 10, resolve: 10, maxHp: 500 }),
+      allies: [knight({
+        id: "frontliner",
+        name: "Frontliner",
+        resolveMax: 10,
+        resolve: 10,
+        maxHp: 500,
+        build: { traits: {}, skills: ["demon-kick"], runes: [] },
+      })],
+      enemies: [foe({
+        resolveMax: 20,
+        resolve: 20,
+        maxHp: 500,
+        archetypeId: "ranger",
+        build: { traits: {}, skills: ["demon-kick"], runes: [] },
+        ...enemyOverrides,
+      })],
+      build: { traits: {}, skills: ["clocktower-grenade-toss"], runes: [] },
+      formations: {
+        version,
+        player: [
+          "arctic-knight", null, null,
+          null, "frontliner", null,
+          null, null, null,
+        ],
+        enemy: [null, "gatekeeper", null, null, null, null, null, null, null],
+      },
+      intentSchedules: {
+        gatekeeper: { id: "kick-only", steps: [{ id: "kick", attackIds: ["demon-kick"] }] },
+      },
+    });
+  }
+
+  it("reflows once after cadence and explicitly retargets the already-held intent", () => {
+    const state = movingFight();
+    expect(state.intents.gatekeeper.targetId).toBe("arctic-knight");
+    const fromSequence = state.sequence;
+
+    const after = endTurn(state).state;
+    const events = after.events.slice(fromSequence);
+    const movedAt = events.findIndex((event) => event.type === "formation-moved");
+    const retargetedAt = events.findIndex((event) => event.type === "intent-retargeted");
+    const advancedAt = events.findIndex((event) => (
+      event.type === "intent-declared" && event.enemyId === "gatekeeper"
+    ));
+
+    expect(after.round).toBe(2);
+    expect(advancedAt).toBeGreaterThanOrEqual(0);
+    expect(movedAt).toBeGreaterThan(advancedAt);
+    expect(retargetedAt).toBeGreaterThan(movedAt);
+    expect(events[movedAt]).toMatchObject({
+      type: "formation-moved",
+      round: 2,
+      phase: "round-open",
+      moves: [
+        { actorId: "arctic-knight", side: "player", fromCell: 0, toCell: 3 },
+        { actorId: "frontliner", side: "player", fromCell: 4, toCell: 1 },
+      ],
+    });
+    expect(events[retargetedAt]).toMatchObject({
+      type: "intent-retargeted",
+      enemyId: "gatekeeper",
+      fromTargetId: "arctic-knight",
+      targetId: "frontliner",
+    });
+    expect(after.intents.gatekeeper.targetId).toBe("frontliner");
+    expect(after.formations.player[1]).toBe("frontliner");
+    expect(after.formations.player[3]).toBe("arctic-knight");
+    expect(isTowEncounter(after)).toBe(true);
+  });
+
+  it("keeps the same eligible formation static under v1 rules", () => {
+    const state = movingFight(1);
+    const before = structuredClone(state.formations);
+    const after = endTurn(state).state;
+
+    expect(after.formations).toEqual(before);
+    expect(after.events.some((event) => event.type === "formation-moved")).toBe(false);
+    expect(after.events.some((event) => event.type === "intent-retargeted")).toBe(false);
+  });
+
+  it("does not open a movement phase after a terminal hostile window", () => {
+    const state = createTowEncounter({
+      seed: "terminal-before-moving",
+      player: knight({ maxHp: 500, hp: 1 }),
+      enemies: [foe({
+        attacks: [{ id: "execution", name: "Execution", hits: 1, damage: 2_000 }],
+      })],
+      build: { traits: {}, skills: ["clocktower-grenade-toss"], runes: [] },
+      formations: {
+        version: 2,
+        player: ["arctic-knight", null, null, null, null, null, null, null, null],
+        enemy: ["gatekeeper", null, null, null, null, null, null, null, null],
+      },
+    });
+    const after = endTurn(state).state;
+
+    expect(after.phase).toBe("defeat");
+    expect(after.events.some((event) => event.type === "formation-moved")).toBe(false);
   });
 });
 

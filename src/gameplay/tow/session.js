@@ -25,7 +25,11 @@ import { cloneJsonData } from "../kernel/json-data.js";
 import { createRng, nextFloat } from "../kernel/rng.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createTowEncounter, isTowEncounter } from "./encounter.js";
-import { normalizeFormation } from "./formation.js";
+import {
+  STATIC_FORMATION_RULES_VERSION,
+  isFormationRulesVersion,
+  normalizeFormation,
+} from "./formation.js";
 import { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
 
 export { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
@@ -342,7 +346,7 @@ function isGenesis(value) {
     && typeof value.intentSchedules === "object"
     && !Array.isArray(value.intentSchedules)
     && (!current || (() => {
-      if (!value.formations || value.formations.version !== 1) return false;
+      if (!value.formations || !isFormationRulesVersion(value.formations.version)) return false;
       if (Object.keys(value.formations).sort().join(",") !== "enemy,player,version") return false;
       try {
         const playerIds = [value.playerSnapshot.id, ...value.allySnapshots.map((actor) => actor.id)];
@@ -503,6 +507,11 @@ export function isTowSession(value) {
   // forged revision cannot make a stale command look current.
   if (value.commands.length !== value.revision) return false;
   if (!isTowEncounter(value.encounter)) return false;
+  // The rules version is an immutable genesis input even though the live cell arrays move.
+  // A v2 encounter paired with a v1 opening (or the reverse) cannot be reproduced.
+  if (Boolean(value.genesis.formations) !== Boolean(value.encounter.formations)) return false;
+  if (value.genesis.formations
+    && value.genesis.formations.version !== value.encounter.formations.version) return false;
   if (!exactKeys(value.streams, [...TOW_SESSION_STREAMS].sort())) return false;
   if (!TOW_SESSION_STREAMS.every((name) => isRngState(value.streams[name]))) return false;
   if (!optionalIdentifier(value.settlementId)) return false;
@@ -541,6 +550,15 @@ export function createTowSession(input = {}) {
   let genesis;
   try {
     const allySnapshots = input.allies || [];
+    if (input.formations !== undefined && (
+      !input.formations
+      || typeof input.formations !== "object"
+      || Array.isArray(input.formations)
+    )) throw new TypeError("invalid-formations");
+    const formationVersion = Object.hasOwn(input.formations || {}, "version")
+      ? input.formations.version
+      : STATIC_FORMATION_RULES_VERSION;
+    if (!isFormationRulesVersion(formationVersion)) throw new TypeError("invalid-formation-version");
     const playerFormation = normalizeFormation(
       [player.id, ...allySnapshots.map((actor) => actor.id)],
       input.formations?.player || null,
@@ -559,7 +577,7 @@ export function createTowSession(input = {}) {
       allySnapshots,
       enemySnapshots: enemies,
       formations: {
-        version: 1,
+        version: formationVersion,
         player: playerFormation,
         enemy: enemyFormation,
       },
