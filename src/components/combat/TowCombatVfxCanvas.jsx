@@ -15,6 +15,11 @@ function easeOut(value) {
   return 1 - ((1 - t) ** 3);
 }
 
+function smoothstep(value) {
+  const t = clamp(value);
+  return t * t * (3 - (2 * t));
+}
+
 function frameRangeForCue(cue) {
   const authoredRange = cue?.visual?.flipbook?.frameRange;
   if (Array.isArray(authoredRange) && authoredRange.length === 2) {
@@ -31,8 +36,8 @@ function cueDuration(cue, reducedMotion) {
   return Math.max(170, ((end - start + 1) / TOW_COMBAT_FLIPBOOK_FPS) * 1_000);
 }
 
-function anchorForCue(cue, width, height) {
-  const enemy = cue.targetSide === "enemy";
+function anchorForSide(cue, side, width, height) {
+  const enemy = side === "enemy";
   const mobile = width < 620;
   const profile = cue.visual?.profile || {};
   const lane = Number.isFinite(cue.hitIndex) ? cue.hitIndex : 0;
@@ -49,6 +54,32 @@ function anchorForCue(cue, width, height) {
       82,
       Math.min(width * (mobile ? 0.27 : 0.22), height * (mobile ? 0.36 : 0.34), 230),
     ),
+  };
+}
+
+export function combatVfxPositionForCue(cue, width, height, progress = 1) {
+  const target = anchorForSide(cue, cue.targetSide, width, height);
+  const travels = cue.visual?.travel === "source-to-target"
+    && cue.attackerId
+    && cue.targetId
+    && cue.attackerId !== cue.targetId
+    && (cue.targetSide === "enemy" || cue.targetSide === "player");
+  if (!travels) return { ...target, angle: 0, travelProgress: 1 };
+
+  const sourceSide = cue.targetSide === "enemy" ? "player" : "enemy";
+  const source = anchorForSide(cue, sourceSide, width, height);
+  // Reach the target on frame five, leaving frames six through nine anchored to contact
+  // and dissipation instead of letting a projectile grow in place over the victim.
+  const travelProgress = smoothstep(clamp(progress / 0.52));
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const mirror = cue.targetSide === "enemy" ? 1 : -1;
+  return {
+    x: source.x + (dx * travelProgress),
+    y: source.y + (dy * travelProgress),
+    radius: target.radius,
+    angle: Math.atan2(dy, dx) - (mirror < 0 ? Math.PI : 0),
+    travelProgress,
   };
 }
 
@@ -122,7 +153,7 @@ export function drawCombatVfxCue(ctx, cue, image, width, height, progress, {
   const frame = frameAtProgress(cue, progress, reducedMotion);
   const sourceFrameWidth = (image.naturalWidth || image.width) / flipbook.frameCount;
   const sourceFrameHeight = image.naturalHeight || image.height;
-  const anchor = anchorForCue(cue, width, height);
+  const anchor = combatVfxPositionForCue(cue, width, height, reducedMotion ? 1 : progress);
   const authoredScale = clamp(Number(cue.visual?.profile?.scale) || 1, 0.88, 1.12);
   const size = anchor.radius * 2.5 * authoredScale;
   const fade = reducedMotion ? 0.9 : 1 - easeOut((clamp(progress) - 0.82) / 0.18);
@@ -137,6 +168,7 @@ export function drawCombatVfxCue(ctx, cue, image, width, height, progress, {
 
   ctx.save();
   ctx.translate(anchor.x, anchor.y);
+  ctx.rotate(anchor.angle);
   ctx.scale(mirror, 1);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
