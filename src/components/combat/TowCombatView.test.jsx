@@ -576,6 +576,53 @@ describe("compact combat HUD", () => {
     }
   });
 
+  it("cancels a stale forced-window timer and dispatches once under Strict Mode", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+      const enemyId = base.enemyIds[0];
+      const forced = {
+        ...base,
+        actors: {
+          ...base.actors,
+          [enemyId]: {
+            ...base.actors[enemyId],
+            statuses: [...base.actors[enemyId].statuses, { type: "priority", count: 1 }],
+          },
+        },
+      };
+      const onStandDown = vi.fn();
+      container = document.createElement("div");
+      document.body.appendChild(container);
+      root = createRoot(container);
+      await act(async () => root.render(
+        <React.StrictMode>
+          {viewElement(forced, { onStandDown })}
+        </React.StrictMode>,
+      ));
+
+      await act(async () => vi.advanceTimersByTime(450));
+      const revised = { ...forced, sequence: forced.sequence + 1 };
+      await act(async () => root.render(
+        <React.StrictMode>
+          {viewElement(revised, { onStandDown })}
+        </React.StrictMode>,
+      ));
+
+      // The first encounter's timer would have fired here if the revision change had left
+      // it behind. The current revision receives one fresh read hold instead.
+      await act(async () => vi.advanceTimersByTime(451));
+      expect(onStandDown).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(449));
+      expect(onStandDown).toHaveBeenCalledTimes(1);
+      expect(onStandDown).toHaveBeenCalledWith(base.playerId);
+      await act(async () => vi.runAllTimersAsync());
+      expect(onStandDown).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("dispatches one legal target without showing a redundant confirmation", async () => {
     vi.useFakeTimers();
     try {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileCharacterBootstrap } from "./character-bootstrap.js";
-import { dispatchTowCommand } from "./commands.js";
+import { dispatchTowCommand, dispatchTowPlayerAction } from "./commands.js";
 import {
   DEFAULT_PRACTICE_ALLY_GROUP_ID,
   DEFAULT_PRACTICE_SCENARIO_ID,
@@ -98,7 +98,7 @@ describe("the seed is derived, never drawn", () => {
     expect(derivePracticeSeed({ ...base, scenarioId: "the-duellist" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, scenarioVersion: 4 })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, allyGroupId: "field-pair" })).not.toBe(seed);
-    expect(derivePracticeSeed({ ...base, allyGroupVersion: 2 })).not.toBe(seed);
+    expect(derivePracticeSeed({ ...base, allyGroupVersion: 3 })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, draftHash: "def" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, attemptIndex: 1 })).not.toBe(seed);
   });
@@ -121,7 +121,7 @@ describe("authored practice formations", () => {
     expect(DEFAULT_PRACTICE_ALLY_GROUP_ID).toBe("solo");
     expect(getPracticeAllyGroup(DEFAULT_PRACTICE_ALLY_GROUP_ID)?.allies).toHaveLength(0);
     expect(PRACTICE_ALLY_GROUPS.every((group) => (
-      group.version === 1 && group.formation.length === 9
+      group.version === 2 && group.formation.length === 9
     ))).toBe(true);
 
     const pair = getPracticeAllyGroup("field-pair");
@@ -143,6 +143,11 @@ describe("authored practice formations", () => {
       "practice-ally-paladin",
       "practice-ally-ranger",
     ]));
+    expect(trio.formation).toEqual([
+      null, "practice-ally-paladin", null,
+      "wanderer", null, null,
+      null, null, "practice-ally-ranger",
+    ]);
   });
 
   it("opens each group with independent archetype stats, builds, and its exact formation", () => {
@@ -209,7 +214,7 @@ describe("authored practice formations", () => {
     expect(trio.seed).not.toBe(pair.seed);
     expect(trio.session.sessionId).not.toBe(pair.session.sessionId);
     expect(trio.genesisChecksum).not.toBe(pair.genesisChecksum);
-    expect(pair.seed).toContain("field-pair@1");
+    expect(pair.seed).toContain("field-pair@2");
     expect(draftHash(receipt)).toBe(beforeHash);
   });
 
@@ -387,6 +392,55 @@ describe("opening a practice fight", () => {
     expect(verifyTowSession(practice.session)).toMatchObject({ ok: true });
   });
 
+  it("auto-resolves a three-on-three hostile Priority window without spatial intent drift", () => {
+    const practice = createPracticeSession(receiptFor("fighter"), "formation-drill", 0, {
+      allyGroupId: "expedition-trio",
+    });
+    let session = practice.session;
+
+    // The Knight initially draws the protagonist, who stands behind the Paladin. Its melee
+    // telegraph must name the reachable front rank before that promise reaches the UI.
+    expect(session.encounter.intents["foe-0"]).toMatchObject({
+      attackId: "arctic-strike",
+      targetId: "practice-ally-paladin",
+    });
+
+    const party = [session.encounter.playerId, ...session.encounter.allyIds];
+    let final = null;
+    for (const [index, actorId] of party.entries()) {
+      const result = dispatchTowPlayerAction(session, {
+        id: `priority-window-${actorId}`,
+        expectedRevision: session.revision,
+        type: "stand-down",
+        actorId,
+        anchorCell: null,
+        itemId: null,
+        skillId: null,
+        targetId: null,
+      });
+      expect(result.ok, `${actorId}:${result.reason}`).toBe(true);
+      expect(result.reason).toBe(null);
+      expect(result.autoAdvanced).toBe(index === party.length - 1);
+      session = result.session;
+      final = result;
+    }
+
+    // Ranger's combat-start Priority grants one action before its ordinary action. Both
+    // declarations resolve against legal formation targets in the same hostile window.
+    const rangerCommands = final.events.filter((event) => (
+      event.type === "skill-committed" && event.actorId === "foe-1"
+    ));
+    expect(rangerCommands).toHaveLength(2);
+    expect(final.session.commands.map((command) => command.type)).toEqual([
+      "stand-down",
+      "stand-down",
+      "stand-down",
+      "end-turn",
+    ]);
+    expect(final.session.encounter.round).toBe(2);
+    expect(verifyTowSession(final.session)).toMatchObject({ ok: true });
+  });
+
   it("refuses a scenario or a receipt it does not recognise", () => {
     expect(createPracticeSession(receiptFor("fighter"), "nowhere"))
       .toMatchObject({ ok: false, reason: "unknown-practice-scenario" });
@@ -426,8 +480,8 @@ describe("the result screen has everything needed to reproduce it", () => {
     const result = practiceResult(playOut(createPracticeSession(receiptFor("fighter"))));
     expect(result.scenarioVersion).toBe(3);
     expect(result.allyGroupId).toBe("solo");
-    expect(result.allyGroupVersion).toBe(1);
-    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@3::solo@1");
+    expect(result.allyGroupVersion).toBe(2);
+    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@3::solo@2");
     expect(result.genesisChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.terminalChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.replayVerified).toBe(true);

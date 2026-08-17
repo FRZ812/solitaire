@@ -722,6 +722,22 @@
   isolation: isolate;
 }
 
+.tow-combat__intent-source {
+  display: block;
+  width: 5.2rem;
+  margin-bottom: 0.12rem;
+  overflow: hidden;
+  color: rgba(255, 239, 215, 0.82);
+  font-size: 0.48rem;
+  font-weight: 820;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0.4rem #000;
+  white-space: nowrap;
+}
+
 .tow-combat__intent-sigil {
   position: relative;
   display: grid;
