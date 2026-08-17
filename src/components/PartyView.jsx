@@ -11,6 +11,7 @@ import { itemTemplate } from "../data/catalog.js";
 import { characterArchetype } from "../data/character-archetypes.js";
 import { PROFESSIONS } from "../data/professions.js";
 import { canonicalProfessionId, isBroadProfessionName } from "../data/progression-paths.js";
+import { PartyFormationEditor } from "./PartyFormationEditor.jsx";
 
 const labelize = (value) => String(value || "")
   .replace(/[-_]+/g, " ")
@@ -43,7 +44,14 @@ function publicProfessionLabel(character) {
 //
 // `onOpenInventory(id)` hands control up so the parent (App.jsx) can switch the
 // PanelDeck to Inventory and preselect that party member as the target.
-export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInventory }) {
+export function PartyView({
+  state,
+  onDismiss,
+  onMount,
+  onDismount,
+  onOpenInventory,
+  onSetFormation,
+}) {
   const chars = state.world.codex.characters;
   const members = partyMembers(state);
   const mounts = mountMembers(state);
@@ -116,6 +124,15 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
       />
 
       <div>
+        <PartyFormationEditor
+          members={[
+            { id: "wanderer", name: wanderer?.name || "You" },
+            ...people.map((member) => ({ id: member.id, name: member.name })),
+          ]}
+          formation={state.mechanics?.tow?.formation?.cells || []}
+          onChange={onSetFormation}
+        />
+
         {members.length === 0 && (
           <div style={{ padding: "28px 8px", textAlign: "center", fontStyle: "italic", fontSize: "13px", color: "rgba(237,228,208,0.5)", lineHeight: 1.5 }}>
             You travel alone. Folk for hire gather at taverns; mounts are bought at a stable or won on the road.

@@ -36,6 +36,22 @@ async function render(element) {
   return container;
 }
 
+async function chooseAndConfirmAction(mounted, action) {
+  await act(async () => action.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+  const confirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
+  if (!confirmation) return;
+  const commit = confirmation.querySelector(".tow-combat__target-commit");
+  if (commit.disabled) {
+    const anchor = [...mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")]
+      .find((cell) => !cell.disabled);
+    expect(anchor).toBeTruthy();
+    await act(async () => anchor.click());
+  }
+  expect(commit.disabled).toBe(false);
+  await act(async () => commit.click());
+}
+
 describe("opening a lab session", () => {
   it("returns a real production session", () => {
     const opened = openLabSession({ packageId: "fighter", scenarioId: "training-yard" });
@@ -116,8 +132,10 @@ describe("the lab surface", () => {
       expect(mounted.querySelector(".tow-combat")).toBeTruthy();
       const action = [...mounted.querySelectorAll(".production-combat__action")]
         .find((button) => button.getAttribute("aria-disabled") !== "true");
-      await act(async () => action.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-      expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeTruthy();
+      await chooseAndConfirmAction(mounted, action);
+      expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
+      expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
+      expect(action.classList.contains("is-committed")).toBe(true);
       await act(async () => vi.advanceTimersByTime(600));
       // The action and its automatic enemy advance both landed on the real session.
       const commands = [...mounted.querySelector(".combat-lab__commands").children];

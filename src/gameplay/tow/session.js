@@ -25,6 +25,7 @@ import { cloneJsonData } from "../kernel/json-data.js";
 import { createRng, nextFloat } from "../kernel/rng.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createTowEncounter, isTowEncounter } from "./encounter.js";
+import { normalizeFormation } from "./formation.js";
 
 export const TOW_SESSION_VERSION = 1;
 
@@ -102,11 +103,15 @@ const GENESIS_KEYS = Object.freeze([
   "allySnapshots",
   "effectiveBuild",
   "enemySnapshots",
+  "formations",
   "intentSchedules",
   "playerSnapshot",
   "rngVersion",
   "seedManifest",
 ].sort());
+const LEGACY_GENESIS_KEYS = Object.freeze(
+  GENESIS_KEYS.filter((key) => key !== "formations"),
+);
 
 const MAX_IDENTIFIER_LENGTH = 256;
 
@@ -320,7 +325,8 @@ export function participantIsLethal(context, actorId) {
 // ---------------------------------------------------------------------------
 
 function isGenesis(value) {
-  if (!exactKeys(value, GENESIS_KEYS)) return false;
+  const current = exactKeys(value, GENESIS_KEYS);
+  if (!current && !exactKeys(value, LEGACY_GENESIS_KEYS)) return false;
   return isSeedManifest(value.seedManifest)
     && value.rngVersion === TOW_RNG_VERSION
     && Boolean(value.playerSnapshot)
@@ -336,7 +342,25 @@ function isGenesis(value) {
     && !Array.isArray(value.effectiveBuild)
     && Boolean(value.intentSchedules)
     && typeof value.intentSchedules === "object"
-    && !Array.isArray(value.intentSchedules);
+    && !Array.isArray(value.intentSchedules)
+    && (!current || (() => {
+      if (!value.formations || value.formations.version !== 1) return false;
+      if (Object.keys(value.formations).sort().join(",") !== "enemy,player,version") return false;
+      try {
+        const playerIds = [value.playerSnapshot.id, ...value.allySnapshots.map((actor) => actor.id)];
+        const enemyIds = value.enemySnapshots.map((actor) => actor.id);
+        return [
+          [playerIds, value.formations.player],
+          [enemyIds, value.formations.enemy],
+        ].every(([ids, formation]) => (
+          Array.isArray(formation)
+          && formation.length === 9
+          && normalizeFormation(ids, formation).every((entry, index) => entry === formation[index])
+        ));
+      } catch {
+        return false;
+      }
+    })());
 }
 
 /**
@@ -359,6 +383,7 @@ export function encounterFromGenesis(genesis) {
     player: genesis.playerSnapshot,
     enemies: genesis.enemySnapshots,
     build: genesis.effectiveBuild,
+    ...(genesis.formations ? { formations: genesis.formations } : {}),
   });
 }
 
@@ -517,6 +542,15 @@ export function createTowSession(input = {}) {
 
   let genesis;
   try {
+    const allySnapshots = input.allies || [];
+    const playerFormation = normalizeFormation(
+      [player.id, ...allySnapshots.map((actor) => actor.id)],
+      input.formations?.player || null,
+    );
+    const enemyFormation = normalizeFormation(
+      enemies.map((actor) => actor.id),
+      input.formations?.enemy || null,
+    );
     genesis = cloneJsonData({
       seedManifest: deriveSeedManifest(rootSeed),
       rngVersion: TOW_RNG_VERSION,
@@ -524,8 +558,13 @@ export function createTowSession(input = {}) {
       // Each ally carries their own actor line and their own build. Holding them in genesis
       // is what lets a party fight replay exactly, down to which companion was already hurt
       // when the first blow landed.
-      allySnapshots: input.allies || [],
+      allySnapshots,
       enemySnapshots: enemies,
+      formations: {
+        version: 1,
+        player: playerFormation,
+        enemy: enemyFormation,
+      },
       effectiveBuild: {
         traits: build?.traits || {},
         skills: build?.skills || [],

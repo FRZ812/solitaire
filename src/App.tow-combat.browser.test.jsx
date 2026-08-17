@@ -136,8 +136,36 @@ async function waitFor(assertion, timeout = 15000) {
 
 async function click(element) {
   expect(element).toBeTruthy();
+  const combatAction = element.classList?.contains("production-combat__action");
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  if (element.classList?.contains("production-combat__action")) {
+  if (combatAction) {
+    // A lone legal target commits immediately. Only a meaningful cell/footprint choice
+    // opens the reversible preview and Confirm step.
+    let confirmation = container?.querySelector('[data-testid="tow-target-confirmation"]');
+    if (confirmation) {
+      let confirm = [...confirmation.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Confirm");
+      if (confirm?.disabled) {
+        const anchor = await waitFor(() => (
+          container?.querySelector(
+            '[aria-label="Battle formations"] .tow-formation-cell.is-valid-anchor:not(:disabled)',
+          )
+        ));
+        await act(async () => anchor.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+        confirmation = await waitFor(() => (
+          container?.querySelector('[data-testid="tow-target-confirmation"]')
+        ));
+        confirm = await waitFor(() => {
+          const button = [...confirmation.querySelectorAll("button")]
+            .find((candidate) => candidate.textContent.trim() === "Confirm");
+          return button && !button.disabled ? button : null;
+        });
+      }
+      expect(confirm).toBeTruthy();
+      expect(confirm.disabled).toBe(false);
+      await act(async () => confirm.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    }
+
     // The command remains intentionally locked through its final hit/reaction cues, not
     // merely through the declaration title. Waiting on the combat surface's authoritative
     // busy state keeps the next synthetic click from landing on a still-disabled ability.
@@ -350,6 +378,16 @@ describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
       combatState: { health: 26, maxHealth: 26, status: "ok" },
     };
     state.party = ["kestrel"];
+    state.mechanics = {
+      ...state.mechanics,
+      tow: {
+        ...state.mechanics?.tow,
+        formation: {
+          version: 1,
+          cells: [null, "wanderer", null, null, "kestrel", null, null, null, null],
+        },
+      },
+    };
     harness.serverState = state;
 
     const mounted = await mountCampaign();
@@ -391,14 +429,27 @@ describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
 
     harness.serverState = {
       ...state,
-      mechanics: { ...state.mechanics, tow: { activeCombat: opened.session, readiness: {} } },
+      mechanics: {
+        ...state.mechanics,
+        tow: {
+          ...state.mechanics.tow,
+          activeCombat: opened.session,
+          readiness: {},
+        },
+      },
     };
     await unmountCampaign();
     const remounted = await mountCampaign();
     const dialog = await waitFor(() => remounted.querySelector(".tow-combat"));
 
     // Both fighters are on screen, and the player picks whose action to spend.
-    expect(dialog.querySelector('[aria-label="Ally: Kestrel"]')).toBeTruthy();
+    const companionCell = dialog.querySelector(
+      '[aria-label="Player formation"] .tow-formation-cell.has-unit[aria-label*="Kestrel"]',
+    );
+    expect(companionCell).toBeTruthy();
+    expect(companionCell.querySelector(".tow-formation-unit__figure img")?.getAttribute("src"))
+      .toMatch(/wildstrider-cutout-v1\.webp$/);
+    expect(companionCell.querySelector(".tow-formation-unit__monogram")).toBeNull();
     const commanders = [...dialog.querySelectorAll(".production-combat__commander")];
     expect(commanders.map((button) => button.textContent)).toEqual(
       expect.arrayContaining([expect.stringContaining("You"), expect.stringContaining("Kestrel")]),
@@ -433,11 +484,10 @@ describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
 });
 
 describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
-  it("names the coming attack in a targetable foe's accessible name", async () => {
-    // A foe card becomes a button once there is more than one of them, and a button's
-    // aria-label replaces everything inside it. Naming it "Target Wolf 1" would leave a
-    // screen-reader user with the one piece of information the whole telegraph exists to
-    // give them stripped out.
+  it("names each coming attack and marks its threatened formation cell", async () => {
+    // The formation cells and the intent rail are separate accessible surfaces. The unit
+    // cells identify who is present; the intent rail preserves the attack, outcome, and
+    // target that used to live on a single foe card.
     const twoFoes = [0, 1].map((index) => ({
       id: `foe-${index}`,
       name: `Brigand ${index + 1}`,
@@ -449,14 +499,34 @@ describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION
 
     const mounted = await mountCampaign();
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
-    const targets = [...dialog.querySelectorAll(".production-combat__fighter--target")];
-    expect(targets.length).toBe(2);
-    for (const target of targets) {
-      const label = target.getAttribute("aria-label");
-      expect(label).toMatch(/^Target Brigand \d/);
-      expect(label).toContain("health");
-      expect(label).toContain("preparing Jab for 3 damage");
+    const enemyCells = [...dialog.querySelectorAll(
+      '[aria-label="Enemy formation"] .tow-formation-cell.has-unit',
+    )];
+    expect(enemyCells).toHaveLength(2);
+    expect(enemyCells.map((cell) => cell.getAttribute("aria-label"))).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/Brigand 1, 30 of 30 health/),
+        expect.stringMatching(/Brigand 2, 30 of 30 health/),
+      ]),
+    );
+
+    const intentRail = dialog.querySelector('[aria-label="Enemy intentions"]');
+    expect(intentRail).toBeTruthy();
+    const intentBadges = [...intentRail.querySelectorAll('[data-testid="tow-enemy-intent"]')];
+    expect(intentBadges).toHaveLength(2);
+    for (const badge of intentBadges) {
+      expect(badge.getAttribute("aria-label")).toMatch(
+        /^Jab, 3 damage, targeting .+/,
+      );
     }
+
+    const threatenedCells = [...dialog.querySelectorAll(
+      '[aria-label="Player formation"] .tow-formation-cell.is-intent-target',
+    )];
+    expect(threatenedCells.length).toBeGreaterThan(0);
+    expect(threatenedCells.every((cell) => (
+      cell.getAttribute("aria-label").includes("threatened by an enemy intent")
+    ))).toBe(true);
   });
 });
 

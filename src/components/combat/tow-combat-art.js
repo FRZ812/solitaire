@@ -144,7 +144,12 @@ export function combatPortraitTemplateId(portraitKey) {
 }
 
 export function resolvePlayerCombatCutout(portraitKey, actor = null) {
-  const rawKey = portraitKey || actor?.portraitKey || actor?.templateId;
+  const rawKey = portraitKey
+    || actor?.portraitKey
+    || actor?.templateId
+    || actor?.combatArchetypeId
+    || actor?.archetypeId
+    || actor?.profession;
   const templateId = combatPortraitTemplateId(rawKey);
   const lookup = typeof rawKey === "string" && rawKey.trim().startsWith("tow:")
     ? `tow:${templateId}`
@@ -154,16 +159,26 @@ export function resolvePlayerCombatCutout(portraitKey, actor = null) {
   return CUTOUT_BY_AUTHORED_NAME[authored] || null;
 }
 
-export function resolveEnemyCombatCutout(actor) {
+export function resolveEnemyCombatCutout(actor, archetypeId = null) {
+  const key = archetypeId || actor?.archetypeId || actor?.templateId || null;
+  if (typeof key === "string") {
+    const normalized = key.trim().toLowerCase().replace(/^tow:/, "");
+    if (TOW_COMBAT_CUTOUTS[normalized]) return TOW_COMBAT_CUTOUTS[normalized];
+    if (TOW_COMBAT_CUTOUTS[`tow:${normalized}`]) return TOW_COMBAT_CUTOUTS[`tow:${normalized}`];
+  }
   const identity = `${actor?.id || ""} ${actor?.name || ""}`.trim();
   if (KNIGHT_FOE.test(identity)) return duellistFoe;
   if (RAIDER_FOE.test(identity)) return raiderFoe;
   return null;
 }
 
-export function resolveTowCombatArt(actor, { playerId = null, playerPortraitKey = null } = {}) {
+export function resolveTowCombatArt(actor, {
+  playerId = null,
+  playerPortraitKey = null,
+  archetypeId = null,
+} = {}) {
   if (!actor) return null;
   if (actor.id === playerId) return resolvePlayerCombatCutout(playerPortraitKey, actor);
-  if (actor.side === "enemy") return resolveEnemyCombatCutout(actor);
+  if (actor.side === "enemy") return resolveEnemyCombatCutout(actor, archetypeId);
   return resolvePlayerCombatCutout(actor.portraitKey, actor);
 }

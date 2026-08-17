@@ -14,7 +14,11 @@ import {
   combatVfxVariantForForm,
   combatVfxVariantForSkill,
 } from "./tow-combat-vfx.js";
-import { combatVfxPositionForCue, flipbookSupportsVisual } from "./TowCombatVfxCanvas.jsx";
+import {
+  combatVfxPositionForCue,
+  dedupeAuthoredCues,
+  flipbookSupportsVisual,
+} from "./TowCombatVfxCanvas.jsx";
 
 const ARCHETYPE_PREFIXES = Object.freeze([
   "arctic-",
@@ -40,10 +44,6 @@ function expectFlipbookVisual(visual) {
     flipbook: {
       id: expect.any(String),
       asset: expect.stringMatching(/\.webp$/),
-      frameCount: 9,
-      frameSize: 256,
-      fps: 18,
-      layout: "horizontal",
     },
     palette: {
       primary: expect.any(String),
@@ -56,10 +56,50 @@ function expectFlipbookVisual(visual) {
     },
     signatureKey: expect.any(String),
   });
+  expect(visual.flipbook).toMatchObject(
+    visual.flipbook.id === "arctic-mortal-blow"
+      ? {
+        frameCount: 24,
+        frameSize: 512,
+        fps: 30,
+        layout: "grid",
+        columns: 6,
+        rows: 4,
+      }
+      : {
+        frameCount: 9,
+        frameSize: 256,
+        fps: 18,
+        layout: "horizontal",
+      },
+  );
   expect(flipbookSupportsVisual(visual), visual.variant).toBe(true);
 }
 
 describe("authored ImageGen flipbook combat VFX", () => {
+  it("accepts the interpolated high-resolution grid atlas format", () => {
+    expect(flipbookSupportsVisual({
+      flipbook: {
+        asset: "/mortal-blow.webp",
+        frameCount: 24,
+        frameSize: 512,
+        fps: 15,
+        layout: "grid",
+        columns: 6,
+        rows: 4,
+      },
+    })).toBe(true);
+  });
+
+  it("draws one authored atlas per action even when a secondary effect changes sides", () => {
+    const visual = combatVfxVariantForSkill("arctic-mortal-blow");
+    const cues = [
+      { id: "damage", actionIndex: 0, targetSide: "enemy", hitCount: 1, visual },
+      { id: "self-paralyze", actionIndex: 0, targetSide: "player", hitCount: 1, visual },
+    ];
+    expect(dedupeAuthoredCues(cues)).toEqual([cues[0]]);
+  });
+
   it("keeps the raster family manifest only for backwards-compatible UI consumers", () => {
     expect(Object.keys(COMBAT_VFX_ASSETS).sort()).toEqual([
       "afflict", "arcane", "evade", "fire", "frost", "gash", "heal", "impact",
@@ -92,13 +132,21 @@ describe("authored ImageGen flipbook combat VFX", () => {
     expect(slash.asset).toBeNull();
     expect(slash.asset).not.toBe(resolveTowAbilityArt(getSkill("blade-slash")));
   });
-
   it("routes every Knight ability to its own generated atlas", () => {
     const knightIds = skillIds().filter((id) => id.startsWith("arctic-"));
     expect(knightIds).toHaveLength(23);
     for (const skillId of knightIds) {
       expect(combatVfxVariantForSkill(skillId).flipbook.id).toBe(skillId);
     }
+    expect(combatVfxVariantForSkill("arctic-mortal-blow").flipbook).toMatchObject({
+      asset: expect.stringMatching(/arctic-mortal-blow-v2\.webp$/),
+      frameCount: 24,
+      frameSize: 512,
+      fps: 30,
+      layout: "grid",
+      columns: 6,
+      rows: 4,
+    });
   });
 
   it("uses an available family atlas before the generic strike fallback", () => {

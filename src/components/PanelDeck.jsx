@@ -217,7 +217,14 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
             aria-labelledby={`deck-tab-${activePage}`}
           >
             {activePage === "party" && (
-              <PartyView state={state} onDismiss={handlers.onDismiss} onMount={handlers.onMount} onDismount={handlers.onDismount} onOpenInventory={openInventory} />
+              <PartyView
+                state={state}
+                onDismiss={handlers.onDismiss}
+                onMount={handlers.onMount}
+                onDismount={handlers.onDismount}
+                onOpenInventory={openInventory}
+                onSetFormation={handlers.onSetFormation}
+              />
             )}
             {activePage === "character" && (
               <MenuSheet

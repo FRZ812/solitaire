@@ -2,19 +2,24 @@ import { describe, expect, it } from "vitest";
 import { compileCharacterBootstrap } from "./character-bootstrap.js";
 import { dispatchTowCommand } from "./commands.js";
 import {
+  DEFAULT_PRACTICE_ALLY_GROUP_ID,
   DEFAULT_PRACTICE_SCENARIO_ID,
+  PRACTICE_ALLY_GROUPS,
   PRACTICE_SCENARIOS,
   createPracticeSession,
   derivePracticeSeed,
   draftHash,
   draftUnchanged,
+  getPracticeAllyGroup,
   getPracticeScenario,
   nextPracticeAttempt,
   practiceResult,
 } from "./practice-scenarios.js";
+import { verifyTowSession } from "./replay.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { startingPackageIds } from "./starting-packages.js";
 import { getSkill, skillLegality } from "./skills.js";
+import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
 // The six the plan names as the field-ready Quick Start cohort, by the profession each maps
 // to. Every one has to complete practice without a blocked capability.
@@ -66,8 +71,14 @@ describe("the seed is derived, never drawn", () => {
     const receipt = receiptFor("fighter");
     const first = createPracticeSession(receipt, "training-yard", 0);
     const next = nextPracticeAttempt(first);
-    expect(next).toEqual({ scenarioId: "training-yard", attemptIndex: 1 });
-    const second = createPracticeSession(receipt, next.scenarioId, next.attemptIndex);
+    expect(next).toEqual({
+      scenarioId: "training-yard",
+      allyGroupId: "solo",
+      attemptIndex: 1,
+    });
+    const second = createPracticeSession(receipt, next.scenarioId, next.attemptIndex, {
+      allyGroupId: next.allyGroupId,
+    });
     expect(second.seed).not.toBe(first.seed);
     // Still derived: asking for that attempt again reproduces it exactly.
     expect(createPracticeSession(receipt, "training-yard", 1).seed).toBe(second.seed);
@@ -85,7 +96,9 @@ describe("the seed is derived, never drawn", () => {
     const seed = derivePracticeSeed(base);
     expect(derivePracticeSeed({ ...base, packageId: "wizard" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, scenarioId: "the-duellist" })).not.toBe(seed);
-    expect(derivePracticeSeed({ ...base, scenarioVersion: 3 })).not.toBe(seed);
+    expect(derivePracticeSeed({ ...base, scenarioVersion: 4 })).not.toBe(seed);
+    expect(derivePracticeSeed({ ...base, allyGroupId: "field-pair" })).not.toBe(seed);
+    expect(derivePracticeSeed({ ...base, allyGroupVersion: 2 })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, draftHash: "def" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, attemptIndex: 1 })).not.toBe(seed);
   });
@@ -95,6 +108,116 @@ describe("the seed is derived, never drawn", () => {
     expect(derivePracticeSeed({ ...base, attemptIndex: -1 })).toBe(null);
     expect(derivePracticeSeed({ ...base, attemptIndex: 1.5 })).toBe(null);
     expect(derivePracticeSeed({ packageId: "f", scenarioId: "s" })).toBe(null);
+  });
+});
+
+describe("authored practice formations", () => {
+  it("offers versioned solo, pair, and trio groups with stable canonical allies", () => {
+    expect(PRACTICE_ALLY_GROUPS.map((group) => group.id)).toEqual([
+      "solo",
+      "field-pair",
+      "expedition-trio",
+    ]);
+    expect(DEFAULT_PRACTICE_ALLY_GROUP_ID).toBe("solo");
+    expect(getPracticeAllyGroup(DEFAULT_PRACTICE_ALLY_GROUP_ID)?.allies).toHaveLength(0);
+    expect(PRACTICE_ALLY_GROUPS.every((group) => (
+      group.version === 1 && group.formation.length === 9
+    ))).toBe(true);
+
+    const pair = getPracticeAllyGroup("field-pair");
+    expect(pair.allies).toEqual([
+      expect.objectContaining({
+        id: "practice-ally-paladin",
+        name: "Paladin",
+        archetypeId: "paladin",
+        build: expect.any(Object),
+      }),
+    ]);
+    const trio = getPracticeAllyGroup("expedition-trio");
+    expect(trio.allies.map((ally) => ally.id)).toEqual([
+      "practice-ally-paladin",
+      "practice-ally-ranger",
+    ]);
+    expect(new Set(trio.formation.filter(Boolean))).toEqual(new Set([
+      "wanderer",
+      "practice-ally-paladin",
+      "practice-ally-ranger",
+    ]));
+  });
+
+  it("opens each group with independent archetype stats, builds, and its exact formation", () => {
+    const receipt = receiptFor("wizard");
+    for (const group of PRACTICE_ALLY_GROUPS) {
+      const practice = createPracticeSession(receipt, "training-yard", 0, {
+        allyGroupId: group.id,
+      });
+      expect(practice.ok, group.id).toBe(true);
+      expect(practice.allyGroup).toBe(group);
+      expect(practice.session.encounter.allyIds).toHaveLength(group.allies.length);
+      expect(practice.session.encounter.formations.player).toEqual(group.formation);
+      expect(practice.session.genesis.formations.player).toEqual(group.formation);
+
+      for (const ally of group.allies) {
+        const archetype = getStartingArchetype(ally.archetypeId);
+        const bonus = towItemActorBonuses(archetype.gear);
+        const equippedBuild = effectiveTowBuild(archetype.build, archetype.gear);
+        const actor = practice.session.encounter.actors[ally.id];
+        expect(actor).toMatchObject({
+          name: archetype.name,
+          maxHp: archetype.baseStats.maxHp + bonus.maxHp,
+          resolve: archetype.baseStats.resolveMax,
+          resolveMax: archetype.baseStats.resolveMax,
+          stats: {
+            attack: archetype.baseStats.attack + bonus.attack,
+            defense: archetype.baseStats.defense + bonus.defense,
+            critRate: Math.min(100, archetype.baseStats.critRate + bonus.critRate),
+            dodgeRate: Math.min(100, archetype.baseStats.dodgeRate + bonus.dodgeRate),
+          },
+        });
+        expect(practice.session.encounter.allyBuilds[ally.id].traits)
+          .toEqual(equippedBuild.traits);
+        expect(practice.session.encounter.allyBuilds[ally.id].skills.map((entry) => entry.id))
+          .toEqual(equippedBuild.skills);
+        expect(practice.session.encounter.allyBuilds[ally.id].basicAttack)
+          .toEqual(equippedBuild.basicAttack);
+        expect(practice.session.genesis.allySnapshots
+          .find((snapshot) => snapshot.id === ally.id)?.build.basicAttack)
+          .toEqual(equippedBuild.basicAttack);
+        expect(practice.session.encounter.allyBuilds[ally.id].skills.map((entry) => entry.id))
+          .not.toEqual(receipt.build.skills);
+      }
+      expect(verifyTowSession(practice.session)).toMatchObject({ ok: true });
+    }
+  });
+
+  it("makes the ally group a stable seed and session identity without changing draftHash", () => {
+    const receipt = receiptFor("fighter");
+    const beforeHash = draftHash(receipt);
+    const pair = createPracticeSession(receipt, "training-yard", 0, {
+      allyGroupId: "field-pair",
+    });
+    const pairAgain = createPracticeSession(receipt, "training-yard", 0, {
+      allyGroupId: "field-pair",
+    });
+    const trio = createPracticeSession(receipt, "training-yard", 0, {
+      allyGroupId: "expedition-trio",
+    });
+
+    expect(pair.seed).toBe(pairAgain.seed);
+    expect(pair.session.sessionId).toBe(pairAgain.session.sessionId);
+    expect(pair.genesisChecksum).toBe(pairAgain.genesisChecksum);
+    expect(trio.seed).not.toBe(pair.seed);
+    expect(trio.session.sessionId).not.toBe(pair.session.sessionId);
+    expect(trio.genesisChecksum).not.toBe(pair.genesisChecksum);
+    expect(pair.seed).toContain("field-pair@1");
+    expect(draftHash(receipt)).toBe(beforeHash);
+  });
+
+  it("rejects an unknown ally group before opening a session", () => {
+    expect(createPracticeSession(receiptFor("fighter"), "training-yard", 0, {
+      allyGroupId: "unknown-company",
+    })).toMatchObject({ ok: false, reason: "unknown-practice-ally-group" });
+    expect(getPracticeAllyGroup("unknown-company")).toBe(null);
   });
 });
 
@@ -216,6 +339,7 @@ describe("opening a practice fight", () => {
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {
     for (const scenario of PRACTICE_SCENARIOS) {
       const encounter = createPracticeSession(receiptFor("fighter"), scenario.id).session.encounter;
+      expect(encounter.formations.enemy).toEqual(scenario.formation);
       for (const enemy of scenario.enemies) {
         const archetype = getStartingArchetype(enemy.archetypeId);
         expect(archetype).toBeTruthy();
@@ -223,6 +347,8 @@ describe("opening a practice fight", () => {
         expect(encounter.enemyBuilds[enemy.id].traits).toEqual(archetype.build.traits);
         expect(encounter.enemyBuilds[enemy.id].skills.map((entry) => entry.id))
           .toEqual(archetype.build.skills);
+        expect(encounter.actors[enemy.id].stats).toEqual(enemy.stats);
+        expect(encounter.enemyBuilds[enemy.id].basicAttack).toBeUndefined();
         expect(encounter.enemyAttacks[enemy.id].map((entry) => entry.skillId))
           .toEqual(archetype.build.skills);
         expect(encounter.enemyAttacks[enemy.id].map((entry) => entry.name))
@@ -240,6 +366,25 @@ describe("opening a practice fight", () => {
       "blade-one-flash",
       "blade-katana-dance",
     ]);
+  });
+
+  it("opens a three-enemy generalized formation drill on authored cells", () => {
+    const scenario = getPracticeScenario("formation-drill");
+    expect(scenario.enemies).toHaveLength(3);
+    expect(scenario.enemies.map((enemy) => enemy.archetypeId)).toEqual([
+      "knight",
+      "ranger",
+      "wizard",
+    ]);
+    const practice = createPracticeSession(receiptFor("fighter"), scenario.id, 0, {
+      allyGroupId: "expedition-trio",
+    });
+    expect(practice.ok).toBe(true);
+    expect(practice.session.encounter.enemyIds).toHaveLength(3);
+    expect(practice.session.encounter.formations.enemy).toEqual(scenario.formation);
+    expect(practice.session.encounter.formations.player)
+      .toEqual(getPracticeAllyGroup("expedition-trio").formation);
+    expect(verifyTowSession(practice.session)).toMatchObject({ ok: true });
   });
 
   it("refuses a scenario or a receipt it does not recognise", () => {
@@ -279,8 +424,10 @@ describe("every field-ready package can complete practice", () => {
 describe("the result screen has everything needed to reproduce it", () => {
   it("shows scenario version, seed, both checksums and the replay verdict", () => {
     const result = practiceResult(playOut(createPracticeSession(receiptFor("fighter"))));
-    expect(result.scenarioVersion).toBe(2);
-    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@2");
+    expect(result.scenarioVersion).toBe(3);
+    expect(result.allyGroupId).toBe("solo");
+    expect(result.allyGroupVersion).toBe(1);
+    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@3::solo@1");
     expect(result.genesisChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.terminalChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.replayVerified).toBe(true);

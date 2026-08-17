@@ -116,7 +116,7 @@
 .character-grid-view__header > div > span,
 .character-preview__kind,
 .character-details__label,
-.scenario-picker__label {
+.practice-formation-picker__label {
   color: var(--select-gold);
   font-size: 0.63rem;
   font-weight: 800;
@@ -1986,9 +1986,13 @@
 .character-details__practice {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 132px;
   align-items: end;
   gap: 8px;
+}
+
+.character-details__practice-pickers {
+  display: contents;
 }
 
 .character-details__practice > button {
@@ -2017,19 +2021,19 @@
   font-weight: 500;
 }
 
-.scenario-picker {
+.practice-formation-picker {
   position: relative;
   min-width: 0;
 }
 
-.scenario-picker__label {
+.practice-formation-picker__label {
   display: block;
   margin: 0 0 6px 2px;
   color: #8b958f;
   font-size: 0.52rem;
 }
 
-.scenario-picker__trigger {
+.practice-formation-picker__trigger {
   display: grid;
   width: 100%;
   min-height: 57px;
@@ -2045,13 +2049,13 @@
   text-align: left;
 }
 
-.scenario-picker__trigger > span {
+.practice-formation-picker__trigger > span {
   display: flex;
   min-width: 0;
   flex-direction: column;
 }
 
-.scenario-picker__trigger strong {
+.practice-formation-picker__trigger strong {
   overflow: hidden;
   font-family: Georgia, serif;
   font-size: 0.7rem;
@@ -2060,7 +2064,7 @@
   white-space: nowrap;
 }
 
-.scenario-picker__trigger small {
+.practice-formation-picker__trigger small {
   overflow: hidden;
   margin-top: 3px;
   color: #7d8782;
@@ -2069,7 +2073,7 @@
   white-space: nowrap;
 }
 
-.scenario-picker__trigger > svg {
+.practice-formation-picker__trigger > svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -2080,11 +2084,11 @@
   transition: transform 160ms ease;
 }
 
-.scenario-picker__trigger > svg.is-open {
+.practice-formation-picker__trigger > svg.is-open {
   transform: rotate(180deg);
 }
 
-.scenario-picker__list {
+.practice-formation-picker__list {
   position: absolute;
   z-index: 12;
   right: 0;
@@ -2098,7 +2102,7 @@
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
 
-.scenario-picker__list > button {
+.practice-formation-picker__list > button {
   width: 100%;
   padding: 9px 10px;
   border: 0;
@@ -2109,38 +2113,38 @@
   text-align: left;
 }
 
-.scenario-picker__list > button + button {
+.practice-formation-picker__list > button + button {
   margin-top: 2px;
 }
 
-.scenario-picker__list > button.is-active {
+.practice-formation-picker__list > button.is-active {
   background: rgba(212, 173, 104, 0.09);
 }
 
-.scenario-picker__list > button.is-selected {
+.practice-formation-picker__list > button.is-selected {
   box-shadow: inset 2px 0 color-mix(in srgb, var(--character-accent), #fff 14%);
 }
 
-.scenario-picker__list > button > span {
+.practice-formation-picker__list > button > span {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
-.scenario-picker__list strong {
+.practice-formation-picker__list strong {
   color: #eee6d8;
   font-family: Georgia, serif;
   font-size: 0.68rem;
 }
 
-.scenario-picker__list small {
+.practice-formation-picker__list small {
   color: #8d7b5a;
   font-size: 0.5rem;
   text-transform: uppercase;
 }
 
-.scenario-picker__list p {
+.practice-formation-picker__list p {
   margin: 4px 0 0;
   color: #7c8581;
   font-family: inherit;
@@ -2587,7 +2591,7 @@
   .ability-swap-picker__trigger,
   .ability-swap-picker__list > button,
   .ability-swap-picker__panel,
-  .scenario-picker__trigger > svg,
+  .practice-formation-picker__trigger > svg,
   .character-details {
     animation: none;
     scroll-behavior: auto;

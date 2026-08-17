@@ -33,6 +33,9 @@ import {
 import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
 import { getCombatItem, normalizeCombatItems } from "./combat-items.js";
+import { effectRecipient } from "./ability-targeting.js";
+import { normalizeFormation } from "./formation.js";
+import { resolveSkillTargets } from "./targeting.js";
 import {
   createSkillState,
   effectMagnitude,
@@ -640,6 +643,7 @@ export function createTowEncounter({
   enemies,
   build,
   allies = [],
+  formations,
 } = {}) {
   if (typeof seed !== "string" && !(typeof seed === "number" && Number.isFinite(seed))) {
     throw new TypeError("invalid-encounter-seed");
@@ -701,6 +705,24 @@ export function createTowEncounter({
   ];
   if (new Set(everyId).size !== everyId.length) throw new TypeError("duplicate-actor-id");
 
+  let formationSnapshot = null;
+  if (formations !== undefined) {
+    if (!formations || typeof formations !== "object" || Array.isArray(formations)) {
+      throw new TypeError("invalid-formations");
+    }
+    formationSnapshot = {
+      version: 1,
+      player: normalizeFormation(
+        [playerActor.id, ...allyActors.map((ally) => ally.id)],
+        formations.player || null,
+      ),
+      enemy: normalizeFormation(
+        enemyActors.map((enemy) => enemy.id),
+        formations.enemy || null,
+      ),
+    };
+  }
+
   const playerBuild = normalizeBuild(build, {
     resolveEconomy: Number.isFinite(playerActor.resolve),
   });
@@ -742,6 +764,7 @@ export function createTowEncounter({
     ]),
     build: playerBuild,
     allyBuilds,
+    ...(formationSnapshot ? { formations: formationSnapshot } : {}),
     turn: { actionsRemaining: 1, allies: {} },
     scheduledEffects: [],
     statusDecayProtection: {},
@@ -1078,6 +1101,21 @@ export function isTowEncounter(value) {
       && (archetypeId === null || typeof archetypeId === "string")
     ))) return false;
   }
+  if (value.formations !== undefined) {
+    if (!value.formations || value.formations.version !== 1
+      || Object.keys(value.formations).sort().join(",") !== "enemy,player,version") return false;
+    try {
+      const expectedPlayer = normalizeFormation(
+        [value.playerId, ...value.allyIds],
+        value.formations.player,
+      );
+      const expectedEnemy = normalizeFormation(value.enemyIds, value.formations.enemy);
+      if (!expectedPlayer.every((entry, index) => entry === value.formations.player[index])
+        || !expectedEnemy.every((entry, index) => entry === value.formations.enemy[index])) return false;
+    } catch {
+      return false;
+    }
+  }
   if (value.build?.basicAttack != null && !isWeaponAttackSnapshot(value.build?.basicAttack)) return false;
   const actorIds = [value.playerId, ...value.allyIds, ...value.enemyIds];
   if (new Set(actorIds).size !== actorIds.length) return false;
@@ -1154,16 +1192,29 @@ export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
   "temporary-max-hp",
 ]);
 
-function applySkillEffects(state, skillId, rank, targetId, actorId) {
+function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexes = null) {
   const definition = getSkill(skillId);
   let next = state;
+  const selectedEffects = effectIndexes === null ? null : new Set(effectIndexes);
   // Whoever was commanded, not always the protagonist: an ally's Block shields the ally.
   const playerId = actorId ?? next.playerId;
   const shieldEffectIndexes = definition.effects
-    .map((effect, index) => (effect.type === "shield" ? index : -1))
+    .map((effect, index) => (
+      effect.type === "shield" && (selectedEffects === null || selectedEffects.has(index))
+        ? index
+        : -1
+    ))
     .filter((index) => index >= 0);
   const lastShieldEffectIndex = shieldEffectIndexes.at(-1) ?? -1;
-  const shieldBeforeSkill = next.actors[playerId]?.shield || 0;
+  const shieldSubjectId = lastShieldEffectIndex >= 0
+    && effectRecipient(
+      definition,
+      definition.effects[lastShieldEffectIndex],
+      lastShieldEffectIndex,
+    ) === "anchor"
+    ? targetId
+    : playerId;
+  const shieldBeforeSkill = next.actors[shieldSubjectId]?.shield || 0;
   let shieldRaisedBySkill = 0;
   const openingTarget = next.actors[targetId];
   // Some authored abilities deal separate ATK-, DEF-, and HP-scaled packets. They are one
@@ -1177,11 +1228,17 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     : Number.POSITIVE_INFINITY;
 
   definition.effects.forEach((effect, index) => {
+    if (selectedEffects !== null && !selectedEffects.has(index)) return;
     // Asked for per branch rather than up front: not every effect carries a rank table, and
     // demanding one from an effect that has none crashed the whole skill — which is how
     // First Aid, a skill three professions ship with, threw the moment it was used.
     const magnitude = () => effectMagnitude(skillId, index, rank);
     const player = next.actors[playerId];
+    const recipient = effectRecipient(definition, effect, index);
+    const subjectId = recipient === "anchor" ? targetId : playerId;
+    const recipientTarget = recipient === "all"
+      ? "all"
+      : recipient === "caster" ? "self" : "enemy";
 
     if (effect.type === "damage") {
       const target = next.actors[targetId];
@@ -1261,14 +1318,17 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       // skill. A second skill in the same window refreshes the brace instead of adding a
       // second permanent pool on top of it.
       if (index !== lastShieldEffectIndex) return;
+      const subject = next.actors[subjectId];
+      if (!subject || subject.hp <= 0) return;
       const shield = Math.max(shieldBeforeSkill, shieldRaisedBySkill);
       next = {
         ...next,
-        actors: { ...next.actors, [playerId]: { ...player, shield } },
+        actors: { ...next.actors, [subjectId]: { ...subject, shield } },
       };
       next = push(next, "skill-shield", {
         actorId: playerId,
         skillId,
+        targetId: subjectId,
         amount: Math.max(0, shield - shieldBeforeSkill),
         ward: shieldRaisedBySkill,
         before: shieldBeforeSkill,
@@ -1278,31 +1338,38 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "heal") {
+      const subject = next.actors[subjectId];
       const amount = sourcedMagnitudeAmount(player, null, effect, magnitude());
-      if (amount <= 0 || player.hp >= player.maxHp) return;
+      if (!subject || amount <= 0 || subject.hp >= subject.maxHp) return;
       next = {
         ...next,
         actors: {
           ...next.actors,
-          [playerId]: { ...player, hp: Math.min(player.maxHp, player.hp + amount) },
+          [subjectId]: { ...subject, hp: Math.min(subject.maxHp, subject.hp + amount) },
         },
       };
-      next = push(next, "skill-heal", { actorId: playerId, skillId, amount });
+      next = push(next, "skill-heal", { actorId: playerId, skillId, targetId: subjectId, amount });
       return;
     }
 
     if (effect.type === "heal-flat") {
+      const subject = next.actors[subjectId];
       const amount = magnitude();
-      if (amount <= 0 || player.hp >= player.maxHp) return;
-      const healed = Math.min(amount, player.maxHp - player.hp);
+      if (!subject || amount <= 0 || subject.hp >= subject.maxHp) return;
+      const healed = Math.min(amount, subject.maxHp - subject.hp);
       next = {
         ...next,
         actors: {
           ...next.actors,
-          [playerId]: { ...player, hp: player.hp + healed },
+          [subjectId]: { ...subject, hp: subject.hp + healed },
         },
       };
-      next = push(next, "skill-heal", { actorId: playerId, skillId, amount: healed });
+      next = push(next, "skill-heal", {
+        actorId: playerId,
+        skillId,
+        targetId: subjectId,
+        amount: healed,
+      });
       return;
     }
 
@@ -1394,24 +1461,25 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     // First Aid heals a fraction of what has already been lost, so it is worth most to
     // someone badly hurt and nearly nothing to someone barely scratched.
     if (effect.type === "heal-lost-fraction") {
-      const lost = Math.max(0, player.maxHp - player.hp);
+      const subject = next.actors[subjectId];
+      if (!subject) return;
+      const lost = Math.max(0, subject.maxHp - subject.hp);
       const amount = Math.floor((lost * magnitude()) / 100);
       if (amount <= 0) return;
       next = {
         ...next,
         actors: {
           ...next.actors,
-          [playerId]: { ...player, hp: Math.min(player.maxHp, player.hp + amount) },
+          [subjectId]: { ...subject, hp: Math.min(subject.maxHp, subject.hp + amount) },
         },
       };
-      next = push(next, "skill-heal", { actorId: playerId, skillId, amount });
+      next = push(next, "skill-heal", { actorId: playerId, skillId, targetId: subjectId, amount });
       return;
     }
 
     // Cleaning a wound: bleed, burn and poison are scaled down rather than decremented, so
     // it bites harder on a heavy stack than a light one.
     if (effect.type === "reduce-statuses") {
-      const subjectId = effect.target === "enemy" ? targetId : playerId;
       const subject = next.actors[subjectId];
       if (!subject || subject.hp <= 0) return;
       const before = subject.statuses;
@@ -1465,7 +1533,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "modify-status") {
-      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      const subjectIds = effectSubjectIds(next, recipientTarget, playerId, targetId);
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
@@ -1496,7 +1564,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         Math.floor(statusCount(source.statuses, effect.factorStatus) * magnitude()),
       );
       if (count <= 0) return;
-      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      const subjectIds = effectSubjectIds(next, recipientTarget, playerId, targetId);
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
@@ -1522,7 +1590,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "scale-status") {
-      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      const subjectIds = effectSubjectIds(next, recipientTarget, playerId, targetId);
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
@@ -1554,7 +1622,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
 
     if (effect.type === "restore-skill-uses") {
       const amount = magnitude();
-      const currentActor = next.actors[playerId];
+      const currentActor = next.actors[subjectId];
       if (Number.isFinite(currentActor?.resolve)) {
         const restored = Math.max(
           0,
@@ -1565,12 +1633,13 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
             ...next,
             actors: {
               ...next.actors,
-              [playerId]: { ...currentActor, resolve: currentActor.resolve + restored },
+              [subjectId]: { ...currentActor, resolve: currentActor.resolve + restored },
             },
           };
         }
         next = push(next, "skill-resolve-restored", {
           actorId: playerId,
+          targetId: subjectId,
           skillId,
           amount,
           restored,
@@ -1579,7 +1648,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       }
       // Captured v1 encounters had no Resolve field and keep the old restoration rule.
       let restored = 0;
-      next = updateBuildFor(next, playerId, (build) => ({
+      next = updateBuildFor(next, subjectId, (build) => ({
         ...build,
         skills: build.skills.map((entry) => {
           if (entry.id === skillId || entry.usesRemaining === UNLIMITED_USES) return entry;
@@ -1590,6 +1659,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       }));
       next = push(next, "skill-uses-restored", {
         actorId: playerId,
+        targetId: subjectId,
         skillId,
         amount,
         restored,
@@ -1598,7 +1668,6 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "amplify-statuses") {
-      const subjectId = effect.target === "self" ? playerId : targetId;
       const target = next.actors[subjectId];
       if (!target || target.hp <= 0) return;
       const amplified = effect.statuses.reduce(
@@ -1626,7 +1695,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     }
 
     if (effect.type === "delayed-damage") {
-      const delayedTargetId = effect.target === "self" ? playerId : targetId;
+      const delayedTargetId = subjectId;
       const target = next.actors[delayedTargetId];
       if (!target || target.hp <= 0) return;
       const authoredAmount = magnitude();
@@ -1754,7 +1823,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         ? magnitude()
         : sourcedMagnitudeAmount(player, next.actors[targetId], effect, magnitude()));
       if (count <= 0) return;
-      const subjectIds = effectSubjectIds(next, effect.target, playerId, targetId);
+      const subjectIds = effectSubjectIds(next, recipientTarget, playerId, targetId);
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
@@ -1788,10 +1857,67 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
   return next;
 }
 
+function applyResolvedSkillEffects(state, definition, rank, actorId, resolvedTargets) {
+  const skillId = definition.id;
+  const actionId = `${state.sequence + 1}:${actorId}:${skillId}`;
+  let next = push(state, "skill-committed", {
+    actionId,
+    actorId,
+    skillId,
+    rank,
+    sourceCell: resolvedTargets.sourceCell,
+    anchorCell: resolvedTargets.anchorCell,
+    affectedCells: resolvedTargets.affectedCells,
+    targetIds: resolvedTargets.targetIds,
+    footprint: resolvedTargets.targeting.footprint,
+    castMode: resolvedTargets.targeting.castMode,
+    presentation: resolvedTargets.targeting.presentation,
+  });
+  const effectGroups = definition.effects.reduce((groups, effect, effectIndex) => {
+    groups[effectRecipient(definition, effect, effectIndex)].push(effectIndex);
+    return groups;
+  }, { anchor: [], caster: [], all: [] });
+
+  // One cast spends one action and one Resolve payment. Spatial recipients repeat only the
+  // effects that belong on the footprint; caster riders and all-combatant effects resolve
+  // exactly once. Row-major targets make RNG and one-shot attacker status consumption stable.
+  for (const spatialTargetId of resolvedTargets.targetIds) {
+    if (effectGroups.anchor.length === 0) break;
+    next = applySkillEffects(next, skillId, rank, spatialTargetId, actorId, effectGroups.anchor);
+  }
+  if (effectGroups.all.length > 0) {
+    next = applySkillEffects(
+      next,
+      skillId,
+      rank,
+      resolvedTargets.primaryTargetId,
+      actorId,
+      effectGroups.all,
+    );
+  }
+  if (effectGroups.caster.length > 0) {
+    next = applySkillEffects(
+      next,
+      skillId,
+      rank,
+      resolvedTargets.primaryTargetId,
+      actorId,
+      effectGroups.caster,
+    );
+  }
+  return next;
+}
+
 /**
  * Use one of the player's skills. Turn-free skills leave the primary action open.
  */
-export function useSkill(state, skillId, targetId = null, actorId = state.playerId) {
+export function useSkill(
+  state,
+  skillId,
+  targetId = null,
+  actorId = state.playerId,
+  anchorCell = null,
+) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
   const actor = state.actors[actorId];
   if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor", state };
@@ -1810,10 +1936,11 @@ export function useSkill(state, skillId, targetId = null, actorId = state.player
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
 
   const definition = getSkill(skillId);
-  const target = targetId || livingEnemies(state)[0];
-  if (definition.effects.some((effect) => effect.target === "enemy") && !target) {
-    return { ok: false, reason: "no-target", state };
-  }
+  const resolvedTargets = resolveSkillTargets(state, definition, actorId, {
+    anchorCell,
+    targetId,
+  });
+  if (!resolvedTargets.ok) return { ok: false, reason: resolvedTargets.reason, state };
 
   const spent = spendSkill(skillState);
   if (!spent.ok) return { ok: false, reason: spent.reason, state };
@@ -1832,7 +1959,7 @@ export function useSkill(state, skillId, targetId = null, actorId = state.player
     next = push(next, "resolve-spent", { actorId, skillId, amount: cost });
   }
   if (definition.consumesTurn) next = spendAction(next, actorId);
-  next = applySkillEffects(next, skillId, skillState.rank, target, actorId);
+  next = applyResolvedSkillEffects(next, definition, skillState.rank, actorId, resolvedTargets);
   return { ok: true, reason: null, state: settle(next) };
 }
 
@@ -2167,6 +2294,9 @@ function useEnemySkill(state, enemyId, skillId, targetId) {
     resolveAvailable: enemy?.resolve,
   });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
+  const definition = getSkill(skillId);
+  const resolvedTargets = resolveSkillTargets(state, definition, enemyId, { targetId });
+  if (!resolvedTargets.ok) return { ok: false, reason: resolvedTargets.reason, state };
   const spent = spendSkill(skillState);
   if (!spent.ok) return { ok: false, reason: spent.reason, state };
 
@@ -2189,7 +2319,7 @@ function useEnemySkill(state, enemyId, skillId, targetId) {
     };
     next = push(next, "resolve-spent", { actorId: enemyId, skillId, amount: cost });
   }
-  next = applySkillEffects(next, skillId, skillState.rank, targetId, enemyId);
+  next = applyResolvedSkillEffects(next, definition, skillState.rank, enemyId, resolvedTargets);
   return { ok: true, reason: null, state: settle(next) };
 }
 

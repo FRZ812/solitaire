@@ -20,20 +20,32 @@ function smoothstep(value) {
   return t * t * (3 - (2 * t));
 }
 
+function frameCountForCue(cue) {
+  return Math.max(
+    1,
+    Math.round(Number(cue?.visual?.flipbook?.frameCount) || TOW_COMBAT_FLIPBOOK_FRAME_COUNT),
+  );
+}
+
 function frameRangeForCue(cue) {
+  const frameCount = frameCountForCue(cue);
   const authoredRange = cue?.visual?.flipbook?.frameRange;
   if (Array.isArray(authoredRange) && authoredRange.length === 2) {
-    const start = clamp(Math.round(authoredRange[0]), 0, TOW_COMBAT_FLIPBOOK_FRAME_COUNT - 1);
-    const end = clamp(Math.round(authoredRange[1]), start, TOW_COMBAT_FLIPBOOK_FRAME_COUNT - 1);
+    const start = clamp(Math.round(authoredRange[0]), 0, frameCount - 1);
+    const end = clamp(Math.round(authoredRange[1]), start, frameCount - 1);
     return [start, end];
   }
-  return [0, TOW_COMBAT_FLIPBOOK_FRAME_COUNT - 1];
+  return [0, frameCount - 1];
 }
 
 function cueDuration(cue, reducedMotion) {
   if (reducedMotion) return REDUCED_MOTION_DURATION_MS;
   const [start, end] = frameRangeForCue(cue);
-  return Math.max(170, ((end - start + 1) / TOW_COMBAT_FLIPBOOK_FPS) * 1_000);
+  const fps = Math.max(
+    1,
+    Number(cue?.visual?.flipbook?.fps) || TOW_COMBAT_FLIPBOOK_FPS,
+  );
+  return Math.max(170, ((end - start + 1) / fps) * 1_000);
 }
 
 function anchorForSide(cue, side, width, height) {
@@ -57,8 +69,39 @@ function anchorForSide(cue, side, width, height) {
   };
 }
 
+function anchorForCell(cue, cell, width, height) {
+  if (!cell || !["player", "enemy"].includes(cell.side)
+    || !Number.isSafeInteger(cell.index) || cell.index < 0 || cell.index >= 9) {
+    return anchorForSide(cue, cell?.side || cue.targetSide, width, height);
+  }
+  const profile = cue.visual?.profile || {};
+  const lane = Number.isFinite(cue.hitIndex) ? cue.hitIndex : 0;
+  const row = Math.floor(cell.index / 3);
+  const column = cell.index % 3;
+  const fieldWidth = Math.min(width * 0.9, 880);
+  const fieldLeft = (width - fieldWidth) / 2;
+  const x = fieldLeft + (((column + 0.5) / 3) * fieldWidth);
+  // Both sides use row zero as their front rank. Enemy rows therefore travel upward as
+  // their index grows, while player rows travel downward from the centre line.
+  const yRatio = cell.side === "enemy"
+    ? 0.44 - (row * 0.135)
+    : 0.56 + (row * 0.135);
+  return {
+    x: x
+      + ((Number(profile.x) || 0) / 100) * width
+      + ((lane % 3) - 1) * Math.min(18, width * 0.016),
+    y: (height * yRatio)
+      + ((Number(profile.y) || 0) / 100) * height
+      + ([0, -1, 1][lane % 3] || 0) * Math.min(12, height * 0.02),
+    radius: Math.max(58, Math.min(fieldWidth / 5.7, height * 0.16, 165)),
+  };
+}
+
 export function combatVfxPositionForCue(cue, width, height, progress = 1) {
-  const target = anchorForSide(cue, cue.targetSide, width, height);
+  const targetCell = cue.anchorCell || cue.targetCell || null;
+  const target = targetCell
+    ? anchorForCell(cue, targetCell, width, height)
+    : anchorForSide(cue, cue.targetSide, width, height);
   const travels = cue.visual?.travel === "source-to-target"
     && cue.attackerId
     && cue.targetId
@@ -67,7 +110,9 @@ export function combatVfxPositionForCue(cue, width, height, progress = 1) {
   if (!travels) return { ...target, angle: 0, travelProgress: 1 };
 
   const sourceSide = cue.targetSide === "enemy" ? "player" : "enemy";
-  const source = anchorForSide(cue, sourceSide, width, height);
+  const source = cue.sourceCell
+    ? anchorForCell(cue, cue.sourceCell, width, height)
+    : anchorForSide(cue, sourceSide, width, height);
   // Reach the target on frame five, leaving frames six through nine anchored to contact
   // and dissipation instead of letting a projectile grow in place over the victim.
   const travelProgress = smoothstep(clamp(progress / 0.52));
@@ -104,16 +149,31 @@ function preloadImage(asset) {
 }
 
 export function flipbookSupportsVisual(visual) {
+  const flipbook = visual?.flipbook;
+  const frameCount = Number(flipbook?.frameCount);
+  const gridColumns = Number(flipbook?.columns);
+  const gridRows = Number(flipbook?.rows);
+  const validLayout = flipbook?.layout === "horizontal"
+    || (
+      flipbook?.layout === "grid"
+      && Number.isInteger(gridColumns)
+      && Number.isInteger(gridRows)
+      && gridColumns > 0
+      && gridRows > 0
+      && (gridColumns * gridRows) >= frameCount
+    );
   return Boolean(
-    visual?.flipbook?.asset
-    && visual.flipbook.frameCount === TOW_COMBAT_FLIPBOOK_FRAME_COUNT
-    && visual.flipbook.layout === "horizontal",
+    flipbook?.asset
+    && Number.isInteger(frameCount)
+    && frameCount > 0
+    && Number(flipbook.fps) > 0
+    && validLayout,
   );
 }
 
 function frameAtProgress(cue, progress, reducedMotion) {
-  if (reducedMotion) return 4;
   const [start, end] = frameRangeForCue(cue);
+  if (reducedMotion) return Math.round(start + ((end - start) * 0.72));
   return Math.min(end, start + Math.floor(clamp(progress) * (end - start + 1)));
 }
 
@@ -151,16 +211,20 @@ export function drawCombatVfxCue(ctx, cue, image, width, height, progress, {
   if (!flipbookSupportsVisual(cue?.visual) || !image) return false;
 
   const frame = frameAtProgress(cue, progress, reducedMotion);
-  const sourceFrameWidth = (image.naturalWidth || image.width) / flipbook.frameCount;
-  const sourceFrameHeight = image.naturalHeight || image.height;
+  const sourceColumns = flipbook.layout === "grid" ? flipbook.columns : flipbook.frameCount;
+  const sourceRows = flipbook.layout === "grid" ? flipbook.rows : 1;
+  const sourceFrameWidth = (image.naturalWidth || image.width) / sourceColumns;
+  const sourceFrameHeight = (image.naturalHeight || image.height) / sourceRows;
+  const sourceColumn = frame % sourceColumns;
+  const sourceRow = Math.floor(frame / sourceColumns);
   const anchor = combatVfxPositionForCue(cue, width, height, reducedMotion ? 1 : progress);
   const authoredScale = clamp(Number(cue.visual?.profile?.scale) || 1, 0.88, 1.12);
   const size = anchor.radius * 2.5 * authoredScale;
   const fade = reducedMotion ? 0.9 : 1 - easeOut((clamp(progress) - 0.82) / 0.18);
   const mirror = cue.targetSide === "enemy" ? 1 : -1;
   const source = {
-    x: frame * sourceFrameWidth,
-    y: 0,
+    x: sourceColumn * sourceFrameWidth,
+    y: sourceRow * sourceFrameHeight,
     width: sourceFrameWidth,
     height: sourceFrameHeight,
   };
@@ -211,7 +275,7 @@ function resizeCanvas(canvas, ctx) {
   return { width, height };
 }
 
-function dedupeAuthoredCues(cues) {
+export function dedupeAuthoredCues(cues) {
   return cues.filter((cue, index) => {
     const id = cue.visual?.flipbook?.id;
     if (!id) return false;
@@ -219,7 +283,6 @@ function dedupeAuthoredCues(cues) {
     return !cues.slice(0, index).some((prior) => (
       prior.visual?.flipbook?.id === id
       && prior.actionIndex === cue.actionIndex
-      && prior.targetSide === cue.targetSide
     ));
   });
 }

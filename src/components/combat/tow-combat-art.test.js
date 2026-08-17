@@ -57,6 +57,11 @@ describe("Tower combat art", () => {
     expect(resolvePlayerCombatCutout("tow:ranger")).toBe(TOW_COMBAT_CUTOUTS.ranger);
   });
 
+  it("gives legacy companions a half-body cutout from their profession", () => {
+    expect(resolvePlayerCombatCutout(null, { name: "Kestrel", profession: "ranger" }))
+      .toBe(TOW_COMBAT_CUTOUTS.wildstrider);
+  });
+
   it("recognises template keys without leaking their storage prefix", () => {
     expect(combatPortraitTemplateId("template:cutthroat")).toBe("cutthroat");
     expect(combatPortraitTemplateId("tow:arctic-knight")).toBe("arctic-knight");

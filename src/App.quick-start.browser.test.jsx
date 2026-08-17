@@ -10,6 +10,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY } from "./engine/campaign-resume.js";
 import { DEFAULT_STARTING_KEEPSAKE_ID, STARTING_KEEPSAKES } from "./gameplay/tow/keepsakes.js";
+import {
+  PRACTICE_ALLY_GROUPS,
+  PRACTICE_SCENARIOS,
+} from "./gameplay/tow/practice-scenarios.js";
 import { STARTING_ARCHETYPES } from "./gameplay/tow/starting-archetypes.js";
 import { Solitaire } from "./App.jsx";
 
@@ -64,8 +68,34 @@ async function waitFor(assertion, timeout = 5000) {
 
 async function click(element) {
   expect(element).toBeTruthy();
+  const combatAction = element.classList?.contains("production-combat__action");
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  if (element.classList?.contains("production-combat__action")) {
+  if (combatAction) {
+    let confirmation = container?.querySelector('[data-testid="tow-target-confirmation"]');
+    if (confirmation) {
+      let confirm = [...confirmation.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Confirm");
+      if (confirm?.disabled) {
+        const anchor = await waitFor(() => (
+          container?.querySelector(
+            '[aria-label="Battle formations"] .tow-formation-cell.is-valid-anchor:not(:disabled)',
+          )
+        ));
+        await act(async () => anchor.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+        confirmation = await waitFor(() => (
+          container?.querySelector('[data-testid="tow-target-confirmation"]')
+        ));
+        confirm = await waitFor(() => {
+          const button = [...confirmation.querySelectorAll("button")]
+            .find((candidate) => candidate.textContent.trim() === "Confirm");
+          return button && !button.disabled ? button : null;
+        });
+      }
+      expect(confirm).toBeTruthy();
+      expect(confirm.disabled).toBe(false);
+      await act(async () => confirm.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    }
+
     await waitFor(() => {
       const combat = container?.querySelector(".tow-combat");
       return !combat || combat.getAttribute("aria-busy") !== "true";
@@ -206,6 +236,57 @@ describe("practice is reversible and writes nothing", () => {
 
     await click(actions[0]);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(harness.serverState.created).toBe(false);
+    expect(harness.serverState.mechanics?.tow?.activeCombat ?? null).toBe(null);
+    expect(harness.saveCampaign.mock.calls.length).toBe(savesBefore);
+  });
+
+  it("launches the selected allied and enemy formations through the App boundary", async () => {
+    const alliedGroup = PRACTICE_ALLY_GROUPS.find((entry) => entry.id === "expedition-trio");
+    const enemyGroup = PRACTICE_SCENARIOS.find((entry) => entry.id === "formation-drill");
+    expect(alliedGroup).toBeTruthy();
+    expect(enemyGroup).toBeTruthy();
+
+    const mounted = await mount();
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    const savesBefore = harness.saveCampaign.mock.calls.length;
+    await click(start.querySelectorAll(".character-choice-card")[0]);
+    await click(start.querySelector(".character-preview__details-button"));
+    const details = await waitFor(() => mounted.querySelector(".character-details"));
+
+    const alliedPicker = details.querySelector('[role="combobox"][aria-label="Allied formation"]');
+    await click(alliedPicker);
+    const alliedList = details.querySelector('[role="listbox"][aria-label="Allied formation choices"]');
+    await click([...alliedList.querySelectorAll('[role="option"]')]
+      .find((option) => option.textContent.includes(alliedGroup.name)));
+    expect(alliedPicker.textContent).toContain(alliedGroup.name);
+
+    const enemyPicker = details.querySelector('[role="combobox"][aria-label="Enemy formation"]');
+    await click(enemyPicker);
+    const enemyList = details.querySelector('[role="listbox"][aria-label="Enemy formation choices"]');
+    await click([...enemyList.querySelectorAll('[role="option"]')]
+      .find((option) => option.textContent.includes(enemyGroup.name)));
+    expect(enemyPicker.textContent).toContain(enemyGroup.name);
+
+    await click(details.querySelector(".character-details__practice > button"));
+    const combat = await waitFor(() => mounted.querySelector(".tow-combat"));
+    const alliedFormation = await waitFor(() => combat.querySelector('[aria-label="Player formation"]'));
+    const enemyFormation = combat.querySelector('[aria-label="Enemy formation"]');
+    expect(alliedFormation.querySelectorAll(".tow-formation-cell.has-unit"))
+      .toHaveLength(alliedGroup.allies.length + 1);
+    expect(enemyFormation.querySelectorAll(".tow-formation-cell.has-unit"))
+      .toHaveLength(enemyGroup.enemies.length);
+
+    const commanders = [...combat.querySelectorAll(".production-combat__commander")];
+    expect(commanders).toHaveLength(alliedGroup.allies.length + 1);
+    const paladinCommander = commanders.find((button) => button.textContent.includes("Paladin"));
+    await click(paladinCommander);
+    expect(paladinCommander.getAttribute("aria-pressed")).toBe("true");
+    const paladinAction = [...combat.querySelectorAll(".production-combat__action")]
+      .find((button) => button.getAttribute("aria-disabled") !== "true");
+    await click(paladinAction);
+    await waitFor(() => paladinCommander.querySelector("strong")?.textContent === "0");
+
     expect(harness.serverState.created).toBe(false);
     expect(harness.serverState.mechanics?.tow?.activeCombat ?? null).toBe(null);
     expect(harness.saveCampaign.mock.calls.length).toBe(savesBefore);

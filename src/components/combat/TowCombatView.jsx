@@ -19,6 +19,13 @@ import {
   UNLIMITED_USES,
   usesPerAct,
 } from "../../gameplay/tow/skills.js";
+import { abilityTargeting, presentationTier } from "../../gameplay/tow/ability-targeting.js";
+import {
+  encounterFormations,
+  formationCellForActor,
+  legalSkillAnchors,
+  resolveSkillTargets,
+} from "../../gameplay/tow/targeting.js";
 import {
   describeCombatItemEffect,
   getCombatItem,
@@ -36,6 +43,7 @@ import {
 } from "./tow-combat-feedback.js";
 import { combatVfxForIntent } from "./tow-combat-vfx.js";
 import { TowCombatVfxCanvas } from "./TowCombatVfxCanvas.jsx";
+import { FormationBattlefield } from "./FormationBattlefield.jsx";
 import { combatChoreographyForAction } from "./tow-combat-choreography.js";
 import { towStatusPresentation } from "./tow-combat-status.js";
 import "./tow-combat.css";
@@ -708,6 +716,13 @@ function CombatEffects({ cues }) {
         const laneX = [-38, 38, 0][lane % 3];
         const laneY = [0, -18, 14][lane % 3];
         const profile = cue.visual?.profile || {};
+        const cell = cue.targetCell || cue.anchorCell || null;
+        const row = cell ? Math.floor(cell.index / 3) : null;
+        const column = cell ? cell.index % 3 : null;
+        const cellLeft = cell ? 16.7 + (column * 33.3) : null;
+        const cellTop = cell
+          ? cell.side === "enemy" ? 44 - (row * 13.5) : 56 + (row * 13.5)
+          : null;
         return (
           <span
             key={cue.id || `${cue.sequence}-${cue.kind}-${cue.targetId || index}`}
@@ -729,6 +744,14 @@ function CombatEffects({ cues }) {
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,
               "--tow-effect-x": `${laneX}px`,
               "--tow-effect-y": `${laneY}px`,
+              ...(cell ? {
+                top: `${cellTop}%`,
+                right: "auto",
+                bottom: "auto",
+                left: `${cellLeft}%`,
+                marginTop: "-4.75rem",
+                marginLeft: "-4.75rem",
+              } : {}),
             }}
           >
             {cue.outcomeAsset && cue.outcomeAsset !== cue.visual?.asset ? (
@@ -834,6 +857,26 @@ function ActionDeclaration({
   );
 }
 
+function MythicalAbilityDeclaration({ beat, portrait }) {
+  if (!beat || beat.presentationTier !== "mythical" || beat.phase !== "declaration") return null;
+  return (
+    <section
+      className="tow-combat__mythical-declaration"
+      role="status"
+      aria-live="assertive"
+      data-testid="tow-mythical-declaration"
+    >
+      <span className="tow-combat__mythical-aura" aria-hidden="true" />
+      {portrait ? <img src={portrait} alt="" aria-hidden="true" draggable="false" /> : null}
+      <span className="tow-combat__mythical-copy">
+        <small>Mythical · {beat.actorName}</small>
+        <strong>{beat.displayName}</strong>
+        <em>Ability declared</em>
+      </span>
+    </section>
+  );
+}
+
 function CombatDeclarations({ beat, cues, encounter }) {
   const seenActions = new Set();
   const enemyDeclarations = [];
@@ -849,7 +892,7 @@ function CombatDeclarations({ beat, cues, encounter }) {
   if (!beat && enemyDeclarations.length === 0) return null;
   return (
     <div className="tow-combat__declarations" aria-label="Declared actions">
-      {beat ? (
+      {beat && beat.presentationTier === "ability" ? (
         <ActionDeclaration
           label={beat.displayName}
           visual={beat.choreography.visual}
@@ -905,6 +948,7 @@ export function TowCombatView({
   const satchelRef = useRef(null);
   const satchelTriggerRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
+  const [targetingDraft, setTargetingDraft] = useState(null);
   const [commanderId, setCommanderId] = useState(null);
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [inspectedStatus, setInspectedStatus] = useState(null);
@@ -913,7 +957,7 @@ export function TowCombatView({
   const [impactCues, setImpactCues] = useState([]);
   const [actionBeat, setActionBeat] = useState(null);
   const [terminalRevealed, setTerminalRevealed] = useState(() => encounter.phase !== "player");
-  const actionTimersRef = useRef({ commit: null, release: null });
+  const actionTimersRef = useRef({ declaration: null, commit: null, release: null });
 
   const player = encounter.actors[encounter.playerId];
   const allies = (encounter.allyIds || []).map((id) => encounter.actors[id]);
@@ -989,6 +1033,18 @@ export function TowCombatView({
       weaponPresentation: commanderWeapon,
     };
   });
+  const targetingRow = targetingDraft
+    ? skillRows.find((row) => row.skillState.id === targetingDraft.skillId) || null
+    : null;
+  const validAnchors = targetingRow
+    ? legalSkillAnchors(encounter, targetingRow.definition, activeCommander.id)
+    : [];
+  const targetPreview = targetingRow && targetingDraft?.anchorCell
+    ? resolveSkillTargets(encounter, targetingRow.definition, activeCommander.id, {
+      anchorCell: targetingDraft.anchorCell,
+    })
+    : null;
+  const resolvedPreview = targetPreview?.ok ? targetPreview : null;
   const combatItemRows = (commanderBuild?.combatItems || []).map((held) => {
     const item = getCombatItem(held.id);
     const legality = forcedWindow
@@ -1000,6 +1056,16 @@ export function TowCombatView({
   const inspectedSkill = skillRows.find(({ skillState }) => skillState.id === inspectedSkillId) || null;
   const declared = terminal ? [] : declaredIntents(encounter);
   const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
+  const intentCells = declared.flatMap((intent) => {
+    if (intent.skillId && getSkill(intent.skillId)) {
+      const preview = resolveSkillTargets(encounter, intent.skillId, intent.enemyId, {
+        targetId: intent.targetId,
+      });
+      if (preview.ok) return preview.affectedCells;
+    }
+    const cell = formationCellForActor(encounter, intent.targetId);
+    return cell ? [cell] : [];
+  });
   const fallen = enemies.filter((enemy) => enemy.hp <= 0).length;
   const staged = enemies.find((enemy) => enemy.id === activeTarget) || enemies[0];
   const retreat = authoritativeTerminal ? null : retreatOdds(encounter);
@@ -1060,6 +1126,7 @@ export function TowCombatView({
     return supplied || resolveTowCombatArt(actor, {
       playerId: encounter.playerId,
       playerPortraitKey,
+      archetypeId: encounter.enemyArchetypes?.[actor.id] || actor.archetypeId || null,
     });
   }
 
@@ -1083,8 +1150,46 @@ export function TowCombatView({
     setActionBeat(null);
   }
 
-  function queueSkillAction(row) {
+  function beginSkillTargeting(row) {
     if (presentationLocked || !row.legality.ok) return;
+    const anchors = legalSkillAnchors(encounter, row.definition, activeCommander.id);
+    const profile = abilityTargeting(row.definition);
+    const anchorCell = anchors.length === 1 || profile.anchorSide === "self"
+      ? anchors[0] || null
+      : null;
+    const immediatePreview = anchors.length === 1 && anchorCell
+      ? resolveSkillTargets(encounter, row.definition, activeCommander.id, { anchorCell })
+      : null;
+    setInspectedSkillId(null);
+    setInspectedStatus(null);
+    setRecordExpanded(false);
+    setSatchelOpen(false);
+    if (immediatePreview?.ok && immediatePreview.targetIds.length === 1) {
+      queueSkillAction(row, immediatePreview);
+      return;
+    }
+    setTargetingDraft({ skillId: row.skillState.id, anchorCell });
+  }
+
+  function selectFormationCell(side, index) {
+    if (!targetingRow || presentationLocked) return;
+    if (!validAnchors.some((entry) => entry.side === side && entry.index === index)) return;
+    const formations = encounterFormations(encounter);
+    const occupant = formations[side]?.[index];
+    if (occupant && encounter.actors[occupant]?.side === "enemy") setTargetId(occupant);
+    setTargetingDraft((current) => current ? {
+      ...current,
+      anchorCell: { side, index },
+    } : current);
+  }
+
+  function cancelSkillTargeting() {
+    setTargetingDraft(null);
+    globalThis.requestAnimationFrame?.(() => firstActionRef.current?.focus());
+  }
+
+  function queueSkillAction(row = targetingRow, preview = resolvedPreview) {
+    if (presentationLocked || !row?.legality.ok || !preview?.ok) return;
     const reducedMotion = typeof window !== "undefined"
       && typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1093,36 +1198,52 @@ export function TowCombatView({
       row.weaponPresentation,
       { reducedMotion },
     );
-    const target = choreography.target === "enemy"
-      ? encounter.actors[activeTarget]
-      : activeCommander;
+    const target = encounter.actors[preview.primaryTargetId] || activeCommander;
+    const tier = presentationTier(row.definition, row.skillState.rank);
+    const declarationMs = tier === "mythical" ? (reducedMotion ? 280 : 1120) : 0;
     const beat = {
       actorId: activeCommander.id,
       actorName: activeCommander.id === encounter.playerId ? "You" : activeCommander.name,
       choreography,
       displayName: row.displayName,
-      phase: "windup",
+      phase: tier === "mythical" ? "declaration" : "windup",
+      presentationTier: tier,
       sequence: encounter.sequence,
       skillId: row.skillState.id,
-      targetId: target?.id || activeTarget,
+      anchorCell: preview.anchorCell,
+      affectedCells: preview.affectedCells,
+      targetId: target?.id || preview.primaryTargetId,
       targetName: target?.id === activeCommander.id ? "the stance" : target?.name || "the target",
     };
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
+    setTargetingDraft(null);
     setActionBeat(beat);
+    clearActionTimer("declaration");
     clearActionTimer("commit");
+    if (declarationMs > 0) {
+      actionTimersRef.current.declaration = setTimeout(() => {
+        actionTimersRef.current.declaration = null;
+        setActionBeat((current) => current ? { ...current, phase: "windup" } : current);
+      }, declarationMs);
+    }
     actionTimersRef.current.commit = setTimeout(() => {
       actionTimersRef.current.commit = null;
       try {
-        onUseSkill(row.skillState.id, activeTarget, activeCommander.id);
+        onUseSkill(
+          row.skillState.id,
+          preview.primaryTargetId,
+          activeCommander.id,
+          preview.anchorCell,
+        );
       } finally {
         setActionBeat((current) => current ? { ...current, phase: "resolve" } : current);
         clearActionTimer("release");
         actionTimersRef.current.release = setTimeout(releaseActionBeat, choreography.recoveryMs);
       }
-    }, choreography.windupMs);
+    }, declarationMs + choreography.windupMs);
   }
 
   useEffect(() => {
@@ -1150,6 +1271,7 @@ export function TowCombatView({
   }, [returnFocusSelector]);
 
   useEffect(() => () => {
+    clearActionTimer("declaration");
     clearActionTimer("commit");
     clearActionTimer("release");
     clearImpactCueTimer();
@@ -1165,6 +1287,7 @@ export function TowCombatView({
     setInspectedStatus(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
+    setTargetingDraft(null);
   }, [activeCommander.id, encounter.round, terminal]);
 
   useEffect(() => {
@@ -1273,6 +1396,9 @@ export function TowCombatView({
       } else if (recordExpanded) {
         event.preventDefault();
         setRecordExpanded(false);
+      } else if (targetingDraft) {
+        event.preventDefault();
+        cancelSkillTargeting();
       } else if (presentationLocked) {
         event.preventDefault();
       } else if (onEscape) {
@@ -1333,6 +1459,14 @@ export function TowCombatView({
     );
   }
 
+  const formations = encounterFormations(encounter);
+  const sceneImage = typeof sceneArt === "string" ? sceneArt : sceneArt?.image || battleScene;
+  const sceneStyle = typeof sceneArt === "object" && sceneArt ? {
+    "--tow-scene-primary": sceneArt.primary || undefined,
+    "--tow-scene-accent": sceneArt.accent || undefined,
+    "--tow-scene-deep": sceneArt.deep || undefined,
+  } : undefined;
+
   return (
     <div
       className={`tow-combat${terminal ? " is-terminal" : ""}${presentationLocked ? " is-presenting-action" : ""}`}
@@ -1343,9 +1477,10 @@ export function TowCombatView({
       aria-busy={presentationLocked}
       data-presentation-phase={actionBeat?.phase || (terminalHold ? "resolution-hold" : "ready")}
       data-action-motion={actionBeat?.choreography.visual.motion || undefined}
+      style={sceneStyle}
       onKeyDown={keepFocusInside}
     >
-      <img className="tow-combat__scene" src={sceneArt} alt="" aria-hidden="true" />
+      <img className="tow-combat__scene" src={sceneImage} alt="" aria-hidden="true" />
       <div className="tow-combat__backdrop" aria-hidden="true" />
 
       <main className="tow-combat__stage">
@@ -1360,7 +1495,9 @@ export function TowCombatView({
             <strong>{encounter.round}</strong>
             {!terminal ? (
               <em>{presentationLocked
-                ? actionBeat?.phase === "windup" ? "Action committed" : "Reading the exchange"
+                ? actionBeat?.phase === "declaration"
+                  ? "Mythical ability"
+                  : actionBeat?.phase === "windup" ? "Action committed" : "Reading the exchange"
                 : activeCommander.id === encounter.playerId ? "Your move" : `${activeCommander.name}'s move`}</em>
             ) : null}
           </p>
@@ -1391,35 +1528,33 @@ export function TowCombatView({
           </div>
         </header>
 
-        <section className="tow-combat__battlefield" aria-label="Combatants">
+        <section className="tow-combat__battlefield tow-combat__battlefield--formation" aria-label="Combatants">
           <span className="tow-combat__battle-light tow-combat__battle-light--foe" aria-hidden="true" />
           <span className="tow-combat__battle-light tow-combat__battle-light--hero" aria-hidden="true" />
 
-          {staged ? (
-            <article
-              className={`tow-combat__threat${staged.hp <= 0 && terminal ? " is-down" : ""}${actionBeat?.targetId === staged.id ? " is-action-targeted" : ""} ${actorFeedbackClasses(staged.id, impactCues)}`.trim()}
-              style={actorFeedbackStyle(staged.id, impactCues)}
-              aria-label={`Foe: ${staged.name}`}
-            >
-              <ArtFigure actor={staged} src={combatArt(staged)} side="foe" down={staged.hp <= 0 && terminal} />
-              {!terminal ? <IntentBadge intent={intents[staged.id]} target={encounter.actors[intents[staged.id]?.targetId]} playerId={encounter.playerId} /> : null}
-              <CombatantPlate
-                actor={staged}
-                role={actionBeat?.targetId === staged.id ? "Marked foe" : "Foe"}
-                enemy
-                feedbackCues={impactCues}
-                selectedStatusType={inspectedStatus?.actorId === staged.id ? inspectedStatus.type : null}
-                statusSource={inspectedStatus?.actorId === staged.id
-                  ? statusReceiptFor(staged.id, inspectedStatus.type)
-                  : null}
-                onToggleStatus={(statusType) => toggleStatus(staged.id, statusType)}
-              />
-            </article>
-          ) : null}
+          <FormationBattlefield
+            actors={encounter.actors}
+            formations={formations}
+            artForActor={combatArt}
+            validAnchors={targetingDraft && !presentationLocked ? validAnchors : []}
+            affectedCells={resolvedPreview?.affectedCells || []}
+            selectedAnchor={resolvedPreview?.anchorCell || targetingDraft?.anchorCell || null}
+            intentCells={terminal ? [] : intentCells}
+            activeActorId={activeCommander.id}
+            onSelectCell={selectFormationCell}
+            feedbackCues={impactCues}
+          />
 
-          {enemies.length > 1 ? (
-            <section className="tow-combat__foe-rail" aria-label="Choose a foe">
-              {enemies.map(enemyToken)}
+          {!terminal && declared.length > 0 ? (
+            <section className="tow-combat__formation-intents" aria-label="Enemy intentions">
+              {declared.map((intent) => (
+                <IntentBadge
+                  key={intent.enemyId}
+                  intent={intent}
+                  target={encounter.actors[intent.targetId]}
+                  playerId={encounter.playerId}
+                />
+              ))}
             </section>
           ) : null}
 
@@ -1428,56 +1563,9 @@ export function TowCombatView({
           ) : null}
 
           <CombatEffects cues={impactCues} />
-
-          <article
-            className={`tow-combat__hero${stagedHero.hp <= 0 && terminal ? " is-down" : ""}${actionBeat?.actorId === stagedHero.id && actionBeat.phase === "windup" ? ` is-action-windup is-action-motion-${actionBeat.choreography.visual.motion}` : ""} ${actorFeedbackClasses(stagedHero.id, impactCues)}`.trim()}
-            style={{
-              ...actorFeedbackStyle(stagedHero.id, impactCues),
-              "--tow-action-windup": `${actionBeat?.choreography.windupMs || 0}ms`,
-            }}
-            aria-label={stagedHero.id === encounter.playerId ? `You: ${stagedHero.name}` : `Ally: ${stagedHero.name}`}
-          >
-            <ArtFigure actor={stagedHero} src={combatArt(stagedHero)} side="hero" down={stagedHero.hp <= 0 && terminal} />
-            <CombatantPlate
-              key={stagedHero.id}
-              actor={stagedHero}
-              role={stagedHero.id === encounter.playerId ? "You" : "Ally acting"}
-              feedbackCues={impactCues}
-              selectedStatusType={inspectedStatus?.actorId === stagedHero.id ? inspectedStatus.type : null}
-              statusSource={inspectedStatus?.actorId === stagedHero.id
-                ? statusReceiptFor(stagedHero.id, inspectedStatus.type)
-                : null}
-              onToggleStatus={(statusType) => toggleStatus(stagedHero.id, statusType)}
-              record={{
-                receipts: swiftReceipt ? [...receipts, swiftReceipt] : receipts,
-                tempo: tempoReceipt,
-                opening: openingReceipt,
-                expanded: recordExpanded,
-                onToggle: () => {
-                  setInspectedSkillId(null);
-                  setInspectedStatus(null);
-                  setRecordExpanded((value) => !value);
-                },
-              }}
-            />
-          </article>
-
-          {reserves.length > 0 ? (
-            <section className="tow-combat__reserves" aria-label="Other allies">
-              {reserves.map((actor) => (
-                <article
-                  key={actor.id}
-                  className={`tow-combat__reserve${actor.hp <= 0 ? " is-down" : ""} ${actorFeedbackClasses(actor.id, impactCues)}`.trim()}
-                  style={actorFeedbackStyle(actor.id, impactCues)}
-                  aria-label={actor.id === encounter.playerId ? `You: ${actor.name}` : `Ally: ${actor.name}`}
-                >
-                  <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
-                  <strong>{actor.hp}/{actor.maxHp}</strong>
-                </article>
-              ))}
-            </section>
-          ) : null}
         </section>
+
+        <MythicalAbilityDeclaration beat={actionBeat} portrait={combatArt(stagedHero)} />
 
         {error ? <p className="tow-combat__alert" role="alert">{error}</p> : null}
 
@@ -1489,13 +1577,17 @@ export function TowCombatView({
             <div className="tow-combat__command-heading">
               <div>
                 <span>{actionBeat
-                  ? actionBeat.phase === "windup" ? "Committed" : "Resolving"
+                  ? actionBeat.phase === "declaration"
+                    ? "Mythical declaration"
+                    : actionBeat.phase === "windup" ? "Committed" : "Resolving"
                   : forcedWindow?.kind === "control" ? "Control takes hold"
                     : forcedWindow?.kind === "priority" ? "Enemy moves first"
-                      : stagedHero.id === encounter.playerId ? "Your command" : stagedHero.name}</span>
+                      : targetingRow ? "Targeting" : stagedHero.id === encounter.playerId ? "Your command" : stagedHero.name}</span>
                 <strong>{actionBeat
                   ? actionBeat.displayName
-                  : forcedWindow ? `${forcedWindow.label} · turn forfeited` : "Choose an action"}</strong>
+                  : forcedWindow
+                    ? `${forcedWindow.label} · turn forfeited`
+                    : targetingRow ? "Preview the footprint" : "Choose an action"}</strong>
               </div>
               <p>
                 <strong>{forcedWindow ? 0 : actionsLeft(encounter, activeCommander.id)}</strong>
@@ -1537,17 +1629,47 @@ export function TowCombatView({
                   legality={row.legality}
                   active={row.skillState.id === inspectedSkillId}
                   busy={presentationLocked}
-                  committed={row.skillState.id === actionBeat?.skillId}
+                  committed={row.skillState.id === actionBeat?.skillId || row.skillState.id === targetingDraft?.skillId}
                   onShowDetails={() => {
                     setInspectedStatus(null);
                     setRecordExpanded(false);
                     setInspectedSkillId(row.skillState.id);
                   }}
                   onHideDetails={() => setInspectedSkillId(null)}
-                  onUse={() => queueSkillAction(row)}
+                  onUse={() => beginSkillTargeting(row)}
                 />
               ))}
             </div>
+
+            {targetingRow ? (
+              <section
+                className="tow-combat__target-confirm"
+                aria-label={`${targetingRow.displayName} target confirmation`}
+                data-testid="tow-target-confirmation"
+              >
+                <span>
+                  <small>{resolvedPreview ? "Footprint ready" : "Choose a highlighted cell"}</small>
+                  <strong>{targetingRow.displayName}</strong>
+                  <em>
+                    {abilityTargeting(targetingRow.definition).footprint.replace("-", " ")}
+                    {resolvedPreview
+                      ? ` · ${resolvedPreview.targetIds.length} target${resolvedPreview.targetIds.length === 1 ? "" : "s"}`
+                      : " · preview before committing"}
+                  </em>
+                </span>
+                <button type="button" className="tow-combat__target-cancel" onClick={cancelSkillTargeting}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="tow-combat__target-commit"
+                  disabled={!resolvedPreview || presentationLocked}
+                  onClick={() => queueSkillAction(targetingRow, resolvedPreview)}
+                >
+                  Confirm
+                </button>
+              </section>
+            ) : null}
 
             <div className="tow-combat__command-tools">
               <div className="tow-combat__satchel-slot">
@@ -1630,12 +1752,16 @@ export function TowCombatView({
 
               <p className="tow-combat__action-hint">
                 {actionBeat
-                  ? actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · watch the exchange"
+                  ? actionBeat.phase === "declaration"
+                    ? "Mythical declaration · the field holds"
+                    : actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · watch the exchange"
                   : forcedWindow?.kind === "control"
                     ? "No input needed · the skipped command advances automatically"
                     : forcedWindow?.kind === "priority"
                       ? "No input needed · enemy Priority resolves automatically"
-                      : "Tap to commit · hold for details"}
+                      : targetingRow
+                        ? resolvedPreview ? "Review the highlighted footprint · confirm to commit" : "Choose a highlighted cell"
+                        : "Tap an ability · choose its target · confirm"}
               </p>
               <span className="tow-combat__command-tools-balance" aria-hidden="true" />
             </div>

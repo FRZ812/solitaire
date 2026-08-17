@@ -13,11 +13,14 @@
 import "./quick-start.css";
 import React, { useCallback, useMemo, useState } from "react";
 import { TowCombatView } from "../combat/TowCombatView.jsx";
+import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
 import { dispatchTowPlayerAction } from "../../gameplay/tow/commands.js";
 import { sealTowTerminalReceipt } from "../../gameplay/tow/outcomes.js";
 import { chronicleSummary } from "../../gameplay/tow/chronicle.js";
 import {
+  DEFAULT_PRACTICE_ALLY_GROUP_ID,
   createPracticeSession,
+  getPracticeAllyGroup,
   practiceResult,
 } from "../../gameplay/tow/practice-scenarios.js";
 import { getStartingArchetype } from "../../gameplay/tow/starting-archetypes.js";
@@ -26,6 +29,7 @@ import { weaponPresentationFromItemIds } from "../../gameplay/tow/weapon-present
 export function PracticeFight({
   receipt,
   scenarioId,
+  allyGroupId = DEFAULT_PRACTICE_ALLY_GROUP_ID,
   skillRarities = null,
   keepsakeId = null,
   onExit,
@@ -35,15 +39,43 @@ export function PracticeFight({
   const weaponPresentation = weaponPresentationFromItemIds(archetype?.gear || []);
   const [attemptIndex, setAttemptIndex] = useState(0);
   const [practice, setPractice] = useState(
-    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities, keepsakeId }),
+    () => createPracticeSession(receipt, scenarioId, 0, { skillRarities, keepsakeId, allyGroupId }),
   );
   const [feedback, setFeedback] = useState(null);
+
+  const allyGroup = useMemo(() => {
+    const definition = getPracticeAllyGroup(allyGroupId);
+    if (!practice?.allyGroup) return definition;
+    return {
+      ...definition,
+      ...practice.allyGroup,
+      allies: (practice.allyGroup.allies || definition?.allies || []).map((member) => ({
+        ...(definition?.allies || []).find((entry) => entry.id === member.id),
+        ...member,
+      })),
+    };
+  }, [allyGroupId, practice?.allyGroup]);
+
+  const allyPresentation = useMemo(() => new Map((allyGroup?.allies || []).map((member) => {
+    const allyArchetype = getStartingArchetype(member.archetypeId);
+    return [member.id, {
+      art: resolvePlayerCombatCutout(
+        allyArchetype?.character?.portraitKey,
+        allyArchetype?.character,
+      ),
+      weapon: weaponPresentationFromItemIds(allyArchetype?.gear || []),
+    }];
+  })), [allyGroup]);
 
   const start = useCallback((index) => {
     setFeedback(null);
     setAttemptIndex(index);
-    setPractice(createPracticeSession(receipt, scenarioId, index, { skillRarities, keepsakeId }));
-  }, [receipt, scenarioId, skillRarities, keepsakeId]);
+    setPractice(createPracticeSession(receipt, scenarioId, index, {
+      skillRarities,
+      keepsakeId,
+      allyGroupId,
+    }));
+  }, [receipt, scenarioId, skillRarities, keepsakeId, allyGroupId]);
 
   const dispatch = useCallback((input) => {
     setPractice((current) => {
@@ -103,6 +135,8 @@ export function PracticeFight({
         {/* Not for the player — for whoever has to reproduce this fight later. */}
         <dl className="practice-fight__receipt">
           <dt>Scenario</dt><dd>{result.scenarioId} v{result.scenarioVersion}</dd>
+          <dt>Allied formation</dt>
+          <dd>{allyGroup?.name || allyGroupId}{allyGroup?.version ? ` v${allyGroup.version}` : ""}</dd>
           <dt>Attempt</dt><dd>{result.attemptIndex}</dd>
           <dt>Seed</dt><dd><code>{result.seed}</code></dd>
           <dt>Genesis</dt><dd><code>{result.genesisChecksum}</code></dd>
@@ -125,13 +159,18 @@ export function PracticeFight({
       encounter={practice.session.encounter}
       note={`Practice — ${practice.scenario.name}. Nothing here is written down.`}
       playerPortraitKey={playerPortraitKey}
-      weaponFor={() => weaponPresentation}
+      artFor={(actor) => allyPresentation.get(actor.id)?.art || null}
+      weaponFor={(actor) => (
+        actor.id === practice.session.encounter.playerId
+          ? weaponPresentation
+          : allyPresentation.get(actor.id)?.weapon || null
+      )}
       error={feedback}
       onEscape={onExit}
       escapeLabel="Leave practice"
       onRetreat={(actorId) => dispatch({ type: "attempt-retreat", actorId: actorId ?? null })}
-      onUseSkill={(skillId, targetId, actorId) => dispatch({
-        type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
+      onUseSkill={(skillId, targetId, actorId, anchorCell = null) => dispatch({
+        type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null, anchorCell,
       })}
       onUseItem={(itemId, targetId, actorId) => dispatch({
         type: "use-item", itemId, targetId: targetId ?? null, actorId: actorId ?? null,
