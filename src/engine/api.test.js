@@ -56,6 +56,53 @@ describe("narrator party context", () => {
     expect(context).toContain("Reframe Signature — Exchange a bounded targeting or area property for a learned utility mode");
   });
 
+  it("isolates Tower combat context while preserving world powers and narrative skills", () => {
+    const state = singularSavantState();
+    state.character.progressionModel = "tow-archetype";
+    state.character.abilities = [
+      { id: "firebolt", tier: "divine" },
+      { id: "haste", tier: "common" },
+      { id: "fly", tier: "rare" },
+    ];
+    state.mechanics = {
+      ...state.mechanics,
+      build: {
+        traits: { ironclad: 3 },
+        skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration", "arctic-mortal-blow"],
+        runes: [],
+      },
+    };
+    state.world.codex.skills = {
+      ...state.world.codex.skills,
+      firebolt: { id: "firebolt", name: "Firebolt", combatAbility: true, tier: "divine" },
+      haste: { id: "haste", name: "Haste", combatAbility: true, tier: "rare" },
+      "field-lore": { id: "field-lore", name: "Field Lore", rating: 2 },
+    };
+    state.world.codex.spells = {
+      ...state.world.codex.spells,
+      firebolt: { id: "firebolt", name: "Firebolt" },
+      haste: { id: "haste", name: "Haste" },
+    };
+
+    const context = buildStateContext(state);
+    const codexLine = context.match(/\[CODEX — ([^\]]+)\]/)?.[1] || "";
+
+    expect(context).toContain("[TOWER COMBAT KIT —");
+    expect(context.match(/arctic-(?:strike|block|deliberate-blow|incineration|mortal-blow):/g)).toHaveLength(5);
+    expect(context).toContain("arctic-strike: Strike (Basic Attack)");
+    expect(context).toContain("arctic-mortal-blow: Mortal Blow (Archetype)");
+    expect(context).toContain("[WORLD POWERS KNOWN — campaign utility outside the Tower combat kit: haste: Haste (rare), fly: Fly (rare)]");
+    expect(context).toContain("[GRANTABLE WORLD POWERS —");
+    expect(context).toContain("fly (≥rare), dimension-door (≥rare), gate (≥legendary), haste (≥rare), bear-strength (≥rare)");
+    expect(context).not.toContain("[PROGRESSION —");
+    expect(context).not.toContain("[ABILITIES KNOWN —");
+    expect(context).not.toContain("[PROGRESSION CAPABILITIES —");
+    expect(context).not.toContain("[GRANTABLE ABILITIES —");
+    expect(codexLine).toContain("Haste");
+    expect(codexLine).toContain("Field Lore(2)");
+    expect(codexLine).not.toContain("Firebolt");
+  });
+
   it("surfaces Bard abilities as non-spell performances", () => {
     const state = makeInitialState();
     state.character.abilities = [];

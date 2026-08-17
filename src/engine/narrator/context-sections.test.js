@@ -37,6 +37,20 @@ function campaign(overrides = {}) {
   };
 }
 
+function towerCampaign() {
+  const state = campaign({ character: { progressionModel: "tow-archetype" } });
+  state.mechanics = {
+    ...state.mechanics,
+    build: {
+      traits: {},
+      skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration", "arctic-mortal-blow"],
+      runes: [],
+    },
+  };
+  state.character.abilities = [{ id: "haste", tier: "rare" }];
+  return state;
+}
+
 const STATES = [
   ["a fresh campaign", () => ({ ...makeInitialState(), created: true })],
   ["a played campaign", () => campaign()],
@@ -146,6 +160,24 @@ describe("selection over the real block", () => {
     const kept = selection.selectedIds.join(" ");
     expect(kept).toContain("STATE");
     expect(kept).toContain("ITEM CATALOG");
+  });
+
+  it("keeps the closed Tower kit and world-power catalogue under budget pressure", () => {
+    const records = stateContextSectionRecords(buildStateContext(towerCampaign()));
+    const towerMarkers = ["TOWER COMBAT KIT", "WORLD POWERS KNOWN", "GRANTABLE WORLD POWERS"];
+    const towerRecords = towerMarkers.map((marker) => records.find((record) => record.id.includes(marker)));
+    expect(towerRecords.every(Boolean)).toBe(true);
+    expect(towerRecords.map((record) => record.priority)).toEqual([95, 95, 95]);
+
+    const frameChars = records
+      .filter((record) => record.type === "player" || record.type === "place")
+      .reduce((total, record) => total + record.chars, 0);
+    const towerChars = towerRecords.reduce((total, record) => total + record.chars, 0);
+    const selection = selectNarratorContext(records, { budgetChars: frameChars + towerChars });
+    const kept = selection.selectedIds.join(" ");
+
+    for (const marker of towerMarkers) expect(kept).toContain(marker);
+    expect(kept).not.toContain("ITEM CATALOG");
   });
 
   it("renders without the type labels the authored records use", () => {

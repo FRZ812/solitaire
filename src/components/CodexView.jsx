@@ -595,28 +595,43 @@ function AbilityRow({ def, known, tier, owned }) {
   );
 }
 
+// Tower archetypes use their separate five-action combat kit. The legacy
+// ability catalog remains useful as a rules reference, but residue in an old
+// save must never make those cards look equipped or learned. This also keeps a
+// world-layer Haste boon from claiming the distinct legacy Haste combat card.
+export function abilityCatalogOwnership(character, codex) {
+  if (character?.progressionModel === "tow-archetype") {
+    return { known: new Set(), ownedTier: {} };
+  }
+
+  const known = new Set([
+    ...((character?.abilities) || []).map((ability) => (typeof ability === "string" ? ability : ability.id)),
+    ...Object.keys(codex?.skills || {}),
+    ...Object.keys(codex?.spells || {}),
+  ]);
+  const ownedTier = {};
+  for (const ability of character?.abilities || []) {
+    const id = typeof ability === "string" ? ability : ability.id;
+    if (id && !(id in ownedTier)) {
+      ownedTier[id] = typeof ability === "string" ? "common" : (ability.tier || "common");
+    }
+  }
+  for (const [id, skill] of Object.entries(codex?.skills || {})) {
+    if (skill?.combatAbility && skill.tier && !(id in ownedTier)) ownedTier[id] = skill.tier;
+  }
+  return { known, ownedTier };
+}
+
 function AbilityCatalog({ codex, character }) {
   const [cat, setCat] = useState("all");
   const [knownOnly, setKnownOnly] = useState(false);
-  const known = useMemo(() => new Set([
-    ...((character?.abilities) || []).map((a) => (typeof a === "string" ? a : a.id)),
-    ...Object.keys(codex.skills || {}),
-    ...Object.keys(codex.spells || {}),
-  ]), [character, codex.skills, codex.spells]);
-  // The tier the PLAYER actually holds an ability at (their usable list wins, then
-  // a taught codex skill). Undiscovered abilities have no entry here — they show
-  // their tier FLOOR (lowest possible grade) instead.
-  const ownedTier = useMemo(() => {
-    const m = {};
-    for (const a of (character?.abilities || [])) {
-      const id = typeof a === "string" ? a : a.id;
-      if (id && !(id in m)) m[id] = typeof a === "string" ? "common" : (a.tier || "common");
-    }
-    for (const [id, s] of Object.entries(codex.skills || {})) {
-      if (s?.combatAbility && s.tier && !(id in m)) m[id] = s.tier;
-    }
-    return m;
-  }, [character, codex.skills]);
+  // The tier the PLAYER actually holds an ability at (their usable list wins,
+  // then a taught codex skill). Undiscovered abilities have no entry here —
+  // they show their tier FLOOR (lowest possible grade) instead.
+  const { known, ownedTier } = useMemo(
+    () => abilityCatalogOwnership(character, codex),
+    [character, codex.skills, codex.spells],
+  );
   const dispTier = (d) => ownedTier[d.id] || d.minTier || d.tier || "common";
   const sections = useMemo(() => [
     ...ABILITY_FILTERS.filter((c) => c.key !== "magic").map((c) => ({

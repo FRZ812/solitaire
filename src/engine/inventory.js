@@ -5,6 +5,7 @@
 
 import { goodDef } from "../data/goods.js";
 import { itemTemplate } from "../data/catalog.js";
+import { classifyLegacyAbilityGrant, clampWorldAbilityTier } from "../data/abilities.js";
 import { stampFreshUntil } from "./spoilage.js";
 import { equipSlot, slotCapacity, weaponHands } from "./combat-stats.js";
 import { itemWeight, loadOf } from "./weight.js";
@@ -286,7 +287,12 @@ export function equipItem(state, itemId, charId = "wanderer") {
     const addedSpells = [];
     abilities = Array.isArray(abilities) ? [...abilities] : [];
     for (const ga of (g.abilities || [])) {
-      if (!abilities.some((a) => idOf(a) === ga.id)) { abilities.push({ id: ga.id, tier: ga.tier || "common" }); addedAbilities.push(ga.id); }
+      const usesTowerProgression = state.character.progressionModel === "tow-archetype";
+      if (usesTowerProgression && classifyLegacyAbilityGrant(ga?.id) !== "world") continue;
+      const tier = usesTowerProgression
+        ? clampWorldAbilityTier(ga.id, ga.tier || "common")
+        : ga.tier || "common";
+      if (!abilities.some((a) => idOf(a) === ga.id)) { abilities.push({ id: ga.id, tier }); addedAbilities.push(ga.id); }
     }
     spells = { ...(codex.spells || {}) };
     for (const sp of (g.spells || [])) {

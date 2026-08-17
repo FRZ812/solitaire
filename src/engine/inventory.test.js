@@ -130,3 +130,66 @@ describe("party equipment routing", () => {
     ]);
   });
 });
+
+describe("Tower on-equip ability grants", () => {
+  const mixedRelic = {
+    id: "mixed-relic",
+    name: "Mixed Relic",
+    kind: "trinket",
+    slot: "neck",
+    grants: {
+      abilities: [
+        { id: "power-strike", tier: "rare" },
+        { id: "invented-cut", tier: "epic" },
+        { id: "haste", tier: "uncommon" },
+      ],
+      spells: [{ id: "road-lore", name: "Road Lore", description: "Old paths remembered." }],
+      magicKnows: "The old roads remember my tread.",
+    },
+  };
+
+  function mixedGrantState({ tower = true } = {}) {
+    const state = stateWithParty({ playerCarried: [{ itemId: mixedRelic.id, quantity: 1 }] });
+    if (tower) state.character.progressionModel = "tow-archetype";
+    state.world.codex.items = {
+      ...state.world.codex.items,
+      [mixedRelic.id]: mixedRelic,
+      "old-save-relic": {
+        id: "old-save-relic",
+        name: "Old Save Relic",
+        kind: "trinket",
+        _granted: { abilities: ["firebolt"], spells: ["old-lore"], knows: "Old knowledge." },
+      },
+    };
+    return state;
+  }
+
+  it("records only allowed abilities while preserving spell lore, knowledge, and old grant records", () => {
+    const state = mixedGrantState();
+    const oldGrant = structuredClone(state.world.codex.items["old-save-relic"]._granted);
+
+    const equipped = equipItem(state, mixedRelic.id);
+
+    expect(equipped.character.abilities).toEqual([{ id: "haste", tier: "rare" }]);
+    expect(equipped.world.codex.spells).toHaveProperty("road-lore");
+    expect(equipped.world.codex.characters.wanderer.knows).toContain("The old roads remember my tread.");
+    expect(equipped.world.codex.items[mixedRelic.id]._granted).toEqual({
+      abilities: ["haste"],
+      spells: ["road-lore"],
+      knows: "The old roads remember my tread.",
+    });
+    expect(equipped.world.codex.items["old-save-relic"]._granted).toEqual(oldGrant);
+    expect(state.character.abilities).toEqual([]);
+  });
+
+  it("leaves mixed grants unchanged for legacy characters", () => {
+    const equipped = equipItem(mixedGrantState({ tower: false }), mixedRelic.id);
+
+    expect(equipped.character.abilities).toEqual([
+      { id: "power-strike", tier: "rare" },
+      { id: "invented-cut", tier: "epic" },
+      { id: "haste", tier: "uncommon" },
+    ]);
+    expect(equipped.world.codex.items[mixedRelic.id]._granted.abilities).toEqual(["power-strike", "invented-cut", "haste"]);
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { rollLoot } from "./combat-loot.js";
+import { applyLoot, rollLoot } from "./combat-loot.js";
+import { makeInitialState } from "../data/initial-state.js";
 import { streamSequencer } from "../gameplay/tow/session.js";
 
 const SOURCES = [
@@ -63,4 +64,42 @@ describe("spoils roll from a named stream", () => {
     // rule rather than a reroll.
     expect(rich.endpoint).toEqual(plain.endpoint);
   });
+});
+
+describe("applying Tower spoils", () => {
+  const manifest = {
+    coins: { copper: 4, silver: 2, gold: 0 },
+    items: [{
+      itemId: "victory-token",
+      quantity: 1,
+      entry: { id: "victory-token", name: "Victory Token", kind: "trinket" },
+    }],
+    ability: { id: "power-strike", name: "Power Strike", tier: "rare" },
+  };
+
+  it("keeps items and coins but does not write a legacy combat technique", () => {
+    const state = makeInitialState();
+    state.character.progressionModel = "tow-archetype";
+    const before = structuredClone(state);
+
+    const result = applyLoot(state, manifest);
+
+    expect(result.state.character.inventory.carried).toContainEqual({ itemId: "victory-token", quantity: 1 });
+    expect(result.state.character.inventory.coins).toEqual({ copper: 4, silver: 2, gold: 0 });
+    expect(result.state.character.abilities).not.toContainEqual(expect.objectContaining({ id: "power-strike" }));
+    expect(result.state.world.codex.skills).not.toHaveProperty("power-strike");
+    expect(result.taken).toContain("Victory Token");
+    expect(result.taken).toContain("+2sp");
+    expect(result.taken).not.toContain("Power Strike");
+    expect(state).toEqual(before);
+  });
+
+  it("leaves legacy characters' combat spoils unchanged", () => {
+    const result = applyLoot(makeInitialState(), manifest);
+
+    expect(result.state.character.abilities).toContainEqual({ id: "power-strike", tier: "rare" });
+    expect(result.state.world.codex.skills).toHaveProperty("power-strike");
+    expect(result.taken).toContain("the technique Power Strike");
+  });
+
 });

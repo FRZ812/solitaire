@@ -3,7 +3,7 @@ import { AbilityIcon } from "./AbilityIcon.jsx";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { SectionHeader } from "./primitives.jsx";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
-import { getAbilityDef, abilityStatLine, abilityReqLine } from "../data/abilities.js";
+import { getAbilityDef, abilityStatLine, abilityReqLine, classifyLegacyAbilityGrant } from "../data/abilities.js";
 import { PROFICIENCIES, proficiencyRating, proficiencyDef } from "../data/proficiencies.js";
 import { knownBuffSpells } from "../data/buff-spells.js";
 import { knownTravelSpells } from "../data/travel-spells.js";
@@ -18,13 +18,14 @@ import { resolveTowAbilityArt } from "./combat/tow-combat-ability-art.js";
 const CORE = new Set(["basic-attack", "defend", "talk"]);
 
 export function arsenalAbilityGroups(character, progressionProjection = progressionNarrativeProjection(character)) {
-  const learned = progressionProjection.abilities.map((ability) => (
+  const usesTowProgression = character?.progressionModel === "tow-archetype";
+  const learned = usesTowProgression ? [] : progressionProjection.abilities.map((ability) => (
     typeof ability === "string"
       ? { id: ability, tier: "common" }
       : { id: ability.id, tier: ability.tier || "common" }
   ));
   const abilities = [...new Map(
-    [...[...CORE].map((id) => ({ id, tier: "common" })), ...learned]
+    [...(usesTowProgression ? [] : [...CORE].map((id) => ({ id, tier: "common" }))), ...learned]
       .map((ability) => [ability.id, ability]),
   ).values()]
     .filter((ability) => {
@@ -158,23 +159,32 @@ function SpellCard({ spell, kind, active, affordable, onCast }) {
 // Casting travel spells stays on the map because each one needs a destination.
 export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
+  const usesTowProgression = character.progressionModel === "tow-archetype";
   const [abilityFilter, setAbilityFilter] = useState("all");
   const progressionProjection = progressionNarrativeProjection(character);
-  const towRosterAbilities = character.progressionModel === "tow-archetype"
+  const towRosterAbilities = usesTowProgression
     ? (state.mechanics?.build?.skills || [])
       .map((entry) => getSkill(typeof entry === "string" ? entry : entry?.id))
       .filter((definition) => definition?.abilityType)
     : [];
-  const projectedCharacter = { ...character, abilities: progressionProjection.abilities };
+  const projectedCharacter = {
+    ...character,
+    abilities: usesTowProgression
+      ? (character.abilities || []).filter((entry) => (
+          classifyLegacyAbilityGrant(typeof entry === "string" ? entry : entry?.id) === "world"
+        ))
+      : progressionProjection.abilities,
+  };
   const { techniques, performances, fieldcraft, subterfuge, oathcraft, primalcraft, pactcraft, devicecraft, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
   const trainedAbilities = [...techniques, ...performances, ...fieldcraft, ...subterfuge, ...oathcraft, ...primalcraft, ...pactcraft, ...devicecraft]
     .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
 
   const boons = knownBuffSpells(projectedCharacter);
   const travelSpells = knownTravelSpells(projectedCharacter);
-  const metamagicProfiles = progressionProjection.metamagicProfiles;
-  const progressionCapabilities = progressionProjection.progressionCapabilities
-    || progressionProjection.branchCapabilities;
+  const metamagicProfiles = usesTowProgression ? [] : progressionProjection.metamagicProfiles;
+  const progressionCapabilities = usesTowProgression
+    ? []
+    : progressionProjection.progressionCapabilities || progressionProjection.branchCapabilities;
   const activeConditions = new Set(condNames(character.conditions || []));
   const proficiencies = PROFICIENCIES
     .map((proficiency) => ({
@@ -208,7 +218,13 @@ export function ArsenalView({ state, onCastBuff }) {
 
   return (
     <DeckPage className="arsenal-view">
-      <DeckPageHeader icon="abilities" title="Skills" subtitle="Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies" />
+      <DeckPageHeader
+        icon="abilities"
+        title="Skills"
+        subtitle={usesTowProgression
+          ? "Tower combat kit · world powers · proficiencies"
+          : "Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies"}
+      />
 
       {towRosterAbilities.length > 0 ? (
         <section className="tow-arsenal" aria-label="Tower combat kit">
@@ -221,7 +237,7 @@ export function ArsenalView({ state, onCastBuff }) {
         </section>
       ) : null}
 
-      <section>
+      {!usesTowProgression && <section>
         <SectionHeader>Techniques, performances, fieldcraft, subterfuge, oathcraft, primal arts, pact arts, devices &amp; core actions · {visibleAbilities.length}</SectionHeader>
         <div className="arsenal-filters" role="group" aria-label="Skill categories">
           {abilityCategories.map((category) => (
@@ -236,7 +252,7 @@ export function ArsenalView({ state, onCastBuff }) {
             return <AbilityCard key={`${ability.id}-${index}`} ability={ability} definition={definition} />;
           })}
         </div>
-      </section>
+      </section>}
 
       {(metamagicProfiles.length > 0 || progressionCapabilities.length > 0) && (
         <section aria-label="Earned progression capabilities">
@@ -272,9 +288,11 @@ export function ArsenalView({ state, onCastBuff }) {
       )}
 
       <section>
-        <SectionHeader>Spells · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
+        <SectionHeader>{usesTowProgression ? "World powers" : "Spells"} · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
         {combatSpells.length + boons.length + travelSpells.length === 0 ? (
-          <div className="arsenal-empty">No spells learned yet. Grimoires and teachers can awaken new magic.</div>
+          <div className="arsenal-empty">{usesTowProgression
+            ? "No world powers learned yet. Rare teachers and discoveries can awaken them."
+            : "No spells learned yet. Grimoires and teachers can awaken new magic."}</div>
         ) : (
           <div className="spell-list">
             {combatSpells.map((ability, index) => {

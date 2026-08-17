@@ -2,7 +2,42 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PROFESSIONS } from "../data/professions.js";
-import { ProfessionGlossary } from "./CodexView.jsx";
+import { ProfessionGlossary, abilityCatalogOwnership } from "./CodexView.jsx";
+
+describe("ability catalog ownership", () => {
+  const codex = {
+    skills: {
+      firebolt: { id: "firebolt", name: "Firebolt", combatAbility: true, tier: "epic" },
+      haste: { id: "haste", name: "Haste", combatAbility: true, tier: "rare" },
+    },
+    spells: {
+      firebolt: { id: "firebolt", name: "Firebolt" },
+      haste: { id: "haste", name: "Haste" },
+    },
+  };
+
+  it("leaves legacy characters' Known and Owned projection unchanged", () => {
+    const projection = abilityCatalogOwnership({
+      abilities: [{ id: "firebolt", tier: "legendary" }, "haste"],
+    }, codex);
+
+    expect([...projection.known]).toEqual(["firebolt", "haste"]);
+    expect(projection.ownedTier).toEqual({ firebolt: "legendary", haste: "common" });
+  });
+
+  it("keeps the legacy catalog reference-only for Tower characters, including world Haste", () => {
+    const projection = abilityCatalogOwnership({
+      progressionModel: "tow-archetype",
+      abilities: [
+        { id: "firebolt", tier: "legendary" },
+        { id: "haste", tier: "rare" },
+      ],
+    }, codex);
+
+    expect([...projection.known]).toEqual([]);
+    expect(projection.ownedTier).toEqual({});
+  });
+});
 
 describe("ProfessionGlossary", () => {
   it("keeps every profession in a compact searchable index", () => {

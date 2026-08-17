@@ -3,7 +3,12 @@ import { foldNarratorMemories } from "./narrator/memory-records.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { itemTemplate } from "../data/catalog.js";
-import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
+import {
+  classifyLegacyAbilityGrant,
+  clampAbilityTier,
+  clampWorldAbilityTier,
+  getAbilityDef,
+} from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { loadOf } from "./weight.js";
@@ -70,10 +75,31 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
+  // A ready-made Tower character can be established by character_setup in this
+  // very beat, after discoveries are normally merged. Resolve that model at the
+  // boundary now so the setup beat cannot seed the retired combat library.
+  const usesTowerProgression = state.character.progressionModel === "tow-archetype"
+    || (state.created === false && beat.character_setup?.progressionModel === "tow-archetype");
+  const discoveries = usesTowerProgression && beat.discoveries
+    ? (() => {
+      const filtered = { ...beat.discoveries };
+      const skills = Array.isArray(beat.discoveries.skills)
+        ? beat.discoveries.skills
+        : Array.isArray(beat.discoveries.abilities) ? beat.discoveries.abilities : null;
+      if (skills) {
+        filtered.skills = skills.filter((entry) => classifyLegacyAbilityGrant(entry?.id) !== "combat");
+      }
+      if (Array.isArray(beat.discoveries.spells)) {
+        filtered.spells = beat.discoveries.spells.filter((entry) => classifyLegacyAbilityGrant(entry?.id) === "world");
+      }
+      return filtered;
+    })()
+    : beat.discoveries;
+
   let codex = state.world.codex;
   let progressionXpGain = 0;
-  if (beat.discoveries) {
-    const merged = mergeDiscoveries(codex, beat.discoveries);
+  if (discoveries) {
+    const merged = mergeDiscoveries(codex, discoveries);
     codex = merged.codex;
     // A granted SPELL is filed as BOTH a spell (lore) and a skill (the ability), so
     // it surfaces twice in the feed — show it once: drop the skill chip when a spell
@@ -172,15 +198,17 @@ export function applyBeat(state, beat, options = {}) {
   // it into character.abilities here, carrying the granted tier (common→divine; the
   // tier scales its power exactly like gear). Re-teaching at a higher tier upgrades
   // it. Narrative skills (Stealth, Lockpicking…) have no ability def and are skipped.
-  if (Array.isArray(beat.discoveries?.skills)) {
+  if (Array.isArray(discoveries?.skills)) {
     const idOf = (x) => (typeof x === "string" ? x : x.id);
     const list = Array.isArray(character.abilities) ? [...character.abilities] : [];
     let skills = codex.skills, skillsTouched = false;
-    for (const s of beat.discoveries.skills) {
+    for (const s of discoveries.skills) {
       if (!s?.id || !getAbilityDef(s.id)) continue;
       const idx = list.findIndex((a) => idOf(a) === s.id);
       const curTier = idx >= 0 ? ((typeof list[idx] === "object" ? list[idx].tier : "common") || "common") : null;
-      const grantTier = clampAbilityTier(s.id, s.tier || "common"); // honour tier floors
+      const grantTier = usesTowerProgression
+        ? clampWorldAbilityTier(s.id, s.tier || "common")
+        : clampAbilityTier(s.id, s.tier || "common"); // honour tier floors
       // Re-teaching only ever raises the tier — take the higher of the two.
       const tier = curTier && tierOrder(curTier) >= tierOrder(grantTier) ? curTier : grantTier;
       if (idx < 0) list.push({ id: s.id, tier }); else list[idx] = { id: s.id, tier };
