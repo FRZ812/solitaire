@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
 import { Icon } from "../Icon.jsx";
 import {
@@ -253,7 +253,7 @@ function CombatAction({
       if (committed) onShowDetails();
       return;
     }
-    if (legality.ok) onUse();
+    if (legality.ok) onUse(event.currentTarget);
     else onShowDetails();
   }
 
@@ -267,7 +267,6 @@ function CombatAction({
       aria-label={`${displayName}. ${towSkillDetail(definition, skillState, weaponPresentation)}.${resourceAnnouncement ? ` ${resourceAnnouncement}.` : ""} ${busy && committed ? "Resolving; tap for details" : legality.ok ? "Tap to use; hold for details" : refusalText(legality.reason, skillState)}`}
       aria-disabled={busy ? !committed : !legality.ok}
       aria-expanded={active}
-      disabled={busy && !committed}
       data-skill-id={definition.id}
       onClick={useSkill}
       onPointerDown={beginHold}
@@ -708,11 +707,12 @@ function actorFeedbackStyle(actorId, cues) {
 }
 
 function CombatEffects({ cues }) {
+  const effectCues = cues.filter((cue) => cue.kind !== "movement");
   return (
     <div className="tow-combat__effects" aria-hidden="true">
-      <TowCombatVfxCanvas cues={cues} />
-      {cues.map((cue, index) => {
-        const lane = cues
+      <TowCombatVfxCanvas cues={effectCues} />
+      {effectCues.map((cue, index) => {
+        const lane = effectCues
           .slice(0, index)
           .filter((priorCue) => priorCue.targetSide === cue.targetSide)
           .length;
@@ -922,6 +922,33 @@ function CombatDeclarations({ beat, cues, encounter }) {
   );
 }
 
+function intentCellsForEncounter(encounter, intents) {
+  return intents.flatMap((intent) => {
+    if (intent.skillId && getSkill(intent.skillId)) {
+      const preview = resolveSkillTargets(encounter, intent.skillId, intent.enemyId, {
+        targetId: intent.targetId,
+      });
+      if (preview.ok) return preview.affectedCells;
+    }
+    const cell = formationCellForActor(encounter, intent.targetId);
+    return cell ? [cell] : [];
+  });
+}
+
+function encounterBeforeMovementCue(encounter, cue) {
+  if (!cue?.formationsBefore) return encounter;
+  const intents = { ...encounter.intents };
+  for (const event of cue.intentRetargets || []) {
+    const held = intents[event.enemyId];
+    if (held) intents[event.enemyId] = { ...held, targetId: event.fromTargetId };
+  }
+  return {
+    ...encounter,
+    formations: cue.formationsBefore,
+    intents,
+  };
+}
+
 export function TowCombatView({
   encounter,
   onUseSkill,
@@ -940,7 +967,9 @@ export function TowCombatView({
   sceneArt = battleScene,
   returnFocusSelector = ".story-input__field",
 }) {
+  const combatRef = useRef(null);
   const firstActionRef = useRef(null);
+  const targetingActionRef = useRef(null);
   const settleRef = useRef(null);
   const restoreFocusRef = useRef(null);
   const seenEventRef = useRef(encounter.sequence);
@@ -1057,18 +1086,16 @@ export function TowCombatView({
   }).filter((row) => row.item);
   const combatItemQuantity = combatItemRows.reduce((total, row) => total + row.held.quantity, 0);
   const inspectedSkill = skillRows.find(({ skillState }) => skillState.id === inspectedSkillId) || null;
+  const movementCue = impactCues.find((cue) => cue.kind === "movement") || null;
+  const preMoveEncounter = movementCue
+    ? encounterBeforeMovementCue(encounter, movementCue)
+    : encounter;
   const declared = terminal ? [] : declaredIntents(encounter);
   const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
-  const intentCells = declared.flatMap((intent) => {
-    if (intent.skillId && getSkill(intent.skillId)) {
-      const preview = resolveSkillTargets(encounter, intent.skillId, intent.enemyId, {
-        targetId: intent.targetId,
-      });
-      if (preview.ok) return preview.affectedCells;
-    }
-    const cell = formationCellForActor(encounter, intent.targetId);
-    return cell ? [cell] : [];
-  });
+  const intentCells = intentCellsForEncounter(encounter, declared);
+  const intentCellsBeforeMove = terminal
+    ? []
+    : intentCellsForEncounter(preMoveEncounter, declaredIntents(preMoveEncounter));
   const fallen = enemies.filter((enemy) => enemy.hp <= 0).length;
   const staged = enemies.find((enemy) => enemy.id === activeTarget) || enemies[0];
   const retreat = authoritativeTerminal ? null : retreatOdds(encounter);
@@ -1153,8 +1180,9 @@ export function TowCombatView({
     setActionBeat(null);
   }
 
-  function beginSkillTargeting(row) {
+  function beginSkillTargeting(row, initiatingAction = null) {
     if (presentationLocked || !row.legality.ok) return;
+    targetingActionRef.current = initiatingAction;
     const anchors = legalSkillAnchors(encounter, row.definition, activeCommander.id);
     const profile = abilityTargeting(row.definition);
     const anchorCell = anchors.length === 1 || profile.anchorSide === "self"
@@ -1177,18 +1205,39 @@ export function TowCombatView({
   function selectFormationCell(side, index) {
     if (!targetingRow || presentationLocked) return;
     if (!validAnchors.some((entry) => entry.side === side && entry.index === index)) return;
+    const anchorCell = { side, index };
     const formations = encounterFormations(encounter);
     const occupant = formations[side]?.[index];
     if (occupant && encounter.actors[occupant]?.side === "enemy") setTargetId(occupant);
+    const preview = resolveSkillTargets(
+      encounter,
+      targetingRow.definition,
+      activeCommander.id,
+      { anchorCell },
+    );
+    if (preview.ok && preview.targetIds.length === 1) {
+      queueSkillAction(targetingRow, preview);
+      return;
+    }
     setTargetingDraft((current) => current ? {
       ...current,
-      anchorCell: { side, index },
+      anchorCell,
     } : current);
   }
 
   function cancelSkillTargeting() {
+    const returnTarget = targetingActionRef.current;
+    targetingActionRef.current = null;
     setTargetingDraft(null);
-    globalThis.requestAnimationFrame?.(() => firstActionRef.current?.focus());
+    const restoreTarget = () => {
+      if (returnTarget?.isConnected && !returnTarget.disabled) returnTarget.focus();
+      else firstActionRef.current?.focus();
+    };
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(restoreTarget);
+    } else {
+      queueMicrotask(restoreTarget);
+    }
   }
 
   function queueSkillAction(row = targetingRow, preview = resolvedPreview) {
@@ -1223,6 +1272,7 @@ export function TowCombatView({
     setRecordExpanded(false);
     setSatchelOpen(false);
     setTargetingDraft(null);
+    targetingActionRef.current = null;
     setActionBeat(beat);
     clearActionTimer("declaration");
     clearActionTimer("commit");
@@ -1286,11 +1336,19 @@ export function TowCombatView({
   }, [terminal]);
 
   useEffect(() => {
+    if (!targetingDraft?.skillId || presentationLocked) return;
+    combatRef.current
+      ?.querySelector(".tow-formation-cell.is-valid-anchor:not(:disabled)")
+      ?.focus();
+  }, [presentationLocked, targetingDraft?.skillId]);
+
+  useEffect(() => {
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
     setTargetingDraft(null);
+    targetingActionRef.current = null;
   }, [activeCommander.id, encounter.round, terminal]);
 
   useEffect(() => {
@@ -1306,7 +1364,7 @@ export function TowCombatView({
     if (combatItemRows.length === 0 || presentationLocked) setSatchelOpen(false);
   }, [combatItemRows.length, presentationLocked]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousPhase = authoritativePhaseRef.current;
     const enteringTerminal = previousPhase === "player" && encounter.phase !== "player";
     authoritativePhaseRef.current = encounter.phase;
@@ -1328,7 +1386,19 @@ export function TowCombatView({
       if (enteringTerminal) setTerminalRevealed(true);
       return undefined;
     }
+    const focusedBeforeCues = combatRef.current?.contains(document.activeElement)
+      ? document.activeElement
+      : null;
     setImpactCues(nextCues);
+    if (focusedBeforeCues) {
+      queueMicrotask(() => {
+        if (combatRef.current?.contains(document.activeElement)) return;
+        const preferred = focusedBeforeCues.isConnected && !focusedBeforeCues.matches(":disabled")
+          ? focusedBeforeCues
+          : firstActionRef.current;
+        preferred?.focus?.();
+      });
+    }
     const finalDelay = Math.max(0, ...nextCues.map((cue) => cue.delayMs || 0));
     clearImpactCueTimer();
     impactClearTimerRef.current = setTimeout(() => {
@@ -1472,6 +1542,7 @@ export function TowCombatView({
 
   return (
     <div
+      ref={combatRef}
       className={`tow-combat${terminal ? " is-terminal" : ""}${presentationLocked ? " is-presenting-action" : ""}`}
       role="dialog"
       aria-modal="true"
@@ -1540,12 +1611,19 @@ export function TowCombatView({
             formations={formations}
             artForActor={combatArt}
             validAnchors={targetingDraft && !presentationLocked ? validAnchors : []}
-            affectedCells={resolvedPreview?.affectedCells || []}
-            selectedAnchor={resolvedPreview?.anchorCell || targetingDraft?.anchorCell || null}
+            affectedCells={resolvedPreview?.affectedCells
+              || (actionBeat?.phase !== "resolve" ? actionBeat?.affectedCells : null)
+              || []}
+            selectedAnchor={resolvedPreview?.anchorCell
+              || targetingDraft?.anchorCell
+              || (actionBeat?.phase !== "resolve" ? actionBeat?.anchorCell : null)
+              || null}
             intentCells={terminal ? [] : intentCells}
+            intentCellsBeforeMove={intentCellsBeforeMove}
             activeActorId={activeCommander.id}
             onSelectCell={selectFormationCell}
             feedbackCues={impactCues}
+            movementCue={movementCue}
           />
 
           {!terminal && declared.length > 0 ? (
@@ -1644,7 +1722,7 @@ export function TowCombatView({
                     setInspectedSkillId(row.skillState.id);
                   }}
                   onHideDetails={() => setInspectedSkillId(null)}
-                  onUse={() => beginSkillTargeting(row)}
+                  onUse={(initiatingAction) => beginSkillTargeting(row, initiatingAction)}
                 />
               ))}
             </div>
@@ -1786,8 +1864,10 @@ export function TowCombatView({
                 <button
                   type="button"
                   className="tow-combat__hold"
-                  disabled={presentationLocked}
-                  onClick={() => onStandDown?.(activeCommander.id)}
+                  aria-disabled={presentationLocked}
+                  onClick={() => {
+                    if (!presentationLocked) onStandDown?.(activeCommander.id);
+                  }}
                 >
                   {activeCommander.id === encounter.playerId
                     ? "Stand down"

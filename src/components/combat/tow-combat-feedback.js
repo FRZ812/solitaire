@@ -664,6 +664,7 @@ export function combatCuesForEvent(encounter, event) {
 }
 
 const SAME_ACTION_EFFECT_GAP_MS = 105;
+const FORMATION_MOVE_DURATION_MS = 200;
 
 const EXCHANGE_GAPS = Object.freeze({
   afterimage: 280,
@@ -717,24 +718,104 @@ function declarationLabel(encounter, event) {
   return words(event.type);
 }
 
+function formationMoves(event) {
+  if (event?.type !== "formation-moved" || !Array.isArray(event.moves)) return [];
+  return event.moves.filter((move) => (
+    ["player", "enemy"].includes(move?.side)
+    && typeof move.actorId === "string"
+    && Number.isSafeInteger(move.fromCell)
+    && Number.isSafeInteger(move.toCell)
+  ));
+}
+
+function copyFormations(formations) {
+  if (!formations
+    || !Array.isArray(formations.player)
+    || !Array.isArray(formations.enemy)) return null;
+  return {
+    ...formations,
+    player: [...formations.player],
+    enemy: [...formations.enemy],
+  };
+}
+
+function encounterAcrossMovement(encounter, event, reverse = false) {
+  const moves = formationMoves(event);
+  const formations = copyFormations(encounter?.formations);
+  if (!formations || moves.length === 0) return encounter;
+  if (reverse) {
+    for (const move of moves) formations[move.side][move.toCell] = null;
+    for (const move of moves) formations[move.side][move.fromCell] = move.actorId;
+  } else {
+    for (const move of moves) formations[move.side][move.fromCell] = null;
+    for (const move of moves) formations[move.side][move.toCell] = move.actorId;
+  }
+  return { ...encounter, formations };
+}
+
+function encounterBeforeTimeline(encounter, events) {
+  return [...(events || [])].reverse().reduce((state, event) => (
+    event.type === "formation-moved"
+      ? encounterAcrossMovement(state, event, true)
+      : state
+  ), encounter);
+}
+
+function retargetsAfterMovement(events, movementIndex) {
+  const retargets = [];
+  for (let index = movementIndex + 1; index < events.length; index += 1) {
+    const event = events[index];
+    if (event.type === "formation-moved") break;
+    if (event.type === "intent-retargeted") retargets.push(event);
+  }
+  return retargets;
+}
+
 /**
  * Lay authoritative events onto one presentation timeline. Consecutive effects from the
  * same skill stay in one beat; a counterattack starts only after the prior contact reads.
  */
 export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
+  const orderedEvents = events || [];
   const timeline = [];
   const spatialActions = new Map();
+  let spatialEncounter = encounterBeforeTimeline(encounter, orderedEvents);
   let actionKey = null;
   let actionIndex = -1;
   let groupEnd = 0;
   let groupMotion = "balanced";
 
-  for (const event of events || []) {
+  for (let eventIndex = 0; eventIndex < orderedEvents.length; eventIndex += 1) {
+    const event = orderedEvents[eventIndex];
     if (event.type === "skill-committed") {
       spatialActions.set(cueActionKey(event), event);
       continue;
     }
-    const cues = combatCuesForEvent(encounter, event);
+    if (event.type === "formation-moved") {
+      const moves = formationMoves(event);
+      if (moves.length > 0) {
+        const delayMs = timeline.length === 0
+          ? 0
+          : groupEnd + exchangeGap(groupMotion);
+        timeline.push({
+          id: cueIdentity(event, "formation-moved"),
+          sequence: event.sequence,
+          kind: "movement",
+          actionIndex: actionIndex + 1,
+          delayMs,
+          durationMs: FORMATION_MOVE_DURATION_MS,
+          moves: moves.map((move) => ({ ...move })),
+          formationsBefore: copyFormations(spatialEncounter.formations),
+          intentRetargets: retargetsAfterMovement(orderedEvents, eventIndex),
+        });
+        groupEnd = delayMs + FORMATION_MOVE_DURATION_MS;
+        groupMotion = "balanced";
+        actionKey = null;
+      }
+      spatialEncounter = encounterAcrossMovement(spatialEncounter, event);
+      continue;
+    }
+    const cues = combatCuesForEvent(spatialEncounter, event);
     if (cues.length === 0) continue;
     const nextKey = cueActionKey(event);
     const spatial = spatialActions.get(nextKey) || null;
@@ -753,14 +834,14 @@ export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
     const staged = cues.map((cue) => ({
       ...cue,
       actionIndex,
-      sourceCell: spatial?.sourceCell || formationCellForActor(encounter, cue.attackerId),
-      anchorCell: spatial?.anchorCell || formationCellForActor(encounter, cue.targetId),
-      targetCell: formationCellForActor(encounter, cue.targetId),
+      sourceCell: spatial?.sourceCell || formationCellForActor(spatialEncounter, cue.attackerId),
+      anchorCell: spatial?.anchorCell || formationCellForActor(spatialEncounter, cue.targetId),
+      targetCell: formationCellForActor(spatialEncounter, cue.targetId),
       affectedCells: spatial?.affectedCells || [],
       footprint: spatial?.footprint || "single",
       castMode: spatial?.castMode || null,
       presentationTier: spatial?.presentation || null,
-      declarationLabel: declarationLabel(encounter, event),
+      declarationLabel: declarationLabel(spatialEncounter, event),
       delayMs: eventOffset + (cue.delayMs || 0),
     }));
     timeline.push(...staged);

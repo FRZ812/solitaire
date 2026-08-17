@@ -61,6 +61,35 @@ describe("encounter formations", () => {
     expect(formationCellForActor(state, "player-0")).toEqual({ side: "player", index: 8 });
     expect(formationCellForActor(state, "enemy-0")).toEqual({ side: "enemy", index: 2 });
   });
+
+  it("preserves moving formation rules without changing cell normalization", () => {
+    const state = battle({
+      allies: [],
+      enemies: ["enemy-0"],
+      formations: {
+        version: 2,
+        player: [null, null, null, null, null, null, null, null, "player-0"],
+        enemy: [null, null, null, null, "enemy-0", null, null, null, null],
+      },
+    });
+
+    expect(encounterFormations(state)).toEqual(state.formations);
+    expect(isEncounterFormations(state.formations, state)).toBe(true);
+    expect(isEncounterFormations({ ...state.formations, version: 3 }, state)).toBe(false);
+  });
+
+  it("defaults only an absent legacy snapshot and rejects explicit malformed formations", () => {
+    const legacy = battle({ allies: [], enemies: ["enemy-0"] });
+    expect(encounterFormations(legacy).version).toBe(1);
+
+    for (const formations of [null, [], "formation"]) {
+      expect(() => encounterFormations({ ...legacy, formations })).toThrow("invalid-formations");
+    }
+    for (const version of [null, 3]) {
+      expect(() => encounterFormations({ ...legacy, formations: { version } }))
+        .toThrow("invalid-formation-version");
+    }
+  });
 });
 
 describe("legal anchors", () => {

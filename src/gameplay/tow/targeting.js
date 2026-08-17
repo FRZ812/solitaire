@@ -11,8 +11,10 @@ import {
   cellForActor,
   footprintCells,
   formationRow,
+  isFormationRulesVersion,
   livingActorIds,
   normalizeFormation,
+  STATIC_FORMATION_RULES_VERSION,
 } from "./formation.js";
 import { abilityTargeting } from "./ability-targeting.js";
 import { getSkill } from "./skills.js";
@@ -40,22 +42,33 @@ function actorIdsForSide(state, side) {
 /** Return normalized formations without mutating an older encounter that has no snapshot. */
 export function encounterFormations(state) {
   if (!state || typeof state !== "object") throw new TypeError("invalid-encounter");
+  const supplied = state.formations;
+  if (supplied !== undefined && (
+    !supplied || typeof supplied !== "object" || Array.isArray(supplied)
+  )) throw new TypeError("invalid-formations");
+  // Absence is the supported legacy shape. Once a snapshot key exists, its rules version
+  // must be explicit so malformed current state cannot silently acquire static v1 semantics.
+  const version = supplied === undefined
+    ? STATIC_FORMATION_RULES_VERSION
+    : supplied.version;
+  if (!isFormationRulesVersion(version)) throw new TypeError("invalid-formation-version");
   return {
-    version: 1,
+    version,
     player: normalizeFormation(
       actorIdsForSide(state, "player"),
-      state.formations?.player || null,
+      supplied?.player || null,
     ),
     enemy: normalizeFormation(
       actorIdsForSide(state, "enemy"),
-      state.formations?.enemy || null,
+      supplied?.enemy || null,
     ),
   };
 }
 
 /** Strict enough for encounter/session schema validation while accepting no hidden data. */
 export function isEncounterFormations(value, state) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || value.version !== 1) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !isFormationRulesVersion(value.version)) {
     return false;
   }
   if (Object.keys(value).sort().join(",") !== "enemy,player,version") return false;

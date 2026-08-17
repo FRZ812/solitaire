@@ -82,12 +82,15 @@ async function chooseAndConfirm(mounted, action) {
   const confirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
   if (!confirmation) return false;
 
-  const commit = confirmation.querySelector(".tow-combat__target-commit");
+  let commit = confirmation.querySelector(".tow-combat__target-commit");
   if (commit.disabled) {
     const anchor = [...mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")]
       .find((cell) => !cell.disabled);
     expect(anchor).toBeTruthy();
     await click(anchor);
+    const revisedConfirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
+    if (!revisedConfirmation) return false;
+    commit = revisedConfirmation.querySelector(".tow-combat__target-commit");
   }
   expect(commit.disabled).toBe(false);
   await click(commit);
