@@ -27,14 +27,17 @@ import { gameplayChecksum } from "../kernel/replay.js";
 import { isCharacterBootstrapReceipt } from "./character-bootstrap.js";
 import { buildCombatChronicle } from "./chronicle.js";
 import { MOVING_FORMATION_RULES_VERSION } from "./formation.js";
-import { sealTowTerminalReceipt } from "./outcomes.js";
 import {
   combatItemIdForKeepsake,
   isStartingKeepsake,
   permanentItemIdForKeepsake,
 } from "./keepsakes.js";
-import { verifyTowSession } from "./replay.js";
-import { TOW_RULESET_ID, createTowSession } from "./session.js";
+import {
+  TOW_V1_RUNTIME_IDENTITY,
+  createTowRuntimeSession,
+  sealTowRuntimeTerminalReceipt,
+  verifyTowRuntimeSession,
+} from "./runtime.js";
 import { getSkill, skillRankForRarity, skillRarityChoices } from "./skills.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
@@ -269,7 +272,7 @@ export function draftHash(receipt, skillRarities = null, keepsakeId = null) {
  * can always be reproduced from what the result screen shows.
  */
 export function derivePracticeSeed({
-  rulesetId = TOW_RULESET_ID,
+  rulesetId = TOW_V1_RUNTIME_IDENTITY.rulesetId,
   packageId,
   packageVersion = 1,
   scenarioId,
@@ -386,7 +389,7 @@ export function createPracticeSession(
   });
   if (!seed) return rejected("invalid-practice-seed");
 
-  const opened = createTowSession({
+  const opened = createTowRuntimeSession(TOW_V1_RUNTIME_IDENTITY, {
     sessionId: `practice:${scenario.id}:${allyGroup.id}:${hash}:${attemptIndex}`,
     rootSeed: seed,
     mode: "practice",
@@ -441,10 +444,10 @@ export function practiceResult(practice) {
   const { session } = practice;
   const sealed = session.terminalReceipt
     ? { ok: true, session }
-    : sealTowTerminalReceipt(session);
+    : sealTowRuntimeTerminalReceipt(session);
   const settled = sealed.ok ? sealed.session : session;
   const receipt = settled.terminalReceipt;
-  const verification = verifyTowSession(settled);
+  const verification = verifyTowRuntimeSession(settled);
 
   return {
     version: PRACTICE_SCENARIO_VERSION,

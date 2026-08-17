@@ -14,8 +14,10 @@ import "./quick-start.css";
 import React, { useCallback, useMemo, useState } from "react";
 import { TowCombatView } from "../combat/TowCombatView.jsx";
 import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
-import { dispatchTowPlayerAction } from "../../gameplay/tow/commands.js";
-import { sealTowTerminalReceipt } from "../../gameplay/tow/outcomes.js";
+import {
+  dispatchTowRuntimePlayerAction,
+  sealTowRuntimeTerminalReceipt,
+} from "../../gameplay/tow/runtime.js";
 import { chronicleSummary } from "../../gameplay/tow/chronicle.js";
 import {
   DEFAULT_PRACTICE_ALLY_GROUP_ID,
@@ -82,7 +84,7 @@ export function PracticeFight({
       if (!current?.ok) return current;
       const session = current.session;
       const actorId = input.actorId ?? session.encounter.playerId;
-      const result = dispatchTowPlayerAction(session, {
+      const result = dispatchTowRuntimePlayerAction(session, {
         ...input,
         id: [session.sessionId, session.revision, input.type, actorId, input.skillId, input.itemId]
           .filter((part) => part !== null && part !== undefined)
@@ -99,7 +101,7 @@ export function PracticeFight({
       // result screen reads a decided fight rather than judging one itself.
       const sealed = result.session.encounter.phase === "player"
         ? { ok: true, session: result.session }
-        : sealTowTerminalReceipt(result.session);
+        : sealTowRuntimeTerminalReceipt(result.session);
       return { ...current, session: sealed.ok ? sealed.session : result.session };
     });
   }, []);

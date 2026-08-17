@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY, readResumeSnapshot } from "./engine/campaign-resume.js";
+import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
 import { createTowSession } from "./gameplay/tow/session.js";
 import { startingBuild } from "./gameplay/tow/build.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
@@ -199,6 +200,28 @@ function savedSession() {
   return harness.serverState?.mechanics?.tow?.activeCombat ?? null;
 }
 
+function terminalCampaignWithoutReceipt() {
+  const state = campaignInAFight();
+  let session = state.mechanics.tow.activeCombat;
+  for (let action = 0; action < 8 && session.status === "active"; action += 1) {
+    const result = dispatchTowPlayerAction(session, {
+      id: `unsealed-terminal-strike-${action}`,
+      expectedRevision: session.revision,
+      type: "use-skill",
+      actorId: "wanderer",
+      skillId: "strike",
+      targetId: "foe-0",
+    });
+    if (!result.ok) throw new Error(result.reason);
+    session = result.session;
+  }
+  if (session.status !== "terminal" || session.terminalReceipt !== null) {
+    throw new Error("fixture-did-not-produce-unsealed-terminal-session");
+  }
+  state.mechanics.tow.activeCombat = session;
+  return state;
+}
+
 function strikeButton(dialog) {
   return [...dialog.querySelectorAll(".production-combat__action")]
     .find((button) => /strike/i.test(button.textContent));
@@ -326,6 +349,25 @@ describe("a fight survives a reload", { timeout: APP_INTEGRATION_TIMEOUT }, () =
     // And the fight is over: no combat surface, and no second settlement.
     await waitFor(() => !container.querySelector(".tow-combat"));
     expect(harness.serverState.combatSettlementReceipts).toHaveLength(1);
+  });
+
+  it("persists the receipt when settling a valid terminal session that was not yet sealed", async () => {
+    harness.serverState = terminalCampaignWithoutReceipt();
+
+    const mounted = await mountCampaign();
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+    const settleButton = await waitFor(() => (
+      [...dialog.querySelectorAll(".production-combat__settle")]
+        .find((button) => !/end turn/i.test(button.textContent))
+    ));
+    await click(settleButton);
+
+    const closed = await waitFor(() => {
+      const decoded = decodeTowSession(savedSession());
+      return decoded.ok && decoded.session.status === "settled" ? decoded.session : null;
+    });
+    expect(closed.terminalReceipt).toMatchObject({ reason: "victory" });
+    expect(verifyTowSession(closed)).toMatchObject({ ok: true });
   });
 });
 

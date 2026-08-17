@@ -211,7 +211,20 @@ export function verifyTowSession(session) {
 
   const expectedReceipt = session.terminalReceipt;
   if (expectedReceipt) {
-    const replayedSession = { ...session, encounter: replayed.encounter };
+    // Settlement may legitimately advance loot and reward streams after the terminal
+    // receipt was sealed. Reconstruct their terminal endpoints from genesis instead of
+    // copying the post-settlement endpoints back into the receipt comparison; combat never
+    // spends either stream before the verdict is sealed.
+    const replayedSession = {
+      ...session,
+      encounter: replayed.encounter,
+      streams: session.status === "settled"
+        ? {
+            loot: seedEndpoint(session, "loot"),
+            rewards: seedEndpoint(session, "rewards"),
+          }
+        : session.streams,
+    };
     const actualReceipt = resolveTowTerminalReceipt(replayedSession);
     const receiptDiff = firstJsonDifference(expectedReceipt, actualReceipt, "terminalReceipt");
     if (receiptDiff) {
