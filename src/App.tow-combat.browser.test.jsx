@@ -516,7 +516,7 @@ describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION
     expect(intentBadges).toHaveLength(2);
     for (const badge of intentBadges) {
       expect(badge.getAttribute("aria-label")).toMatch(
-        /^Jab, 3 damage, targeting .+/,
+        /^Brigand [12]: Jab, 3 damage, targeting .+/,
       );
     }
 

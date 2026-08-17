@@ -324,24 +324,27 @@ function intentOutcomeText(intent) {
   return `${intent.kind || "ability"} effect`;
 }
 
-function IntentBadge({ intent, target, playerId }) {
+function IntentBadge({ intent, target, playerId, source }) {
   if (!intent) return null;
   const visual = combatVfxForIntent(intent);
   const damage = intent.damage > 0
     ? intent.hits > 1 ? `${intent.hits}×${intent.damage}` : intent.damage
     : ({ afflict: "HEX", boon: "BOON", recover: "MEND", ward: "WARD" }[intent.kind] || "ACT");
   const targetName = target?.name || intent.targetName || "your party";
+  const sourceName = source?.name || "Enemy";
   const outcome = intentOutcomeText(intent);
   const targetText = intent.target === "self" ? "self" : targetName;
   return (
     <div
       className={`tow-combat__intent tow-combat__intent--${visual.family}${intent.damage > 0 && intent.hits > 1 ? " is-multi" : ""}`}
       role="img"
-      aria-label={`${intent.name}, ${outcome}, ${intent.target === "self" ? "used on self" : `targeting ${targetName}`}`}
-      title={`${intent.name} · ${outcome} · ${targetText}`}
+      aria-label={`${sourceName}: ${intent.name}, ${outcome}, ${intent.target === "self" ? "used on self" : `targeting ${targetName}`}`}
+      title={`${sourceName} · ${intent.name} · ${outcome} · ${targetText}`}
       data-testid="tow-enemy-intent"
+      data-enemy-id={intent.enemyId}
       data-ability-id={intent.skillId || intent.attackId || undefined}
     >
+      <span className="tow-combat__intent-source" aria-hidden="true">{sourceName}</span>
       <span className="tow-combat__intent-sigil" aria-hidden="true">
         <img src={visual.asset} alt="" />
         <i />
@@ -1546,13 +1549,18 @@ export function TowCombatView({
           />
 
           {!terminal && declared.length > 0 ? (
-            <section className="tow-combat__formation-intents" aria-label="Enemy intentions">
+            <section
+              className="tow-combat__formation-intents"
+              aria-label="Enemy intentions"
+              style={{ "--tow-intent-count": Math.min(9, declared.length) }}
+            >
               {declared.map((intent) => (
                 <IntentBadge
                   key={intent.enemyId}
                   intent={intent}
                   target={encounter.actors[intent.targetId]}
                   playerId={encounter.playerId}
+                  source={encounter.actors[intent.enemyId]}
                 />
               ))}
             </section>

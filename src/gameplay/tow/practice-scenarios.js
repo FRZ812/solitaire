@@ -39,7 +39,7 @@ import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
 export const PRACTICE_SCENARIO_VERSION = 3;
-export const PRACTICE_ALLY_GROUP_VERSION = 1;
+export const PRACTICE_ALLY_GROUP_VERSION = 2;
 export const MAX_PRACTICE_ATTEMPT = 4096;
 
 function freezeJsonData(value) {
@@ -126,9 +126,9 @@ export const PRACTICE_ALLY_GROUPS = Object.freeze([
   allyGroup(
     "expedition-trio",
     "Expedition trio",
-    "A canonical Paladin and Ranger demonstrate a complete three-rank formation.",
+    "A Paladin vanguard, selected flanker, and Ranger rearguard demonstrate all three ranks.",
     [PALADIN_ALLY, RANGER_ALLY],
-    [null, PALADIN_ALLY.id, null, null, "wanderer", null, null, RANGER_ALLY.id, null],
+    [null, PALADIN_ALLY.id, null, "wanderer", null, null, null, null, RANGER_ALLY.id],
   ),
 ]);
 

@@ -870,9 +870,27 @@ function availableEnemySchedule(state, enemyId) {
   };
 }
 
+/**
+ * Resolve a foe's declared actor target through the same formation geometry used by the
+ * command reducer. Intent selection predates formations and still draws from the living
+ * opposing actors; a melee declaration can therefore name somebody behind the exposed
+ * rank. Preserve that draw, but fall back deterministically to the first legal spatial
+ * anchor when the named actor cannot actually be reached.
+ */
+function resolveEnemySkillTargets(state, enemyId, skillId, targetId = null) {
+  const requested = resolveSkillTargets(state, skillId, enemyId, { targetId });
+  if (requested.ok) return requested;
+  return resolveSkillTargets(state, skillId, enemyId);
+}
+
 function targetEnemyIntent(state, enemyId, intent) {
   const action = resolveDeclaredAttack(intent, state.enemyAttacks[enemyId] || []);
   if (!action) return intent;
+  if (action.skillId) {
+    const requestedTarget = action.target === "self" ? enemyId : intent.targetId;
+    const resolved = resolveEnemySkillTargets(state, enemyId, action.skillId, requestedTarget);
+    return { ...intent, targetId: resolved.ok ? resolved.primaryTargetId : null };
+  }
   if (action.target === "self") return { ...intent, targetId: enemyId };
   const standing = livingPlayerSide(state);
   return {
@@ -978,9 +996,19 @@ export function declaredIntents(state) {
       // player is never shown a blow aimed at a body.
       const standing = livingPlayerSide(state);
       const declaredTarget = state.intents[enemyId].targetId;
-      const targetId = attack.target === "self"
-        ? enemyId
-        : standing.includes(declaredTarget) ? declaredTarget : standing[0] ?? null;
+      const spatial = attack.skillId
+        ? resolveEnemySkillTargets(
+          state,
+          enemyId,
+          attack.skillId,
+          attack.target === "self" ? enemyId : declaredTarget,
+        )
+        : null;
+      const targetId = spatial?.ok
+        ? spatial.primaryTargetId
+        : attack.target === "self"
+          ? enemyId
+          : standing.includes(declaredTarget) ? declaredTarget : standing[0] ?? null;
       return {
         enemyId,
         attackId: attack.id,
@@ -2295,7 +2323,7 @@ function useEnemySkill(state, enemyId, skillId, targetId) {
   });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
   const definition = getSkill(skillId);
-  const resolvedTargets = resolveSkillTargets(state, definition, enemyId, { targetId });
+  const resolvedTargets = resolveEnemySkillTargets(state, enemyId, definition.id, targetId);
   if (!resolvedTargets.ok) return { ok: false, reason: resolvedTargets.reason, state };
   const spent = spendSkill(skillState);
   if (!spent.ok) return { ok: false, reason: spent.reason, state };

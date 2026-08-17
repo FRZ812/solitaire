@@ -13,6 +13,13 @@ function clampPercent(value, maximum) {
   return Math.max(0, Math.min(100, (current / max) * 100));
 }
 
+function vitalText(value) {
+  const numeric = Math.max(0, Number(value) || 0);
+  return Number.isInteger(numeric)
+    ? String(numeric)
+    : numeric.toFixed(1).replace(/\.0$/, "");
+}
+
 function cellKey(side, index) {
   return `${side}:${index}`;
 }
@@ -143,6 +150,10 @@ function UnitVitals({ actor, enemy, presented }) {
         aria-valuenow={hp}
       >
         <i style={{ width: `${clampPercent(hp, maxHp)}%` }} />
+        <span className="tow-formation-unit__meter-label" aria-hidden="true">HP</span>
+        <span className="tow-formation-unit__meter-value" aria-hidden="true">
+          <strong>{vitalText(hp)}</strong>/{vitalText(maxHp)}
+        </span>
       </span>
       {hasResolve ? (
         <span
@@ -154,6 +165,10 @@ function UnitVitals({ actor, enemy, presented }) {
           aria-valuenow={resolve}
         >
           <i style={{ width: `${clampPercent(resolve, resolveMax)}%` }} />
+          <span className="tow-formation-unit__meter-label" aria-hidden="true">RP</span>
+          <span className="tow-formation-unit__meter-value" aria-hidden="true">
+            <strong>{vitalText(resolve)}</strong>/{vitalText(resolveMax)}
+          </span>
         </span>
       ) : null}
     </span>
