@@ -62,7 +62,7 @@ describe("encounter formations", () => {
     expect(formationCellForActor(state, "enemy-0")).toEqual({ side: "enemy", index: 2 });
   });
 
-  it("preserves moving formation rules without changing cell normalization", () => {
+  it("preserves versioned formation rules without changing cell normalization", () => {
     const state = battle({
       allies: [],
       enemies: ["enemy-0"],
@@ -75,7 +75,8 @@ describe("encounter formations", () => {
 
     expect(encounterFormations(state)).toEqual(state.formations);
     expect(isEncounterFormations(state.formations, state)).toBe(true);
-    expect(isEncounterFormations({ ...state.formations, version: 3 }, state)).toBe(false);
+    expect(isEncounterFormations({ ...state.formations, version: 3 }, state)).toBe(true);
+    expect(isEncounterFormations({ ...state.formations, version: 4 }, state)).toBe(false);
   });
 
   it("defaults only an absent legacy snapshot and rejects explicit malformed formations", () => {
@@ -85,7 +86,7 @@ describe("encounter formations", () => {
     for (const formations of [null, [], "formation"]) {
       expect(() => encounterFormations({ ...legacy, formations })).toThrow("invalid-formations");
     }
-    for (const version of [null, 3]) {
+    for (const version of [null, 4]) {
       expect(() => encounterFormations({ ...legacy, formations: { version } }))
         .toThrow("invalid-formation-version");
     }
@@ -111,6 +112,49 @@ describe("legal anchors", () => {
     };
     expect(legalSkillAnchors(exposed, "strike"))
       .toEqual([{ side: "enemy", index: 4 }]);
+  });
+
+  it("locks new melee reach to the foremost living unit in each independent column", () => {
+    const formations = {
+      version: 3,
+      player: [null, null, null, null, null, null, null, null, "player-0"],
+      enemy: [
+        "column-0-front", null, null,
+        "column-0-middle", "column-1-middle", null,
+        "column-0-rear", "column-1-rear", "column-2-rear",
+      ],
+    };
+    const enemies = [
+      "column-0-front",
+      "column-0-middle",
+      "column-1-middle",
+      "column-0-rear",
+      "column-1-rear",
+      "column-2-rear",
+    ];
+    const state = battle({ allies: [], enemies, formations });
+
+    expect(legalSkillAnchors(state, "strike")).toEqual([
+      { side: "enemy", index: 0 },
+      { side: "enemy", index: 4 },
+      { side: "enemy", index: 8 },
+    ]);
+    expect(resolveSkillTargets(state, "strike", state.playerId, {
+      anchorCell: { side: "enemy", index: 7 },
+    })).toMatchObject({ ok: false, reason: "invalid-target" });
+
+    const exposed = {
+      ...state,
+      actors: {
+        ...state.actors,
+        "column-0-front": { ...state.actors["column-0-front"], hp: 0 },
+      },
+    };
+    expect(legalSkillAnchors(exposed, "strike")).toEqual([
+      { side: "enemy", index: 3 },
+      { side: "enemy", index: 4 },
+      { side: "enemy", index: 8 },
+    ]);
   });
 
   it("allows an empty ranged area anchor only when its footprint reaches a living target", () => {

@@ -96,7 +96,7 @@ describe("the seed is derived, never drawn", () => {
     const seed = derivePracticeSeed(base);
     expect(derivePracticeSeed({ ...base, packageId: "wizard" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, scenarioId: "the-duellist" })).not.toBe(seed);
-    expect(derivePracticeSeed({ ...base, scenarioVersion: 4 })).not.toBe(seed);
+    expect(derivePracticeSeed({ ...base, scenarioVersion: 5 })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, allyGroupId: "field-pair" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, allyGroupVersion: 3 })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, draftHash: "def" })).not.toBe(seed);
@@ -159,8 +159,8 @@ describe("authored practice formations", () => {
       expect(practice.ok, group.id).toBe(true);
       expect(practice.allyGroup).toBe(group);
       expect(practice.session.encounter.allyIds).toHaveLength(group.allies.length);
-      expect(practice.session.encounter.formations.version).toBe(2);
-      expect(practice.session.genesis.formations.version).toBe(2);
+      expect(practice.session.encounter.formations.version).toBe(3);
+      expect(practice.session.genesis.formations.version).toBe(3);
       expect(practice.session.encounter.formations.player).toEqual(group.formation);
       expect(practice.session.genesis.formations.player).toEqual(group.formation);
 
@@ -346,7 +346,7 @@ describe("opening a practice fight", () => {
   it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {
     for (const scenario of PRACTICE_SCENARIOS) {
       const encounter = createPracticeSession(receiptFor("fighter"), scenario.id).session.encounter;
-      expect(encounter.formations.version).toBe(2);
+      expect(encounter.formations.version).toBe(3);
       expect(encounter.formations.enemy).toEqual(scenario.formation);
       for (const enemy of scenario.enemies) {
         const archetype = getStartingArchetype(enemy.archetypeId);
@@ -401,12 +401,13 @@ describe("opening a practice fight", () => {
     });
     let session = practice.session;
 
-    // The Knight initially draws the protagonist, who stands behind the Paladin. Its melee
-    // telegraph must name the reachable front rank before that promise reaches the UI.
+    // Each column is its own lane. Whatever the Knight declares must already be one of the
+    // three foremost living lane occupants before that promise reaches the UI.
     expect(session.encounter.intents["foe-0"]).toMatchObject({
       attackId: "arctic-strike",
-      targetId: "practice-ally-paladin",
     });
+    expect(["wanderer", "practice-ally-paladin", "practice-ally-ranger"])
+      .toContain(session.encounter.intents["foe-0"].targetId);
 
     const party = [session.encounter.playerId, ...session.encounter.allyIds];
     let final = null;
@@ -441,6 +442,8 @@ describe("opening a practice fight", () => {
       "end-turn",
     ]);
     expect(final.session.encounter.round).toBe(2);
+    expect(final.events.some((event) => event.type === "formation-moved")).toBe(false);
+    expect(final.session.encounter.formations).toEqual(final.session.genesis.formations);
     expect(verifyTowSession(final.session)).toMatchObject({ ok: true });
   });
 
@@ -481,10 +484,10 @@ describe("every field-ready package can complete practice", () => {
 describe("the result screen has everything needed to reproduce it", () => {
   it("shows scenario version, seed, both checksums and the replay verdict", () => {
     const result = practiceResult(playOut(createPracticeSession(receiptFor("fighter"))));
-    expect(result.scenarioVersion).toBe(3);
+    expect(result.scenarioVersion).toBe(4);
     expect(result.allyGroupId).toBe("solo");
     expect(result.allyGroupVersion).toBe(2);
-    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@3::solo@2");
+    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@4::solo@2");
     expect(result.genesisChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.terminalChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.replayVerified).toBe(true);

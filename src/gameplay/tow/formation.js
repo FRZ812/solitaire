@@ -11,9 +11,13 @@
 
 export const FORMATION_WIDTH = 3;
 export const FORMATION_CELL_COUNT = FORMATION_WIDTH * FORMATION_WIDTH;
-export const FORMATION_RULES_VERSIONS = Object.freeze([1, 2]);
+export const FORMATION_RULES_VERSIONS = Object.freeze([1, 2, 3]);
 export const STATIC_FORMATION_RULES_VERSION = 1;
 export const MOVING_FORMATION_RULES_VERSION = 2;
+// New fights keep every actor in the cell chosen before combat and resolve melee reach
+// independently down each column. Versions 1 and 2 remain readable so recorded fights
+// preserve their original global-front-rank and round-reflow behavior byte for byte.
+export const LOCKED_LANE_FORMATION_RULES_VERSION = 3;
 export const FORMATION_CELLS = Object.freeze(
   Array.from({ length: FORMATION_CELL_COUNT }, (_, cell) => cell),
 );

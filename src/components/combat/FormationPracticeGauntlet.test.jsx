@@ -187,7 +187,7 @@ describe("formation practice combat gauntlet", () => {
     }
   });
 
-  it("switches commanders, auto-commits one recipient, and confirms a multi-recipient footprint", async () => {
+  it("switches commanders, selects an exposed lane target, and auto-commits a full-field attack", async () => {
     vi.useFakeTimers();
     const receipt = receiptFor("berserker");
     const encounter = createPracticeSession(receipt, "formation-drill", 0, {
@@ -228,10 +228,18 @@ describe("formation practice combat gauntlet", () => {
     const singlePreview = resolveSkillTargets(encounter, singleSkillId, encounter.playerId, {
       anchorCell: singleAnchor[0],
     });
-    expect(singleAnchor).toHaveLength(1);
+    expect(singleAnchor).toHaveLength(3);
     expect(singlePreview.targetIds).toHaveLength(1);
     await click(mounted.querySelector(`[data-skill-id='${singleSkillId}']`));
-    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
+    let confirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
+    expect(confirmation).toBeTruthy();
+    expect(confirmation.querySelector(".tow-combat__target-commit").disabled).toBe(true);
+    const selectedLane = mounted.querySelector(
+      `.tow-formation-cell[data-side='${singleAnchor[0].side}'][data-cell-index='${singleAnchor[0].index}']`,
+    );
+    await click(selectedLane);
+    confirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
+    expect(confirmation).toBeNull();
     await act(async () => vi.runAllTimersAsync());
     expect(onUseSkill).toHaveBeenLastCalledWith(
       singleSkillId,
@@ -248,14 +256,10 @@ describe("formation practice combat gauntlet", () => {
     expect(areaAnchor).toHaveLength(1);
     expect(areaPreview.targetIds).toHaveLength(3);
     await click(mounted.querySelector(`[data-skill-id='${areaSkillId}']`));
-    const confirmation = mounted.querySelector("[data-testid='tow-target-confirmation']");
-    expect(confirmation).toBeTruthy();
-    expect(confirmation.textContent).toContain("3 targets");
-    expect(confirmation.querySelector(".tow-combat__target-commit").disabled).toBe(false);
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
     expect(mounted.querySelectorAll(".tow-formation-cell.is-affected"))
-      .toHaveLength(areaPreview.affectedCells.length);
+      .toHaveLength(0);
     expect(onUseSkill).toHaveBeenCalledTimes(1);
-    await click(confirmation.querySelector(".tow-combat__target-commit"));
     await act(async () => vi.runAllTimersAsync());
     expect(onUseSkill).toHaveBeenLastCalledWith(
       areaSkillId,

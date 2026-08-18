@@ -148,4 +148,12 @@ describe("v2 round-boundary formation reflow", () => {
     expect(result).toEqual({ formations: input.formations, moves: [] });
     expect(result.formations).toBe(input.formations);
   });
+
+  it("never reflows locked lane formations", () => {
+    const input = state({ version: 3 });
+    const result = reflowTowFormations(input);
+
+    expect(result).toEqual({ formations: input.formations, moves: [] });
+    expect(result.formations).toBe(input.formations);
+  });
 });

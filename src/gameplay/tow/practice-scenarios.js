@@ -26,7 +26,7 @@ import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { isCharacterBootstrapReceipt } from "./character-bootstrap.js";
 import { buildCombatChronicle } from "./chronicle.js";
-import { MOVING_FORMATION_RULES_VERSION } from "./formation.js";
+import { LOCKED_LANE_FORMATION_RULES_VERSION } from "./formation.js";
 import {
   combatItemIdForKeepsake,
   isStartingKeepsake,
@@ -42,7 +42,7 @@ import { getSkill, skillRankForRarity, skillRarityChoices } from "./skills.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
-export const PRACTICE_SCENARIO_VERSION = 3;
+export const PRACTICE_SCENARIO_VERSION = 4;
 export const PRACTICE_ALLY_GROUP_VERSION = 2;
 export const MAX_PRACTICE_ATTEMPT = 4096;
 
@@ -397,8 +397,9 @@ export function createPracticeSession(
     allies: allyGroup.allies.map((ally) => cloneJsonData(ally)),
     enemies: scenario.enemies.map((enemy) => cloneJsonData(enemy)),
     formations: {
-      // Practice teaches the same deterministic movement rules as campaign combat.
-      version: MOVING_FORMATION_RULES_VERSION,
+      // Practice teaches the production rule: formation is chosen before combat and stays
+      // fixed, while melee reach is blocked independently by the front unit in each lane.
+      version: LOCKED_LANE_FORMATION_RULES_VERSION,
       player: [...allyGroup.formation],
       enemy: [...scenario.formation],
     },

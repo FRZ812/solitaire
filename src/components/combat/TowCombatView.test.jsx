@@ -422,26 +422,44 @@ describe("compact combat HUD", () => {
   });
 
   it("focuses the legal anchor and restores the initiating action on Cancel or Escape", async () => {
-    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
-    const skillId = "north-king-natures-intervention";
-    const encounter = replaceSkill(base, "emergency-evasion", skillId);
+    const opening = openLabSession({
+      packageId: "rogue",
+      scenarioId: "formation-drill",
+    }).session.encounter;
+    const encounter = {
+      ...opening,
+      actors: {
+        ...opening.actors,
+        ...Object.fromEntries(opening.enemyIds.map((enemyId) => [
+          enemyId,
+          {
+            ...opening.actors[enemyId],
+            statuses: opening.actors[enemyId].statuses.filter(({ type }) => type !== "priority"),
+          },
+        ])),
+      },
+    };
+    const skillId = "strike";
     const expectedAnchors = legalSkillAnchors(
       encounter,
       skillId,
       encounter.playerId,
     );
     const mounted = await renderView({ encounter, onUseSkill: vi.fn() });
-    const initiatingAction = mounted.querySelector("[data-skill-id='north-king-natures-intervention']");
+    const initiatingAction = mounted.querySelector(`[data-skill-id='${skillId}']`);
 
-    expect(expectedAnchors).toHaveLength(1);
+    expect(expectedAnchors.length).toBeGreaterThan(1);
     expect(mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")).toHaveLength(0);
     initiatingAction.focus();
     await act(async () => initiatingAction.click());
 
     expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeTruthy();
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")
+      .compareDocumentPosition(mounted.querySelector(".tow-combat__actions"))
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cellCoordinates([...mounted.querySelectorAll(".tow-formation-cell.is-valid-anchor")]))
       .toEqual(expectedAnchors);
-    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(false);
+    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(true);
     expect(document.activeElement).toBe(mounted.querySelector(
       ".tow-formation-cell.is-valid-anchor:not(:disabled)",
     ));
@@ -465,34 +483,58 @@ describe("compact combat HUD", () => {
     expect(document.activeElement).toBe(initiatingAction);
   });
 
-  it("keeps a single-anchor multi-recipient ability behind footprint confirmation", async () => {
-    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
-    const skillId = "north-king-natures-intervention";
-    const encounter = replaceSkill(base, "emergency-evasion", skillId);
-    const anchors = legalSkillAnchors(encounter, skillId, encounter.playerId);
-    const preview = resolveSkillTargets(
-      encounter,
-      skillId,
-      encounter.playerId,
-      { anchorCell: anchors[0] },
-    );
-    const onUseSkill = vi.fn();
-    const mounted = await renderView({ encounter, onUseSkill });
+  it("auto-commits a full-field ability without redundant anchors or confirmation", async () => {
+    vi.useFakeTimers();
+    try {
+      const opening = openLabSession({ packageId: "rogue", scenarioId: "formation-drill" }).session.encounter;
+      const base = {
+        ...opening,
+        actors: {
+          ...opening.actors,
+          ...Object.fromEntries(opening.enemyIds.map((enemyId) => [
+            enemyId,
+            {
+              ...opening.actors[enemyId],
+              statuses: opening.actors[enemyId].statuses.filter(({ type }) => type !== "priority"),
+            },
+          ])),
+        },
+      };
+      const skillId = "demon-arrow-rain";
+      const encounter = replaceSkill(base, "emergency-evasion", skillId);
+      const anchors = legalSkillAnchors(encounter, skillId, encounter.playerId);
+      const preview = resolveSkillTargets(
+        encounter,
+        skillId,
+        encounter.playerId,
+        { anchorCell: anchors[0] },
+      );
+      const onUseSkill = vi.fn();
+      const mounted = await renderView({ encounter, onUseSkill });
 
-    expect(anchors).toHaveLength(1);
-    expect(preview.ok).toBe(true);
-    expect(preview.targetIds).toHaveLength(2);
+      expect(anchors).toHaveLength(1);
+      expect(preview.ok).toBe(true);
+      expect(preview.targetIds.length).toBeGreaterThan(1);
 
-    await act(async () => mounted.querySelector(`[data-skill-id='${skillId}']`).click());
+      await act(async () => mounted.querySelector(`[data-skill-id='${skillId}']`).click());
 
-    expect(onUseSkill).not.toHaveBeenCalled();
-    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeTruthy();
-    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(false);
-    const affectedCells = cellCoordinates([
-      ...mounted.querySelectorAll(".tow-formation-cell.is-affected"),
-    ]);
-    expect(affectedCells).toHaveLength(preview.affectedCells.length);
-    expect(affectedCells).toEqual(expect.arrayContaining(preview.affectedCells));
+      expect(onUseSkill).not.toHaveBeenCalled();
+      expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
+      expect(mounted.querySelectorAll(
+        ".tow-formation-cell.is-valid-anchor, .tow-formation-cell.is-affected, .tow-formation-cell.is-selected-anchor",
+      )).toHaveLength(0);
+      expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
+
+      await act(async () => vi.runAllTimersAsync());
+      expect(onUseSkill).toHaveBeenCalledWith(
+        skillId,
+        preview.primaryTargetId,
+        encounter.playerId,
+        anchors[0],
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("auto-commits a single recipient after the player chooses among legal anchors", async () => {

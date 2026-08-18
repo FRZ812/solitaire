@@ -21,4 +21,10 @@ describe("formation battlefield layout", () => {
       .toContain("grid-template-columns: minmax(0, 1fr)");
     expect(formationCss).not.toContain(".tow-formation-unit__name {");
   });
+
+  it("floats target confirmation above the action tray without consuming layout height", () => {
+    expect(cssBlock(".tow-combat__target-confirm"))
+      .toMatch(/position:\s*absolute;[\s\S]*bottom:\s*calc\(100% \+ 0\.55rem\);/);
+    expect(cssBlock(".tow-combat__target-confirm")).toContain("margin: 0 auto");
+  });
 });

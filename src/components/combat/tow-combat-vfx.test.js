@@ -158,7 +158,7 @@ describe("authored ImageGen flipbook combat VFX", () => {
     expect(visual.flipbook.id).not.toBe("strike");
   });
 
-  it("moves projectile sheets from the attacker to frame-five contact", () => {
+  it("flies projectile sheets on a tangent-rotated ballistic arc into frame-five contact", () => {
     const projectile = combatVfxVariantForSkill("demon-shoot");
     const cue = {
       attackerId: "hero",
@@ -176,6 +176,12 @@ describe("authored ImageGen flipbook combat VFX", () => {
     expect(crossing.x).toBeLessThan(contact.x);
     expect(launch.y).toBeGreaterThan(crossing.y);
     expect(crossing.y).toBeGreaterThan(contact.y);
+    const straightCrossingY = launch.y
+      + ((contact.y - launch.y) * crossing.travelProgress);
+    expect(crossing.y).toBeLessThan(straightCrossingY);
+    expect(crossing.arcHeight).toBeGreaterThan(0);
+    expect(launch.angle).not.toBeCloseTo(crossing.angle);
+    expect(crossing.angle).not.toBeCloseTo(contact.angle);
     expect(contact).toMatchObject({ x: aftermath.x, y: aftermath.y, travelProgress: 1 });
 
     const strikeCue = { ...cue, visual: combatVfxVariantForSkill("arctic-strike") };

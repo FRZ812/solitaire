@@ -49,6 +49,11 @@
   align-self: stretch;
 }
 
+.tow-formation-grid.has-lunging-unit,
+.tow-formation-cell.has-lunging-unit {
+  z-index: 20 !important;
+}
+
 .tow-formation-cell {
   position: relative;
   display: block;
@@ -461,6 +466,23 @@
   animation: tow-formation-contact 260ms cubic-bezier(.2,.76,.2,1) both;
 }
 
+/* A basic melee attack is spatial theatre, never formation movement. Only the illustrated
+   figure leaves its tile, stops short of the target for contact, then returns; HUD and the
+   authoritative actor remain anchored to the starting cell throughout. */
+.tow-formation-unit.is-lunging {
+  z-index: 16;
+  overflow: visible;
+}
+
+.tow-formation-unit.is-lunging .tow-formation-unit__figure {
+  z-index: 15;
+  overflow: hidden;
+  transform-origin: 50% 84%;
+  animation: tow-formation-melee-lunge var(--tow-lunge-duration, 430ms)
+    cubic-bezier(.2,.74,.18,1) var(--tow-lunge-delay, 0ms) both;
+  will-change: transform, filter;
+}
+
 .tow-formation-unit.is-down {
   opacity: 0.48;
   filter: grayscale(0.86) brightness(0.58) drop-shadow(0 0.45rem 0.45rem rgba(0,0,0,0.72));
@@ -504,11 +526,17 @@
 }
 
 .tow-combat__target-confirm {
+  position: absolute;
+  z-index: 12;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  left: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.55rem;
   align-items: center;
-  margin: 0.55rem 0 0;
+  width: min(100%, 42rem);
+  margin: 0 auto;
   padding: 0.55rem 0.62rem;
   border: 1px solid rgba(189, 153, 233, 0.36);
   border-radius: 0.72rem;
@@ -641,6 +669,29 @@
   100% { filter: brightness(1); transform: translateX(0); }
 }
 
+@keyframes tow-formation-melee-lunge {
+  0% {
+    filter: brightness(1);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  14% {
+    filter: brightness(1.04);
+    transform: translate3d(var(--tow-lunge-wind-x), var(--tow-lunge-wind-y), 0) scale(0.98);
+  }
+  44% {
+    filter: brightness(1.1);
+    transform: translate3d(var(--tow-lunge-mid-x), var(--tow-lunge-mid-y), 0) scale(1.045);
+  }
+  58%, 68% {
+    filter: brightness(1.2) drop-shadow(0 0 0.72rem rgba(241, 203, 132, 0.4));
+    transform: translate3d(var(--tow-lunge-x), var(--tow-lunge-y), 0) scale(1.08);
+  }
+  100% {
+    filter: brightness(1);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 @keyframes tow-formation-arrive {
   from {
     opacity: 0.76;
@@ -685,6 +736,10 @@
     padding-top: 0.72rem;
   }
   .tow-combat__target-confirm {
+    right: 0.15rem;
+    bottom: calc(100% + 0.38rem);
+    left: 0.15rem;
+    width: auto;
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 0.32rem;
     padding-inline: 0.45rem;
@@ -737,6 +792,9 @@
 
   .tow-formation-cell.is-intent-target::before { animation: none; }
   .tow-formation-unit.is-reacting .tow-formation-unit__figure { animation: none; }
+  .tow-formation-unit.is-lunging .tow-formation-unit__figure {
+    animation: tow-formation-contact 160ms ease-out var(--tow-lunge-delay, 0ms) both;
+  }
   .tow-formation-unit.is-arriving { animation: none; }
   .tow-formation-cell__move-marker { animation: none; }
   .tow-combat__mythical-declaration { animation-duration: 280ms; }
