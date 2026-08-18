@@ -323,7 +323,7 @@ function intentOutcomeText(intent) {
   return `${intent.kind || "ability"} effect`;
 }
 
-function IntentBadge({ intent, target, playerId, source }) {
+function IntentBadge({ intent, target, source }) {
   if (!intent) return null;
   const visual = combatVfxForIntent(intent);
   const damage = intent.damage > 0
@@ -334,7 +334,7 @@ function IntentBadge({ intent, target, playerId, source }) {
   const outcome = intentOutcomeText(intent);
   const targetText = intent.target === "self" ? "self" : targetName;
   return (
-    <div
+    <span
       className={`tow-combat__intent tow-combat__intent--${visual.family}${intent.damage > 0 && intent.hits > 1 ? " is-multi" : ""}`}
       role="img"
       aria-label={`${sourceName}: ${intent.name}, ${outcome}, ${intent.target === "self" ? "used on self" : `targeting ${targetName}`}`}
@@ -343,18 +343,12 @@ function IntentBadge({ intent, target, playerId, source }) {
       data-enemy-id={intent.enemyId}
       data-ability-id={intent.skillId || intent.attackId || undefined}
     >
-      <span className="tow-combat__intent-source" aria-hidden="true">{sourceName}</span>
       <span className="tow-combat__intent-sigil" aria-hidden="true">
         <img src={visual.asset} alt="" />
         <i />
       </span>
       <strong aria-hidden="true">{damage}</strong>
-      <span className="tow-combat__intent-target" aria-hidden="true">
-        {intent.target === "self" ? "Self" : `→ ${target?.id === playerId ? "You" : targetName}`}
-      </span>
-      <span className="tow-combat__intent-name" aria-hidden="true">{intent.name}</span>
-      <span className="tow-combat__sr-only">Incoming: {intent.name}</span>
-    </div>
+    </span>
   );
 }
 
@@ -484,6 +478,103 @@ function StatusDetails({ actor, status, source, enemy = false, onDismiss }) {
       </span>
       <button type="button" onClick={onDismiss} aria-label={`Close ${detail.name} details`}>×</button>
     </aside>
+  );
+}
+
+function CombatantDossier({ actor, art, abilityRows, onClose }) {
+  const hasResolve = Number.isFinite(actor.resolve) && Number.isFinite(actor.resolveMax);
+  const stats = [
+    ["HP", `${actor.hp}/${actor.maxHp}`],
+    ...(hasResolve ? [["Resolve", `${actor.resolve}/${actor.resolveMax}`]] : []),
+    ["Ward", actor.shield || 0],
+    ["Attack", actor.stats?.attack ?? 0],
+    ["Defense", actor.stats?.defense ?? 0],
+    ["Critical", `${actor.stats?.critRate ?? 0}%`],
+    ["Dodge", `${actor.stats?.dodgeRate ?? 0}%`],
+  ];
+  return (
+    <div
+      className="tow-combat__dossier-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      <aside
+        className={`tow-combat__dossier tow-combat__dossier--${actor.side}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`tow-combat-dossier-${domId(actor.id)}`}
+        data-testid="tow-combat-dossier"
+      >
+        <header className="tow-combat__dossier-hero">
+          <span className="tow-combat__dossier-portrait" aria-hidden="true">
+            {art ? <img src={art} alt="" draggable="false" /> : <b>{monogram(actor.name)}</b>}
+          </span>
+          <span className="tow-combat__dossier-title">
+            <small>{actor.side === "enemy" ? "Opposing combatant" : "Allied combatant"}</small>
+            <strong id={`tow-combat-dossier-${domId(actor.id)}`}>{actor.name}</strong>
+            <em>{actor.hp > 0 ? "Standing" : "Defeated"}</em>
+          </span>
+          <button type="button" onClick={onClose} aria-label={`Close ${actor.name} dossier`} autoFocus>
+            <Icon name="x" size={16} strokeWidth={1.7} />
+          </button>
+        </header>
+
+        <section className="tow-combat__dossier-section" aria-labelledby={`tow-combat-stats-${domId(actor.id)}`}>
+          <h3 id={`tow-combat-stats-${domId(actor.id)}`}>Combat profile</h3>
+          <dl className="tow-combat__dossier-stats">
+            {stats.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        {actor.statuses?.length ? (
+          <section className="tow-combat__dossier-section" aria-labelledby={`tow-combat-statuses-${domId(actor.id)}`}>
+            <h3 id={`tow-combat-statuses-${domId(actor.id)}`}>Status effects</h3>
+            <ul className="tow-combat__dossier-statuses">
+              {actor.statuses.map((status) => {
+                const detail = towStatusPresentation(status);
+                return (
+                  <li key={status.type}>
+                    <span style={statusIconStyle(detail.visual)} aria-hidden="true"><i /></span>
+                    <span><strong>{detail.name}</strong><small>{detail.effect}</small></span>
+                    <em>{status.count}</em>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+
+        <section className="tow-combat__dossier-section" aria-labelledby={`tow-combat-abilities-${domId(actor.id)}`}>
+          <h3 id={`tow-combat-abilities-${domId(actor.id)}`}>Abilities</h3>
+          {abilityRows.length ? (
+            <div className="tow-combat__dossier-abilities">
+              {abilityRows.map((row) => (
+                <article key={row.skillState.id}>
+                  <AbilityArt src={row.art} className="tow-combat__dossier-ability-art" />
+                  <span>
+                    <small>{rarityLabel(row.rarity)} · rank {row.skillState.rank}</small>
+                    <strong>{row.displayName}</strong>
+                    <p>{row.detail}</p>
+                  </span>
+                  <em>
+                    {row.skillState.cooldownRemaining > 0
+                      ? `${row.skillState.cooldownRemaining} turn${row.skillState.cooldownRemaining === 1 ? "" : "s"}`
+                      : row.cost > 0 ? `${row.cost} RP` : "Ready"}
+                  </em>
+                </article>
+              ))}
+            </div>
+          ) : <p className="tow-combat__dossier-empty">No combat abilities recorded.</p>}
+        </section>
+      </aside>
+    </div>
   );
 }
 
@@ -860,6 +951,39 @@ function ActionDeclaration({
   );
 }
 
+function FormationStatusBadges({ actor }) {
+  if (!actor.statuses?.length) return null;
+  return (
+    <span
+      className="tow-formation-statuses"
+      aria-label={`${actor.name} status effects: ${actor.statuses.map((status) => {
+        const detail = towStatusPresentation(status);
+        return `${detail.name} ${detail.countLabel}`;
+      }).join(", ")}`}
+    >
+      {actor.statuses.slice(0, 4).map((status) => {
+        const detail = towStatusPresentation(status);
+        return (
+          <span
+            key={status.type}
+            className={`tow-formation-status tow-combat__status-button--${detail.visual.family}`}
+            style={statusIconStyle(detail.visual)}
+            title={`${detail.name} · ${detail.countLabel}`}
+          >
+            <i className="tow-formation-status__art" aria-hidden="true" />
+            <strong aria-hidden="true">{status.count}</strong>
+          </span>
+        );
+      })}
+      {actor.statuses.length > 4 ? (
+        <span className="tow-formation-status tow-formation-status--more" aria-hidden="true">
+          +{actor.statuses.length - 4}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function MythicalAbilityDeclaration({ beat, portrait }) {
   if (!beat || beat.presentationTier !== "mythical" || beat.phase !== "declaration") return null;
   return (
@@ -984,6 +1108,7 @@ export function TowCombatView({
   const [commanderId, setCommanderId] = useState(null);
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [inspectedStatus, setInspectedStatus] = useState(null);
+  const [inspectedActorId, setInspectedActorId] = useState(null);
   const [recordExpanded, setRecordExpanded] = useState(false);
   const [satchelOpen, setSatchelOpen] = useState(false);
   const [impactCues, setImpactCues] = useState([]);
@@ -1026,13 +1151,14 @@ export function TowCombatView({
   const commanderPossessive = activeCommander.id === encounter.playerId
     ? "your"
     : `${activeCommander.name}'s`;
-  const commanderBuild = activeCommander.id === encounter.playerId
-    ? encounter.build
-    : encounter.allyBuilds?.[activeCommander.id];
+  function buildForActor(actor) {
+    if (!actor) return null;
+    if (actor.id === encounter.playerId) return encounter.build;
+    return encounter.allyBuilds?.[actor.id] || encounter.enemyBuilds?.[actor.id] || null;
+  }
+  const commanderBuild = buildForActor(activeCommander);
   function weaponPresentationFor(actor) {
-    const actorBuild = actor.id === encounter.playerId
-      ? encounter.build
-      : encounter.allyBuilds?.[actor.id];
+    const actorBuild = buildForActor(actor);
     const supplied = typeof weaponFor === "function" ? weaponFor(actor) : null;
     return normalizeWeaponPresentation({
       ...supplied,
@@ -1064,6 +1190,24 @@ export function TowCombatView({
       skillState,
       weaponPresentation: commanderWeapon,
     };
+  });
+  const inspectedActor = encounter.actors[inspectedActorId] || null;
+  const inspectedActorBuild = buildForActor(inspectedActor);
+  const inspectedActorWeapon = inspectedActor ? weaponPresentationFor(inspectedActor) : null;
+  const dossierAbilityRows = (inspectedActorBuild?.skills || []).flatMap((skillState) => {
+    const definition = getSkill(skillState.id);
+    if (!definition) return [];
+    return [{
+      art: resolveTowAbilityArt(definition, inspectedActorWeapon),
+      cost: Number.isFinite(inspectedActor?.resolve)
+        ? resolveCost(skillState.id, skillState.rank)
+        : 0,
+      definition,
+      detail: towSkillDetail(definition, skillState, inspectedActorWeapon),
+      displayName: resolveTowActionName(definition, inspectedActorWeapon),
+      rarity: skillRarityAtRank(definition, skillState.rank),
+      skillState,
+    }];
   });
   const targetingRow = targetingDraft
     ? skillRows.find((row) => row.skillState.id === targetingDraft.skillId) || null
@@ -1160,6 +1304,22 @@ export function TowCombatView({
     });
   }
 
+  function renderFormationOverlay(actor, side) {
+    const intent = side === "enemy" ? intents[actor.id] : null;
+    return (
+      <>
+        {intent ? (
+          <IntentBadge
+            intent={intent}
+            target={encounter.actors[intent.targetId]}
+            source={actor}
+          />
+        ) : null}
+        <FormationStatusBadges actor={actor} />
+      </>
+    );
+  }
+
   function clearActionTimer(name) {
     if (actionTimersRef.current[name] !== null) clearTimeout(actionTimersRef.current[name]);
     actionTimersRef.current[name] = null;
@@ -1193,6 +1353,7 @@ export function TowCombatView({
       : null;
     setInspectedSkillId(null);
     setInspectedStatus(null);
+    setInspectedActorId(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
     if (immediatePreview?.ok && immediatePreview.targetIds.length === 1) {
@@ -1200,6 +1361,21 @@ export function TowCombatView({
       return;
     }
     setTargetingDraft({ skillId: row.skillState.id, anchorCell });
+  }
+
+  function inspectCombatant(actor) {
+    if (!actor || presentationLocked || targetingDraft) return;
+    setInspectedSkillId(null);
+    setInspectedStatus(null);
+    setInspectedActorId(null);
+    setRecordExpanded(false);
+    setSatchelOpen(false);
+    setInspectedActorId(actor.id);
+    if (actor.side === "enemy") {
+      if (actor.hp > 0) setTargetId(actor.id);
+      return;
+    }
+    if (actor.hp > 0 && actionsLeft(encounter, actor.id) > 0) setCommanderId(actor.id);
   }
 
   function selectFormationCell(side, index) {
@@ -1269,6 +1445,7 @@ export function TowCombatView({
     };
     setInspectedSkillId(null);
     setInspectedStatus(null);
+    setInspectedActorId(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
     setTargetingDraft(null);
@@ -1460,6 +1637,9 @@ export function TowCombatView({
         event.preventDefault();
         setSatchelOpen(false);
         globalThis.requestAnimationFrame?.(() => satchelTriggerRef.current?.focus());
+      } else if (inspectedActorId) {
+        event.preventDefault();
+        setInspectedActorId(null);
       } else if (inspectedSkillId) {
         event.preventDefault();
         setInspectedSkillId(null);
@@ -1572,7 +1752,7 @@ export function TowCombatView({
                 ? actionBeat?.phase === "declaration"
                   ? "Mythical ability"
                   : actionBeat?.phase === "windup" ? "Action committed" : "Reading the exchange"
-                : activeCommander.id === encounter.playerId ? "Your move" : `${activeCommander.name}'s move`}</em>
+                : "Your move"}</em>
             ) : null}
           </p>
           <p className="tow-combat__context">
@@ -1622,27 +1802,11 @@ export function TowCombatView({
             intentCellsBeforeMove={intentCellsBeforeMove}
             activeActorId={activeCommander.id}
             onSelectCell={selectFormationCell}
+            onInspectActor={targetingDraft ? null : inspectCombatant}
+            renderActorOverlay={renderFormationOverlay}
             feedbackCues={impactCues}
             movementCue={movementCue}
           />
-
-          {!terminal && declared.length > 0 ? (
-            <section
-              className="tow-combat__formation-intents"
-              aria-label="Enemy intentions"
-              style={{ "--tow-intent-count": Math.min(9, declared.length) }}
-            >
-              {declared.map((intent) => (
-                <IntentBadge
-                  key={intent.enemyId}
-                  intent={intent}
-                  target={encounter.actors[intent.targetId]}
-                  playerId={encounter.playerId}
-                  source={encounter.actors[intent.enemyId]}
-                />
-              ))}
-            </section>
-          ) : null}
 
           {!terminal ? (
             <CombatDeclarations beat={actionBeat} cues={impactCues} encounter={encounter} />
@@ -1653,6 +1817,15 @@ export function TowCombatView({
 
         <MythicalAbilityDeclaration beat={actionBeat} portrait={combatArt(stagedHero)} />
 
+        {inspectedActor ? (
+          <CombatantDossier
+            actor={inspectedActor}
+            art={combatArt(inspectedActor)}
+            abilityRows={dossierAbilityRows}
+            onClose={() => setInspectedActorId(null)}
+          />
+        ) : null}
+
         {error ? <p className="tow-combat__alert" role="alert">{error}</p> : null}
 
         {!terminal ? (
@@ -1660,45 +1833,11 @@ export function TowCombatView({
             className={`tow-combat__command${presentationLocked ? " is-committed" : ""}${forcedWindow ? " is-forced" : ""}`}
             aria-busy={presentationLocked || Boolean(forcedWindow)}
           >
-            <div className="tow-combat__command-heading">
-              <div>
-                <span>{actionBeat
-                  ? actionBeat.phase === "declaration"
-                    ? "Mythical declaration"
-                    : actionBeat.phase === "windup" ? "Committed" : "Resolving"
-                  : forcedWindow?.kind === "control" ? "Control takes hold"
-                    : forcedWindow?.kind === "priority" ? "Enemy moves first"
-                      : targetingRow ? "Targeting" : stagedHero.id === encounter.playerId ? "Your command" : stagedHero.name}</span>
-                <strong>{actionBeat
-                  ? actionBeat.displayName
-                  : forcedWindow
-                    ? `${forcedWindow.label} · turn forfeited`
-                    : targetingRow ? "Preview the footprint" : "Choose an action"}</strong>
-              </div>
-              <p>
-                <strong>{forcedWindow ? 0 : actionsLeft(encounter, activeCommander.id)}</strong>
-                <span>{forcedWindow ? "input" : `action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}`}</span>
-              </p>
-            </div>
-
-            {commandable.length > 1 ? (
-              <div className="tow-combat__commanders" aria-label="Whose action to spend">
-                {commandable.map((actor) => (
-                  <button
-                    key={actor.id}
-                    type="button"
-                    className={`tow-combat__commander production-combat__commander${actor.id === activeCommander.id ? " is-selected" : ""}`}
-                    aria-pressed={actor.id === activeCommander.id}
-                    aria-label={`Act as ${actor.name}, ${actionsLeft(encounter, actor.id)} actions left`}
-                    disabled={presentationLocked || Boolean(forcedWindow)}
-                    onClick={() => setCommanderId(actor.id)}
-                  >
-                    <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
-                    <strong>{actionsLeft(encounter, actor.id)}</strong>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            <p className="tow-combat__sr-only" aria-live="polite">
+              {forcedWindow
+                ? `${forcedWindow.label}. No player input.`
+                : `${activeCommander.name}, ${actionsLeft(encounter, activeCommander.id)} actions remaining.`}
+            </p>
 
             <div className="tow-combat__actions" aria-label="Combat actions">
               {skillRows.map((row, index) => (
@@ -1757,7 +1896,8 @@ export function TowCombatView({
               </section>
             ) : null}
 
-            <div className="tow-combat__command-tools">
+            {combatItemRows.length > 0 ? (
+              <div className="tow-combat__command-tools tow-combat__command-tools--satchel">
               <div className="tow-combat__satchel-slot">
                 {combatItemRows.length > 0 ? (
                   <div className="tow-combat__satchel" ref={satchelRef}>
@@ -1773,6 +1913,7 @@ export function TowCombatView({
                       onClick={() => {
                         setInspectedSkillId(null);
                         setInspectedStatus(null);
+                        setInspectedActorId(null);
                         setRecordExpanded(false);
                         setSatchelOpen((current) => !current);
                       }}
@@ -1836,21 +1977,8 @@ export function TowCombatView({
                 ) : null}
               </div>
 
-              <p className="tow-combat__action-hint">
-                {actionBeat
-                  ? actionBeat.phase === "declaration"
-                    ? "Mythical declaration · the field holds"
-                    : actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · watch the exchange"
-                  : forcedWindow?.kind === "control"
-                    ? "No input needed · the skipped command advances automatically"
-                    : forcedWindow?.kind === "priority"
-                      ? "No input needed · enemy Priority resolves automatically"
-                      : targetingRow
-                        ? resolvedPreview ? "Review the highlighted footprint · confirm to commit" : "Choose a highlighted cell"
-                        : "Tap an ability · choose its target · confirm"}
-              </p>
-              <span className="tow-combat__command-tools-balance" aria-hidden="true" />
-            </div>
+              </div>
+            ) : null}
 
             {inspectedSkill ? (
               <SkillDetails

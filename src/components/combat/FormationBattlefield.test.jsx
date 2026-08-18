@@ -54,11 +54,15 @@ describe("formation battlefield", () => {
 
     const units = [...mounted.querySelectorAll(".tow-formation-unit")];
     expect(units).toHaveLength(2);
-    expect(units.find((unit) => unit.textContent.includes("Knight")).classList.contains("is-active")).toBe(true);
+    const knightHealth = mounted.querySelector("[aria-label='Knight health']");
+    expect(knightHealth.closest(".tow-formation-unit").classList.contains("is-active")).toBe(true);
     expect(mounted.querySelector("img[src='/portraits/knight.webp']")).toBeTruthy();
     expect(mounted.querySelectorAll("[role='meter']")).toHaveLength(4);
-    expect(mounted.querySelector("[aria-label='Knight health']").getAttribute("aria-valuenow")).toBe("84");
+    expect(knightHealth.getAttribute("aria-valuenow")).toBe("84");
     expect(mounted.querySelector("[aria-label='Warden Resolve']").getAttribute("aria-valuemax")).toBe("6");
+    expect(mounted.querySelector(".tow-formation-unit__name")).toBeNull();
+    expect([...knightHealth.closest(".tow-formation-unit__vitals").children].map((node) => node.classList[1]))
+      .toEqual(["tow-formation-unit__meter--hp", "tow-formation-unit__meter--resolve"]);
   });
 
   it("exposes targeting, footprint, selection and intent states without enabling other cells", async () => {
@@ -86,12 +90,32 @@ describe("formation battlefield", () => {
     expect(selected.getAttribute("aria-label")).toMatch(/empty.*valid target.*selected target.*affected/i);
     expect(affected.classList.contains("is-affected")).toBe(true);
     expect(affected.disabled).toBe(true);
-    expect(intent.classList.contains("is-intent-target")).toBe(true);
+    expect(intent.classList.contains("is-intent-target")).toBe(false);
     expect(invalid.disabled).toBe(true);
 
     await act(async () => selected.click());
     expect(onSelectCell).toHaveBeenCalledOnce();
     expect(onSelectCell).toHaveBeenCalledWith("enemy", 0);
+  });
+
+  it("opens an occupied cell dossier without turning vacant cells into controls", async () => {
+    const onInspectActor = vi.fn();
+    const actor = { id: "knight", name: "Knight", hp: 84, maxHp: 100 };
+    const mounted = await renderFormation({
+      actors: { knight: actor },
+      formations: { player: [null, "knight"], enemy: [] },
+      onInspectActor,
+    });
+
+    const empty = mounted.querySelector("[data-side='player'][data-cell-index='0']");
+    const occupied = mounted.querySelector("[data-side='player'][data-cell-index='1']");
+    expect(empty.disabled).toBe(true);
+    expect(occupied.disabled).toBe(false);
+    expect(occupied.getAttribute("aria-haspopup")).toBe("dialog");
+
+    await act(async () => occupied.click());
+    expect(onInspectActor).toHaveBeenCalledOnce();
+    expect(onInspectActor).toHaveBeenCalledWith(actor);
   });
 
   it("holds pre-move cells until the cue, then swaps formation and intent atomically", async () => {
@@ -133,15 +157,17 @@ describe("formation battlefield", () => {
 
     expect(mounted.querySelector(".tow-formation-battlefield").dataset.movementPhase).toBe("pending");
     expect(mounted.querySelector(".tow-formation-battlefield").getAttribute("aria-busy")).toBe("true");
-    expect(mounted.querySelector("[data-side='player'][data-cell-index='4']").textContent).toContain("Knight");
+    expect(mounted.querySelector("[data-side='player'][data-cell-index='4'] [aria-label='Knight health']"))
+      .toBeTruthy();
     expect(mounted.querySelector("[data-side='player'][data-cell-index='4']").classList.contains("is-intent-target")).toBe(true);
-    expect(mounted.querySelector("[data-side='player'][data-cell-index='1']").textContent).not.toContain("Knight");
+    expect(mounted.querySelector("[data-side='player'][data-cell-index='1'] [aria-label='Knight health']"))
+      .toBeNull();
 
     await act(async () => vi.advanceTimersByTime(300));
 
     const destination = mounted.querySelector("[data-side='player'][data-cell-index='1']");
     expect(mounted.querySelector(".tow-formation-battlefield").dataset.movementPhase).toBe("settling");
-    expect(destination.textContent).toContain("Knight");
+    expect(destination.querySelector("[aria-label='Knight health']")).toBeTruthy();
     expect(destination.classList.contains("is-intent-target")).toBe(true);
     expect(destination.querySelector(".tow-formation-unit.is-arriving")).toBeTruthy();
     expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeTruthy();
@@ -189,7 +215,7 @@ describe("formation battlefield", () => {
     const destination = mounted.querySelector("[data-side='player'][data-cell-index='1']");
     expect(battlefield.dataset.reducedMotion).toBe("true");
     expect(battlefield.dataset.movementPhase).toBe("settling");
-    expect(destination.textContent).toContain("Knight");
+    expect(destination.querySelector("[aria-label='Knight health']")).toBeTruthy();
     expect(destination.querySelector(".tow-formation-unit.is-arriving")).toBeNull();
     expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeTruthy();
   });

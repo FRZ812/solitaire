@@ -74,6 +74,130 @@
   touch-action: manipulation;
 }
 
+.tow-formation-cell__overlays {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+/* Intent is a portrait-corner medallion. Source and target remain available to assistive
+   technology, while the board position and target highlight carry the visible relationship. */
+.tow-formation-cell__overlays .tow-combat__intent {
+  position: absolute;
+  top: 0.12rem;
+  right: 7%;
+  bottom: auto;
+  left: auto;
+  display: grid;
+  width: 2.08rem;
+  height: 2.08rem;
+  place-items: center;
+  transform: none;
+  pointer-events: none;
+  filter: drop-shadow(0 0.35rem 0.5rem rgba(0,0,0,0.78));
+}
+
+.tow-formation-cell__overlays .tow-combat__intent-source,
+.tow-formation-cell__overlays .tow-combat__intent-target,
+.tow-formation-cell__overlays .tow-combat__intent-name { display: none; }
+
+.tow-formation-cell__overlays .tow-combat__intent-sigil {
+  width: 2rem;
+  height: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  border-radius: 50%;
+}
+
+.tow-formation-cell__overlays .tow-combat__intent-sigil::before {
+  inset: -0.14rem;
+  border-radius: 50%;
+}
+.tow-formation-cell__overlays .tow-combat__intent-sigil::after { display: none; }
+.tow-formation-cell__overlays .tow-combat__intent-sigil img,
+.tow-formation-cell__overlays .tow-combat__intent-sigil i { border-radius: 50%; }
+.tow-formation-cell__overlays .tow-combat__intent > strong {
+  position: absolute;
+  right: -0.08rem;
+  bottom: -0.08rem;
+  min-width: 1.04rem;
+  margin: 0;
+  padding: 0.12rem 0.18rem 0.1rem;
+  font-size: 0.43rem;
+}
+
+.tow-formation-statuses {
+  position: absolute;
+  z-index: 9;
+  bottom: 1.34rem;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: 92%;
+  min-height: 0.96rem;
+  padding: 0.07rem 0.12rem;
+  gap: 0.08rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(226, 209, 174, 0.11);
+  border-radius: 0.28rem;
+  background: rgba(4, 8, 10, 0.76);
+  box-shadow: 0 0.18rem 0.42rem rgba(0,0,0,0.46);
+  transform: translateX(-50%);
+  backdrop-filter: blur(3px);
+}
+
+.tow-formation-status {
+  --tow-status-accent: #d8ae65;
+  position: relative;
+  display: grid;
+  flex: 0 0 0.78rem;
+  width: 0.78rem;
+  height: 0.78rem;
+  overflow: visible;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--tow-status-accent) 64%, #fff 8%);
+  border-radius: 0.2rem;
+  background: rgba(4, 9, 11, 0.9);
+  box-shadow: 0 0.22rem 0.48rem rgba(0,0,0,0.62);
+}
+
+.tow-formation-status__art {
+  position: absolute;
+  inset: 0.04rem;
+  overflow: hidden;
+  border-radius: 0.16rem;
+  background-image: var(--tow-status-icon);
+  background-position: var(--tow-status-icon-position, center);
+  background-size: var(--tow-status-icon-size, cover);
+}
+
+.tow-formation-status > strong {
+  position: absolute;
+  z-index: 2;
+  right: -0.13rem;
+  bottom: -0.11rem;
+  display: grid;
+  min-width: 0.54rem;
+  height: 0.54rem;
+  padding: 0 0.06rem;
+  place-items: center;
+  border: 1px solid rgba(245, 222, 177, 0.48);
+  border-radius: 99px;
+  background: #090d0f;
+  color: #fff1d6;
+  font-size: 0.3rem;
+  line-height: 1;
+}
+
+.tow-formation-status--more {
+  color: #e7d6b6;
+  font-size: 0.34rem;
+  font-weight: 850;
+}
+
 .tow-formation-cell__move-marker {
   position: absolute;
   z-index: 1;
@@ -247,34 +371,21 @@
   bottom: 0;
   left: 2%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
-  gap: 0.1rem 0.14rem;
-  padding: 0.16rem 0.2rem 0.2rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.05rem;
+  padding: 0.1rem 0.14rem 0.12rem;
   border: 1px solid rgba(224, 206, 164, 0.18);
-  border-radius: 0.4rem;
+  border-radius: 0.32rem;
   background: linear-gradient(100deg, rgba(5, 10, 12, 0.91), rgba(5, 10, 12, 0.68));
   box-shadow: 0 0.32rem 0.8rem rgba(0,0,0,0.42), inset 0 1px rgba(255,255,255,0.035);
   backdrop-filter: blur(4px);
-}
-
-.tow-formation-unit__name {
-  grid-column: 1 / -1;
-  display: block;
-  overflow: hidden;
-  font-size: clamp(0.48rem, 1.25vw, 0.62rem);
-  font-weight: 760;
-  line-height: 1;
-  color: #f7ecd5;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tow-formation-unit__meter {
   position: relative;
   display: flex;
   min-width: 0;
-  height: clamp(0.64rem, 1.25vh, 0.78rem);
+  height: clamp(0.52rem, 1.05vh, 0.64rem);
   padding-inline: 0.18rem;
   overflow: hidden;
   align-items: center;
@@ -330,7 +441,7 @@
 }
 
 .tow-formation-unit__meter--resolve {
-  height: clamp(0.64rem, 1.25vh, 0.78rem);
+  height: clamp(0.48rem, 0.96vh, 0.58rem);
 }
 
 .tow-formation-unit__meter--resolve i {
@@ -375,11 +486,10 @@
 .tow-formation-grid--enemy .tow-formation-cell[data-row="2"] { grid-row: 1; }
 
 .tow-combat__battlefield--formation {
-  --tow-formation-intent-rail: clamp(4.6rem, 11vh, 5.6rem);
   display: grid;
-  min-height: clamp(22rem, 54vh, 37rem);
+  min-height: clamp(22rem, 58vh, 40rem);
   box-sizing: border-box;
-  padding-top: var(--tow-formation-intent-rail);
+  padding-top: clamp(0.65rem, 1.8vh, 1.15rem);
   place-items: stretch center;
   overflow: hidden;
 }
@@ -391,30 +501,6 @@
   width: min(100%, 48rem);
   height: 100%;
   min-height: 0;
-}
-
-.tow-combat__formation-intents {
-  position: absolute;
-  z-index: 18;
-  top: 0.16rem;
-  left: 50%;
-  display: grid;
-  grid-template-columns: repeat(var(--tow-intent-count, 1), minmax(0, 1fr));
-  width: min(calc(100% - 1rem), 48rem);
-  height: calc(var(--tow-formation-intent-rail) - 0.34rem);
-  gap: clamp(0.12rem, 0.7vw, 0.38rem);
-  align-items: start;
-  justify-items: center;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.tow-combat__formation-intents .tow-combat__intent {
-  position: relative;
-  inset: auto;
-  width: min(100%, 4.8rem);
-  transform: none;
-  pointer-events: auto;
 }
 
 .tow-combat__target-confirm {
@@ -590,54 +676,27 @@
   }
   .tow-formation-unit__figure { right: 7%; bottom: 1rem; left: 7%; }
   .tow-formation-unit__vitals { right: 1%; left: 1%; padding-inline: 0.16rem; }
-  .tow-formation-unit__name { font-size: clamp(0.45rem, 1.85vw, 0.53rem); }
   .tow-formation-unit__meter-label { font-size: clamp(0.32rem, 1.25vw, 0.38rem); }
   .tow-formation-unit__meter-value { font-size: clamp(0.39rem, 1.55vw, 0.47rem); }
 
   .tow-combat .tow-combat__battlefield--formation {
-    --tow-formation-intent-rail: 4.15rem;
     flex: 1 1 auto;
-    min-height: clamp(18rem, 43svh, 23rem);
-    padding-top: var(--tow-formation-intent-rail);
+    min-height: clamp(19rem, 49svh, 27rem);
+    padding-top: 0.72rem;
   }
-  .tow-combat__formation-intents {
-    right: auto;
-    width: calc(100% - 0.7rem);
-    max-width: none;
-  }
-  .tow-combat__formation-intents .tow-combat__intent {
-    width: min(100%, 3.85rem);
-  }
-  .tow-combat__formation-intents .tow-combat__intent-source {
-    width: 100%;
-    font-size: 0.42rem;
-  }
-  .tow-combat__formation-intents .tow-combat__intent-sigil {
-    width: 2.32rem;
-    height: 2.32rem;
-    min-width: 2.32rem;
-    min-height: 2.32rem;
-  }
-  .tow-combat__formation-intents .tow-combat__intent > strong {
-    min-width: 1.8rem;
-    padding: 0.15rem 0.28rem 0.13rem;
-    font-size: 0.58rem;
-  }
-  .tow-combat__formation-intents .tow-combat__intent-target {
-    width: 100%;
-    max-width: 100%;
-    font-size: 0.39rem;
-  }
-  .tow-combat__formation-intents .tow-combat__intent-name { display: none; }
   .tow-combat__target-confirm {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 0.32rem;
     padding-inline: 0.45rem;
   }
-  .tow-combat__target-confirm > span { grid-column: 1 / -1; }
+  .tow-combat__target-confirm > span { grid-column: auto; }
+  .tow-combat__target-confirm small,
+  .tow-combat__target-confirm em { display: none; }
+  .tow-combat__target-confirm strong { font-size: 0.88rem; }
   .tow-combat__target-confirm button {
-    width: 100%;
+    width: auto;
     min-width: 0;
+    min-height: 2.2rem;
     padding-inline: 0.55rem;
   }
   .tow-combat__mythical-declaration {
@@ -666,7 +725,7 @@
   .tow-formation-grid { grid-template-rows: repeat(3, minmax(0, 1fr)); }
   .tow-formation-cell { min-height: 0; }
   .tow-formation-unit { inset-block-start: 0; }
-  .tow-combat .tow-combat__battlefield--formation { --tow-formation-intent-rail: 3.8rem; }
+  .tow-combat .tow-combat__battlefield--formation { padding-top: 0.55rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -111,7 +111,7 @@ function visibleVitalSnapshot(mounted) {
 }
 
 describe("formation practice combat gauntlet", () => {
-  it("presents a bounded 3v3 field with visible exact vitals and a separate accessible intent rail", async () => {
+  it("presents a bounded 3v3 field with exact vitals and actor-owned accessible intents", async () => {
     const receipt = receiptFor("knight");
     const allyGroup = getPracticeAllyGroup("expedition-trio");
     const scenario = getPracticeScenario("formation-drill");
@@ -171,10 +171,8 @@ describe("formation practice combat gauntlet", () => {
       }
     }
 
-    const intentRail = mounted.querySelector("[aria-label='Enemy intentions']");
-    const intents = [...intentRail.querySelectorAll("[data-testid='tow-enemy-intent']")];
-    expect(intentRail).toBeTruthy();
-    expect(battlefield.contains(intentRail)).toBe(false);
+    const intents = [...battlefield.querySelectorAll("[data-testid='tow-enemy-intent']")];
+    expect(mounted.querySelector("[aria-label='Enemy intentions']")).toBeNull();
     expect(intents).toHaveLength(scenario.enemies.length);
     for (const intent of intents) {
       const sourceId = intent.dataset.enemyId;
@@ -183,7 +181,9 @@ describe("formation practice combat gauntlet", () => {
       expect(intent.getAttribute("role")).toBe("img");
       expect(intent.getAttribute("aria-label")).toContain(source.name);
       expect(intent.getAttribute("aria-label")).toMatch(/(?:damage|effect).*(?:targeting|used on)/i);
-      expect(intent.closest(".tow-formation-grid")).toBeNull();
+      expect(intent.closest(".tow-formation-grid")?.getAttribute("aria-label"))
+        .toBe("Enemy formation");
+      expect(intent.closest(".tow-formation-cell")?.classList.contains("has-unit")).toBe(true);
     }
   });
 
@@ -208,17 +208,20 @@ describe("formation practice combat gauntlet", () => {
       .map((button) => button.dataset.skillId)).toEqual(berserkerSkills);
 
     const paladin = encounter.actors["practice-ally-paladin"];
-    const paladinCommander = [...mounted.querySelectorAll(".production-combat__commander")]
-      .find((button) => button.getAttribute("aria-label").startsWith(`Act as ${paladin.name},`));
-    await click(paladinCommander);
-    expect(paladinCommander.getAttribute("aria-pressed")).toBe("true");
+    const paladinCell = cellsFor(mounted, "player")
+      .find((cell) => cell.getAttribute("aria-label").includes(paladin.name));
+    await click(paladinCell);
+    expect(mounted.querySelector("[data-testid='tow-combat-dossier']").textContent)
+      .toContain(paladin.name);
     expect([...mounted.querySelectorAll(".production-combat__action")]
       .map((button) => button.dataset.skillId))
       .toEqual(encounter.allyBuilds[paladin.id].skills.map((skill) => skill.id));
+    await click(mounted.querySelector("[data-testid='tow-combat-dossier'] button[aria-label^='Close ']"));
 
-    const playerCommander = [...mounted.querySelectorAll(".production-combat__commander")]
-      .find((button) => button.getAttribute("aria-label").startsWith(`Act as ${encounter.actors[encounter.playerId].name},`));
-    await click(playerCommander);
+    const playerCell = cellsFor(mounted, "player")
+      .find((cell) => cell.getAttribute("aria-label").includes(encounter.actors[encounter.playerId].name));
+    await click(playerCell);
+    await click(mounted.querySelector("[data-testid='tow-combat-dossier'] button[aria-label^='Close ']"));
 
     const singleSkillId = "north-king-cleave";
     const singleAnchor = legalSkillAnchors(encounter, singleSkillId, encounter.playerId);

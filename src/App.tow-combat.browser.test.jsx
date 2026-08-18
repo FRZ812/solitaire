@@ -492,13 +492,14 @@ describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
     expect(companionCell.querySelector(".tow-formation-unit__figure img")?.getAttribute("src"))
       .toMatch(/wildstrider-cutout-v1\.webp$/);
     expect(companionCell.querySelector(".tow-formation-unit__monogram")).toBeNull();
-    const commanders = [...dialog.querySelectorAll(".production-combat__commander")];
-    expect(commanders.map((button) => button.textContent)).toEqual(
-      expect.arrayContaining([expect.stringContaining("You"), expect.stringContaining("Kestrel")]),
-    );
+    expect(dialog.querySelectorAll(".production-combat__commander")).toHaveLength(0);
 
-    // Command the ally, and the ally's action is what gets spent.
-    await click(commanders.find((button) => button.textContent.includes("Kestrel")));
+    // The board owns selection now: inspecting the ally also makes her the highlighted
+    // commander without adding a second row of party-name chips below the field.
+    await click(companionCell);
+    expect(dialog.querySelector("[data-testid='tow-combat-dossier']").textContent)
+      .toContain("Kestrel");
+    await click(dialog.querySelector("[data-testid='tow-combat-dossier'] button[aria-label^='Close ']"));
     await click(strikeButton(dialog));
     const afterAlly = await waitFor(() => {
       const decoded = decodeTowSession(savedSession());
@@ -511,8 +512,10 @@ describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
 
     // Once Kestrel has spent her action, control moves to the party member who can still
     // act. Spending that last action advances the enemy without an End turn control.
-    const playerCommander = commanders.find((button) => button.textContent.includes("You"));
-    await waitFor(() => playerCommander.getAttribute("aria-pressed") === "true");
+    const playerCell = dialog.querySelector(
+      `[aria-label="Player formation"] .tow-formation-cell.has-unit[aria-label*="${afterAlly.encounter.actors[afterAlly.encounter.playerId].name}"]`,
+    );
+    await waitFor(() => playerCell.querySelector(".tow-formation-unit").classList.contains("is-active"));
     await click(strikeButton(dialog));
     const afterSide = await waitFor(() => {
       const decoded = decodeTowSession(savedSession());
@@ -527,9 +530,8 @@ describe("a companion fights", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
 
 describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
   it("names each coming attack and marks its threatened formation cell", async () => {
-    // The formation cells and the intent rail are separate accessible surfaces. The unit
-    // cells identify who is present; the intent rail preserves the attack, outcome, and
-    // target that used to live on a single foe card.
+    // Each occupied enemy cell owns its accessible telegraph, so the attack stays attached
+    // to its source without reserving a separate rail above the battlefield.
     const twoFoes = [0, 1].map((index) => ({
       id: `foe-${index}`,
       name: `Brigand ${index + 1}`,
@@ -552,14 +554,14 @@ describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION
       ]),
     );
 
-    const intentRail = dialog.querySelector('[aria-label="Enemy intentions"]');
-    expect(intentRail).toBeTruthy();
-    const intentBadges = [...intentRail.querySelectorAll('[data-testid="tow-enemy-intent"]')];
+    expect(dialog.querySelector('[aria-label="Enemy intentions"]')).toBeNull();
+    const intentBadges = [...dialog.querySelectorAll('[data-testid="tow-enemy-intent"]')];
     expect(intentBadges).toHaveLength(2);
     for (const badge of intentBadges) {
       expect(badge.getAttribute("aria-label")).toMatch(
         /^Brigand [12]: Jab, 3 damage, targeting .+/,
       );
+      expect(badge.closest(".tow-formation-cell")?.dataset.side).toBe("enemy");
     }
 
     const threatenedCells = [...dialog.querySelectorAll(

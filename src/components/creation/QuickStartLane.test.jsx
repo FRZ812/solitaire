@@ -525,10 +525,12 @@ describe("every advertised character reaches the production fight", () => {
       );
       const dialog = mounted.querySelector(".tow-combat");
       expect(dialog, entry.id).toBeTruthy();
-      expect(dialog.textContent, entry.id).toContain(entry.character.name);
+      expect([...dialog.querySelectorAll("[aria-label='Player formation'] .tow-formation-cell.has-unit")]
+        .some((cell) => cell.getAttribute("aria-label").includes(entry.character.name)), entry.id).toBe(true);
       expect([...dialog.querySelectorAll(".production-combat__action")]
         .some((button) => button.getAttribute("aria-disabled") !== "true"), entry.id).toBe(true);
-      expect(dialog.textContent, entry.id).toContain("Incoming");
+      expect(dialog.querySelector("[data-testid='tow-enemy-intent']")?.getAttribute("aria-label"), entry.id)
+        .toMatch(/(?:damage|effect).*(?:targeting|used on)/i);
 
       await act(async () => root.unmount());
       container.remove();
