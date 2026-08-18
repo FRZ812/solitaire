@@ -207,20 +207,25 @@ describe("compact combat HUD", () => {
       .toContain("4 kinds · 7 total");
   });
 
-  it("moves the incoming attack to one compact intent rail and marks its formation cell", async () => {
+  it("attaches each incoming intent to its declaring enemy and marks the threatened unit", async () => {
     const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
     const mounted = await renderView({ encounter });
     const intent = mounted.querySelector("[data-testid='tow-enemy-intent']");
     expect(intent).toBeTruthy();
-    expect(intent.closest(".tow-combat__formation-intents")).toBeTruthy();
+    expect(mounted.querySelector(".tow-combat__formation-intents")).toBeNull();
+    const sourceCell = formationCellForActor(encounter, intent.dataset.enemyId);
+    expect(intent.closest(".tow-formation-cell")).toBe(cellElement(mounted, sourceCell));
+    expect(intent.closest(".tow-formation-cell").dataset.side).toBe("enemy");
     const intentArt = intent.querySelector(".tow-combat__intent-sigil img");
     expect(intentArt).toBeTruthy();
     const abilityId = intent.getAttribute("data-ability-id");
     expect(intentArt.getAttribute("src")).toBe(resolveTowAbilityArt(getSkill(abilityId)));
     expect(intentArt.getAttribute("src")).not.toContain("svg");
     expect(intent.getAttribute("aria-label")).toMatch(/(?:damage|hits of).*targeting/i);
-    expect(intent.querySelector(".tow-combat__intent-target")?.textContent).toMatch(/^→\s+/);
-    expect(intent.querySelector(".tow-combat__intent-name")?.textContent.length).toBeGreaterThan(0);
+    expect(intent.querySelector(".tow-combat__intent-source")).toBeNull();
+    expect(intent.querySelector(".tow-combat__intent-target")).toBeNull();
+    expect(intent.querySelector(".tow-combat__intent-name")).toBeNull();
+    expect(intent.children).toHaveLength(2);
     expect(mounted.querySelector(".tow-combat__telegraph")).toBeNull();
     expect(mounted.querySelector(".tow-combat__incoming")).toBeNull();
     expect(mounted.querySelector(".tow-combat__exchange")).toBeNull();
@@ -304,10 +309,12 @@ describe("compact combat HUD", () => {
     await act(async () => focusedAction.click());
     expect(onUseSkill).not.toHaveBeenCalled();
     expect(battlefield.dataset.movementPhase).toBe("pending");
-    expect(cellElement(mounted, playerCell).textContent).toContain(base.actors[base.playerId].name);
+    const playerHealthLabel = `${base.actors[base.playerId].name} health`;
+    expect(cellElement(mounted, playerCell).querySelector(`[aria-label='${playerHealthLabel}']`))
+      .toBeTruthy();
     expect(cellElement(mounted, playerCell).classList.contains("is-intent-target")).toBe(true);
-    expect(cellElement(mounted, { side: "player", index: toCell }).textContent)
-      .not.toContain(base.actors[base.playerId].name);
+    expect(cellElement(mounted, { side: "player", index: toCell })
+      .querySelector(`[aria-label='${playerHealthLabel}']`)).toBeNull();
     expect(mounted.querySelectorAll(".tow-combat__effect")).toHaveLength(1);
     expect(mounted.querySelector(".tow-combat__effect--movement")).toBeNull();
     expect(mounted.querySelector("[data-testid='tow-combat-vfx-canvas']").dataset.cueCount).toBe("1");
@@ -316,7 +323,7 @@ describe("compact combat HUD", () => {
     await act(async () => vi.advanceTimersByTime(movementCue.delayMs));
     const destination = cellElement(mounted, { side: "player", index: toCell });
     expect(battlefield.dataset.movementPhase).toBe("settling");
-    expect(destination.textContent).toContain(base.actors[base.playerId].name);
+    expect(destination.querySelector(`[aria-label='${playerHealthLabel}']`)).toBeTruthy();
     expect(destination.classList.contains("is-intent-target")).toBe(true);
     expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeTruthy();
     expect(mounted.querySelectorAll("[data-testid='tow-enemy-intent']")).toHaveLength(1);
@@ -342,12 +349,23 @@ describe("compact combat HUD", () => {
     const intent = mounted.querySelector("[data-testid='tow-enemy-intent']");
     expect(intent.getAttribute("aria-label")).toMatch(/Block, ward effect, used on self/i);
     expect(intent.querySelector("strong").textContent).toBe("WARD");
-    expect(intent.querySelector(".tow-combat__intent-target").textContent).toBe("Self");
+    expect(intent.querySelector(".tow-combat__intent-target")).toBeNull();
   });
 
   it("renders two logical 3x3 formations with compact HP and Resolve on occupied cells", async () => {
     const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
-    const mounted = await renderView({ encounter });
+    const playerId = encounter.playerId;
+    const withStatus = {
+      ...encounter,
+      actors: {
+        ...encounter.actors,
+        [playerId]: {
+          ...encounter.actors[playerId],
+          statuses: [...encounter.actors[playerId].statuses, { type: "paralyze", count: 2 }],
+        },
+      },
+    };
+    const mounted = await renderView({ encounter: withStatus });
     const cells = [...mounted.querySelectorAll(".tow-formation-cell")];
     const occupied = cells.filter((cell) => cell.classList.contains("has-unit"));
     const empty = cells.filter((cell) => cell.classList.contains("is-empty"));
@@ -361,12 +379,46 @@ describe("compact combat HUD", () => {
       && cell.querySelectorAll(".tow-formation-unit__meter--resolve[role='meter']").length === 1
     ))).toBe(true);
     expect(occupied.every((cell) => cell.querySelector(".tow-formation-unit__figure"))).toBe(true);
+    expect(occupied.every((cell) => cell.querySelector(".tow-formation-unit__name") === null)).toBe(true);
+    expect(occupied.every((cell) => {
+      const vitals = cell.querySelector(".tow-formation-unit__vitals");
+      return [...vitals.children].map((node) => node.classList[1]).join("|")
+        === "tow-formation-unit__meter--hp|tow-formation-unit__meter--resolve";
+    })).toBe(true);
+    const playerCell = cellElement(mounted, formationCellForActor(withStatus, playerId));
+    expect(playerCell.querySelector(".tow-formation-statuses")).toBeTruthy();
+    expect(playerCell.querySelectorAll(".tow-formation-status")).toHaveLength(1);
     expect(empty.every((cell) => [
       "is-valid-anchor",
       "is-affected",
       "is-selected-anchor",
       "is-intent-target",
     ].every((state) => !cell.classList.contains(state)))).toBe(true);
+  });
+
+  it("uses board combatants for selection and opens a complete stat-and-ability dossier", async () => {
+    const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const mounted = await renderView({ encounter });
+    const playerCell = cellElement(mounted, formationCellForActor(encounter, encounter.playerId));
+
+    expect(mounted.querySelector(".tow-combat__command-heading")).toBeNull();
+    expect(mounted.querySelector(".tow-combat__commanders")).toBeNull();
+    expect(mounted.querySelector(".tow-combat__action-hint")).toBeNull();
+    await act(async () => playerCell.click());
+
+    const dossier = mounted.querySelector("[data-testid='tow-combat-dossier']");
+    expect(dossier).toBeTruthy();
+    expect(dossier.getAttribute("aria-labelledby")).toBeTruthy();
+    expect(dossier.textContent).toContain(encounter.actors[encounter.playerId].name);
+    expect(dossier.textContent).toContain("Combat profile");
+    expect(dossier.textContent).toContain("Attack");
+    expect(dossier.textContent).toContain("Defense");
+    expect(dossier.querySelectorAll(".tow-combat__dossier-abilities article"))
+      .toHaveLength(encounter.build.skills.length);
+    expect(dossier.querySelector(".tow-combat__dossier-ability-art img")).toBeTruthy();
+
+    await act(async () => dossier.querySelector("button[aria-label^='Close ']").click());
+    expect(mounted.querySelector("[data-testid='tow-combat-dossier']")).toBeNull();
   });
 
   it("focuses the legal anchor and restores the initiating action on Cancel or Escape", async () => {
@@ -722,10 +774,10 @@ describe("compact combat HUD", () => {
       const onStandDown = vi.fn();
       const mounted = await renderView({ encounter: controlled, onStandDown });
       expect(mounted.querySelector(".tow-combat__command").classList.contains("is-forced")).toBe(true);
-      expect(mounted.querySelector(".tow-combat__command-heading").textContent)
-        .toContain("Paralyze · turn forfeited");
-      expect(mounted.querySelector(".tow-combat__action-hint").textContent)
-        .toContain("No input needed");
+      expect(mounted.querySelector(".tow-combat__command-heading")).toBeNull();
+      expect(mounted.querySelector(".tow-combat__action-hint")).toBeNull();
+      expect(mounted.querySelector(".tow-combat__command .tow-combat__sr-only").textContent)
+        .toContain("Paralyze. No player input.");
       expect(onStandDown).not.toHaveBeenCalled();
       await act(async () => vi.advanceTimersByTime(899));
       expect(onStandDown).not.toHaveBeenCalled();

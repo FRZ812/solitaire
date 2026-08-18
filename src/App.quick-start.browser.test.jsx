@@ -277,15 +277,17 @@ describe("practice is reversible and writes nothing", () => {
     expect(enemyFormation.querySelectorAll(".tow-formation-cell.has-unit"))
       .toHaveLength(enemyGroup.enemies.length);
 
-    const commanders = [...combat.querySelectorAll(".production-combat__commander")];
-    expect(commanders).toHaveLength(alliedGroup.allies.length + 1);
-    const paladinCommander = commanders.find((button) => button.textContent.includes("Paladin"));
-    await click(paladinCommander);
-    expect(paladinCommander.getAttribute("aria-pressed")).toBe("true");
+    expect(combat.querySelectorAll(".production-combat__commander")).toHaveLength(0);
+    const paladinCell = [...alliedFormation.querySelectorAll(".tow-formation-cell.has-unit")]
+      .find((cell) => cell.getAttribute("aria-label").includes("Paladin"));
+    await click(paladinCell);
+    expect(combat.querySelector("[data-testid='tow-combat-dossier']").textContent)
+      .toContain("Paladin");
+    await click(combat.querySelector("[data-testid='tow-combat-dossier'] button[aria-label^='Close ']"));
     const paladinAction = [...combat.querySelectorAll(".production-combat__action")]
       .find((button) => button.getAttribute("aria-disabled") !== "true");
     await click(paladinAction);
-    await waitFor(() => paladinCommander.querySelector("strong")?.textContent === "0");
+    await waitFor(() => !paladinCell.querySelector(".tow-formation-unit").classList.contains("is-active"));
 
     expect(harness.serverState.created).toBe(false);
     expect(harness.serverState.mechanics?.tow?.activeCombat ?? null).toBe(null);

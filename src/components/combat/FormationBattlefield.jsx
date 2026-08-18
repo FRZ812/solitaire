@@ -193,7 +193,6 @@ function UnitVitals({ actor, enemy, presented }) {
 
   return (
     <span className="tow-formation-unit__vitals">
-      <span className="tow-formation-unit__name">{actor.name || "Unknown"}</span>
       <span
         className={`tow-formation-unit__meter tow-formation-unit__meter--hp${enemy ? " is-enemy" : ""}`}
         role="meter"
@@ -267,6 +266,8 @@ function FormationGrid({
   intent,
   activeActorId,
   onSelectCell,
+  onInspectActor,
+  renderActorOverlay,
   feedbackCues,
   moveDestinations,
   arrivingMoves,
@@ -281,7 +282,10 @@ function FormationGrid({
         const isValid = valid.has(key);
         const isAffected = affected.has(key);
         const isSelected = selected === key;
-        const isIntent = intent.has(key);
+        // An intent threatens combatants, not vacant floor. Keeping the logical footprint
+        // on occupied cells removes the permanent red landing circles that made an empty
+        // party formation read like six additional units.
+        const isIntent = Boolean(actor) && intent.has(key);
         const destinationMove = moveDestinations.get(key) || null;
         const arrivingMove = actor ? arrivingMoves.get(actor.id) || null : null;
         const art = actor && typeof artForActor === "function" ? artForActor(actor) : null;
@@ -293,6 +297,9 @@ function FormationGrid({
           isIntent ? "is-intent-target" : null,
           destinationMove ? "is-move-destination" : null,
         ].filter(Boolean).join(" ");
+
+        const canInspect = Boolean(actor) && typeof onInspectActor === "function";
+        const enabled = isValid || canInspect;
 
         return (
           <button
@@ -313,8 +320,12 @@ function FormationGrid({
               intent: isIntent,
             })}
             aria-pressed={isSelected}
-            disabled={!isValid}
-            onClick={() => onSelectCell?.(side, index)}
+            disabled={!enabled}
+            aria-haspopup={!isValid && canInspect ? "dialog" : undefined}
+            onClick={() => {
+              if (isValid) onSelectCell?.(side, index);
+              else if (canInspect) onInspectActor(actor);
+            }}
             style={destinationMove ? {
               "--tow-move-duration": `${destinationMove.durationMs}ms`,
             } : undefined}
@@ -325,6 +336,11 @@ function FormationGrid({
                 data-moving-actor={destinationMove.actorId}
                 aria-hidden="true"
               />
+            ) : null}
+            {actor && typeof renderActorOverlay === "function" ? (
+              <span className="tow-formation-cell__overlays">
+                {renderActorOverlay(actor, side)}
+              </span>
             ) : null}
             {actor ? (
               <FormationUnit
@@ -359,6 +375,8 @@ export function FormationBattlefield({
   intentCells = [],
   activeActorId = null,
   onSelectCell = null,
+  onInspectActor = null,
+  renderActorOverlay = null,
   feedbackCues = [],
   movementCue = null,
   intentCellsBeforeMove = [],
@@ -478,6 +496,8 @@ export function FormationBattlefield({
         intent={intent}
         activeActorId={activeActorId}
         onSelectCell={onSelectCell}
+        onInspectActor={onInspectActor}
+        renderActorOverlay={renderActorOverlay}
         feedbackCues={feedbackCues}
         moveDestinations={moveDestinations}
         arrivingMoves={arrivingMoves}
@@ -495,6 +515,8 @@ export function FormationBattlefield({
         intent={intent}
         activeActorId={activeActorId}
         onSelectCell={onSelectCell}
+        onInspectActor={onInspectActor}
+        renderActorOverlay={renderActorOverlay}
         feedbackCues={feedbackCues}
         moveDestinations={moveDestinations}
         arrivingMoves={arrivingMoves}
