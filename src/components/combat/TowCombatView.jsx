@@ -1356,7 +1356,10 @@ export function TowCombatView({
     setInspectedActorId(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
-    if (immediatePreview?.ok && immediatePreview.targetIds.length === 1) {
+    // A full-field ability has no meaningful anchor decision. Commit it immediately and do
+    // not paint nine redundant target cells before the authored area effect begins.
+    if (immediatePreview?.ok
+      && (immediatePreview.targetIds.length === 1 || profile.footprint === "all")) {
       queueSkillAction(row, immediatePreview);
       return;
     }
@@ -1428,6 +1431,8 @@ export function TowCombatView({
     );
     const target = encounter.actors[preview.primaryTargetId] || activeCommander;
     const tier = presentationTier(row.definition, row.skillState.rank);
+    const targetProfile = abilityTargeting(row.definition);
+    const hidesRedundantFieldPreview = targetProfile.footprint === "all";
     const declarationMs = tier === "mythical" ? (reducedMotion ? 280 : 1120) : 0;
     const beat = {
       actorId: activeCommander.id,
@@ -1438,8 +1443,8 @@ export function TowCombatView({
       presentationTier: tier,
       sequence: encounter.sequence,
       skillId: row.skillState.id,
-      anchorCell: preview.anchorCell,
-      affectedCells: preview.affectedCells,
+      anchorCell: hidesRedundantFieldPreview ? null : preview.anchorCell,
+      affectedCells: hidesRedundantFieldPreview ? [] : preview.affectedCells,
       targetId: target?.id || preview.primaryTargetId,
       targetName: target?.id === activeCommander.id ? "the stance" : target?.name || "the target",
     };
@@ -1839,33 +1844,6 @@ export function TowCombatView({
                 : `${activeCommander.name}, ${actionsLeft(encounter, activeCommander.id)} actions remaining.`}
             </p>
 
-            <div className="tow-combat__actions" aria-label="Combat actions">
-              {skillRows.map((row, index) => (
-                <CombatAction
-                  key={row.skillState.id}
-                  firstActionRef={index === 0 ? firstActionRef : null}
-                  definition={row.definition}
-                  displayName={row.displayName}
-                  art={row.art}
-                  skillState={row.skillState}
-                  cost={row.cost}
-                  legacyLimit={row.legacyLimit}
-                  weaponPresentation={row.weaponPresentation}
-                  legality={row.legality}
-                  active={row.skillState.id === inspectedSkillId}
-                  busy={presentationLocked}
-                  committed={row.skillState.id === actionBeat?.skillId || row.skillState.id === targetingDraft?.skillId}
-                  onShowDetails={() => {
-                    setInspectedStatus(null);
-                    setRecordExpanded(false);
-                    setInspectedSkillId(row.skillState.id);
-                  }}
-                  onHideDetails={() => setInspectedSkillId(null)}
-                  onUse={(initiatingAction) => beginSkillTargeting(row, initiatingAction)}
-                />
-              ))}
-            </div>
-
             {targetingRow ? (
               <section
                 className="tow-combat__target-confirm"
@@ -1895,6 +1873,33 @@ export function TowCombatView({
                 </button>
               </section>
             ) : null}
+
+            <div className="tow-combat__actions" aria-label="Combat actions">
+              {skillRows.map((row, index) => (
+                <CombatAction
+                  key={row.skillState.id}
+                  firstActionRef={index === 0 ? firstActionRef : null}
+                  definition={row.definition}
+                  displayName={row.displayName}
+                  art={row.art}
+                  skillState={row.skillState}
+                  cost={row.cost}
+                  legacyLimit={row.legacyLimit}
+                  weaponPresentation={row.weaponPresentation}
+                  legality={row.legality}
+                  active={row.skillState.id === inspectedSkillId}
+                  busy={presentationLocked}
+                  committed={row.skillState.id === actionBeat?.skillId || row.skillState.id === targetingDraft?.skillId}
+                  onShowDetails={() => {
+                    setInspectedStatus(null);
+                    setRecordExpanded(false);
+                    setInspectedSkillId(row.skillState.id);
+                  }}
+                  onHideDetails={() => setInspectedSkillId(null)}
+                  onUse={(initiatingAction) => beginSkillTargeting(row, initiatingAction)}
+                />
+              ))}
+            </div>
 
             {combatItemRows.length > 0 ? (
               <div className="tow-combat__command-tools tow-combat__command-tools--satchel">

@@ -138,9 +138,9 @@ describe("genesis", () => {
     expect(first).toEqual(session.encounter);
   });
 
-  it("pins moving formation rules in genesis and preserves them on rebuild", () => {
+  it.each([2, 3])("pins formation rules v%s in genesis and preserves them on rebuild", (version) => {
     const formations = {
-      version: 2,
+      version,
       player: [null, null, null, null, null, null, null, null, "wanderer"],
       enemy: [null, null, "foe-0", null, null, null, null, null, null],
     };
@@ -153,7 +153,7 @@ describe("genesis", () => {
   });
 
   it("rejects unsupported or mismatched formation rules versions", () => {
-    for (const formations of [null, "v2", [], 42, { version: null }, { version: 3 }]) {
+    for (const formations of [null, "v2", [], 42, { version: null }, { version: 4 }]) {
       expect(open({ formations }), JSON.stringify(formations)).toMatchObject({
         ok: false,
         reason: "invalid-session-genesis",

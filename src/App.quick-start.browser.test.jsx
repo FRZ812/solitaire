@@ -82,18 +82,22 @@ async function click(element) {
           )
         ));
         await act(async () => anchor.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-        confirmation = await waitFor(() => (
-          container?.querySelector('[data-testid="tow-target-confirmation"]')
-        ));
-        confirm = await waitFor(() => {
-          const button = [...confirmation.querySelectorAll("button")]
-            .find((candidate) => candidate.textContent.trim() === "Confirm");
-          return button && !button.disabled ? button : null;
-        });
+        confirmation = container?.querySelector('[data-testid="tow-target-confirmation"]');
+        if (confirmation) {
+          confirm = await waitFor(() => {
+            const button = [...confirmation.querySelectorAll("button")]
+              .find((candidate) => candidate.textContent.trim() === "Confirm");
+            return button && !button.disabled ? button : null;
+          });
+        } else {
+          confirm = null;
+        }
       }
-      expect(confirm).toBeTruthy();
-      expect(confirm.disabled).toBe(false);
-      await act(async () => confirm.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      if (confirmation) {
+        expect(confirm).toBeTruthy();
+        expect(confirm.disabled).toBe(false);
+        await act(async () => confirm.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      }
     }
 
     await waitFor(() => {

@@ -15,11 +15,6 @@ function easeOut(value) {
   return 1 - ((1 - t) ** 3);
 }
 
-function smoothstep(value) {
-  const t = clamp(value);
-  return t * t * (3 - (2 * t));
-}
-
 function frameCountForCue(cue) {
   return Math.max(
     1,
@@ -113,17 +108,28 @@ export function combatVfxPositionForCue(cue, width, height, progress = 1) {
   const source = cue.sourceCell
     ? anchorForCell(cue, cue.sourceCell, width, height)
     : anchorForSide(cue, sourceSide, width, height);
-  // Reach the target on frame five, leaving frames six through nine anchored to contact
-  // and dissipation instead of letting a projectile grow in place over the victim.
-  const travelProgress = smoothstep(clamp(progress / 0.52));
+  // Constant horizontal flight plus constant downward acceleration produces a quadratic
+  // ballistic arc. The tangent, not merely the source/target chord, drives rotation so an
+  // arrow or thrown object climbs, levels and tilts naturally into contact. Beams and
+  // railgun-like effects stay straight because curving those would misstate their material.
+  const travelProgress = clamp(progress / 0.52);
   const dx = target.x - source.x;
   const dy = target.y - source.y;
+  const trajectory = `${cue.visual?.choreography || ""} ${cue.visual?.variant || ""}`;
+  const isStraightShot = /(?:beam|laser|railgun|lightning|ray|blood-lance)/i.test(trajectory);
+  const arcHeight = isStraightShot
+    ? 0
+    : clamp(Math.hypot(dx, dy) * 0.115, 18, 108);
+  const gravityOffset = -4 * arcHeight * travelProgress * (1 - travelProgress);
+  const tangentX = dx;
+  const tangentY = dy - (4 * arcHeight * (1 - (2 * travelProgress)));
   const mirror = cue.targetSide === "enemy" ? 1 : -1;
   return {
     x: source.x + (dx * travelProgress),
-    y: source.y + (dy * travelProgress),
+    y: source.y + (dy * travelProgress) + gravityOffset,
     radius: target.radius,
-    angle: Math.atan2(dy, dx) - (mirror < 0 ? Math.PI : 0),
+    angle: Math.atan2(tangentY, tangentX) - (mirror < 0 ? Math.PI : 0),
+    arcHeight,
     travelProgress,
   };
 }

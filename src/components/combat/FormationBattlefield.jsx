@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./tow-combat-formation.css";
 
 export const FORMATION_CELL_COUNT = 9;
 const VITAL_CONTACT_OFFSET_MS = 150;
 const DEFAULT_MOVE_DURATION_MS = 200;
+const BASIC_MELEE_LUNGE_DURATION_MS = 430;
 const NO_FEEDBACK_CUES = Object.freeze([]);
 
 const SIDES = Object.freeze(["enemy", "player"]);
@@ -32,6 +33,50 @@ function cellSet(cells) {
       ? [cellKey(cell.side, cell.index)]
       : []
   )));
+}
+
+function combatCell(value) {
+  return SIDES.includes(value?.side)
+    && Number.isSafeInteger(value.index)
+    && value.index >= 0
+    && value.index < FORMATION_CELL_COUNT;
+}
+
+/** Collapse one basic-melee action's hit receipts into one out-and-back portrait lunge. */
+export function basicMeleeLungeCues(cues = []) {
+  const groups = new Map();
+  for (const cue of cues) {
+    if (!cue?.basicMelee || typeof cue.attackerId !== "string"
+      || !combatCell(cue.sourceCell) || !combatCell(cue.targetCell)
+      || cellKey(cue.sourceCell.side, cue.sourceCell.index)
+        === cellKey(cue.targetCell.side, cue.targetCell.index)) continue;
+    const actionIdentity = Number.isSafeInteger(cue.actionIndex)
+      ? `action:${cue.actionIndex}`
+      : `sequence:${cue.sequence ?? cue.id}`;
+    const key = `${cue.attackerId}:${actionIdentity}`;
+    const group = groups.get(key) || [];
+    group.push(cue);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((group) => {
+    const ordered = [...group].sort((left, right) => (
+      (left.delayMs || 0) - (right.delayMs || 0)
+    ));
+    const first = ordered[0];
+    const last = ordered.at(-1);
+    return {
+      id: `${first.id || first.sequence}-basic-melee-lunge`,
+      actorId: first.attackerId,
+      sourceCell: { ...first.sourceCell },
+      targetCell: { ...first.targetCell },
+      delayMs: Math.max(0, Number(first.delayMs) || 0),
+      durationMs: Math.max(
+        BASIC_MELEE_LUNGE_DURATION_MS,
+        ((Number(last.delayMs) || 0) - (Number(first.delayMs) || 0))
+          + BASIC_MELEE_LUNGE_DURATION_MS,
+      ),
+    };
+  });
 }
 
 function actorLookup(actors, entry) {
@@ -227,19 +272,43 @@ function UnitVitals({ actor, enemy, presented }) {
   );
 }
 
-function FormationUnit({ actor, art, side, active, feedbackCues, movement = null }) {
+function FormationUnit({
+  actor,
+  art,
+  side,
+  active,
+  feedbackCues,
+  movement = null,
+  lunge = null,
+}) {
   const { presented, reacting } = usePresentedVitals(actor, feedbackCues);
   const down = presented.hp <= 0;
   const moveOffset = movement
     ? visualRow(side, movement.fromCell) - visualRow(side, movement.toCell)
     : 0;
+  const distance = lunge ? Math.hypot(lunge.dx, lunge.dy) : 0;
+  const leap = Math.max(8, Math.min(24, distance * 0.08));
+  const presentationStyle = {
+    ...(movement ? {
+      "--tow-move-offset": moveOffset,
+      "--tow-move-duration": `${movement.durationMs}ms`,
+    } : {}),
+    ...(lunge ? {
+      "--tow-lunge-x": `${lunge.dx}px`,
+      "--tow-lunge-y": `${lunge.dy}px`,
+      "--tow-lunge-mid-x": `${lunge.dx * 0.74}px`,
+      "--tow-lunge-mid-y": `${(lunge.dy * 0.74) - leap}px`,
+      "--tow-lunge-wind-x": `${lunge.dx * -0.04}px`,
+      "--tow-lunge-wind-y": `${lunge.dy * -0.04}px`,
+      "--tow-lunge-delay": `${lunge.delayMs}ms`,
+      "--tow-lunge-duration": `${lunge.durationMs}ms`,
+    } : {}),
+  };
   return (
     <span
-      className={`tow-formation-unit${active ? " is-active" : ""}${down ? " is-down" : ""}${reacting ? " is-reacting" : ""}${movement ? " is-arriving" : ""}`}
-      style={movement ? {
-        "--tow-move-offset": moveOffset,
-        "--tow-move-duration": `${movement.durationMs}ms`,
-      } : undefined}
+      className={`tow-formation-unit${active ? " is-active" : ""}${down ? " is-down" : ""}${reacting ? " is-reacting" : ""}${movement ? " is-arriving" : ""}${lunge ? " is-lunging" : ""}`}
+      style={Object.keys(presentationStyle).length > 0 ? presentationStyle : undefined}
+      data-lunge-id={lunge?.id || undefined}
     >
       <span className="tow-formation-unit__figure" aria-hidden="true">
         {art ? (
@@ -272,10 +341,17 @@ function FormationGrid({
   moveDestinations,
   arrivingMoves,
   consumedFeedbackActorIds,
+  lungeMotions,
 }) {
   const title = side === "enemy" ? "Enemy formation" : "Player formation";
+  const sideIsLunging = Object.values(lungeMotions).some((motion) => (
+    motion.sourceCell.side === side
+  ));
   return (
-    <section className={`tow-formation-grid tow-formation-grid--${side}`} aria-label={title}>
+    <section
+      className={`tow-formation-grid tow-formation-grid--${side}${sideIsLunging ? " has-lunging-unit" : ""}`}
+      aria-label={title}
+    >
       {formation.map((entry, index) => {
         const actor = actorLookup(actors, entry);
         const key = cellKey(side, index);
@@ -288,6 +364,7 @@ function FormationGrid({
         const isIntent = Boolean(actor) && intent.has(key);
         const destinationMove = moveDestinations.get(key) || null;
         const arrivingMove = actor ? arrivingMoves.get(actor.id) || null : null;
+        const lunge = actor ? lungeMotions[actor.id] || null : null;
         const art = actor && typeof artForActor === "function" ? artForActor(actor) : null;
         const stateClasses = [
           actor ? "has-unit" : "is-empty",
@@ -296,6 +373,7 @@ function FormationGrid({
           isSelected ? "is-selected-anchor" : null,
           isIntent ? "is-intent-target" : null,
           destinationMove ? "is-move-destination" : null,
+          lunge ? "has-lunging-unit" : null,
         ].filter(Boolean).join(" ");
 
         const canInspect = Boolean(actor) && typeof onInspectActor === "function";
@@ -352,6 +430,7 @@ function FormationGrid({
                   ? NO_FEEDBACK_CUES
                   : feedbackCues}
                 movement={arrivingMove}
+                lunge={lunge}
               />
             ) : null}
           </button>
@@ -377,7 +456,7 @@ export function FormationBattlefield({
   onSelectCell = null,
   onInspectActor = null,
   renderActorOverlay = null,
-  feedbackCues = [],
+  feedbackCues = NO_FEEDBACK_CUES,
   movementCue = null,
   intentCellsBeforeMove = [],
   className = "",
@@ -390,6 +469,9 @@ export function FormationBattlefield({
     durationMs: DEFAULT_MOVE_DURATION_MS,
   });
   const [announcement, setAnnouncement] = useState("");
+  const battlefieldRef = useRef(null);
+  const lungePlans = useMemo(() => basicMeleeLungeCues(feedbackCues), [feedbackCues]);
+  const [lungeMotions, setLungeMotions] = useState({});
   const movementPhase = !movementId
     ? "idle"
     : movementState.id === movementId ? movementState.phase : "pending";
@@ -421,6 +503,52 @@ export function FormationBattlefield({
   const consumedFeedbackActorIds = new Set(movementId && movementPhase !== "pending"
     ? moves.map((move) => move.actorId)
     : []);
+
+  useLayoutEffect(() => {
+    const battlefield = battlefieldRef.current;
+    if (!battlefield || lungePlans.length === 0) {
+      setLungeMotions((current) => (
+        Object.keys(current).length === 0 ? current : {}
+      ));
+      return undefined;
+    }
+    const measure = () => {
+      const measured = {};
+      for (const plan of lungePlans) {
+        const source = battlefield.querySelector(
+          `[data-side="${plan.sourceCell.side}"][data-cell-index="${plan.sourceCell.index}"]`,
+        );
+        const target = battlefield.querySelector(
+          `[data-side="${plan.targetCell.side}"][data-cell-index="${plan.targetCell.index}"]`,
+        );
+        if (!source || !target) continue;
+        const sourceRect = source.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const fullDx = (targetRect.left + (targetRect.width / 2))
+          - (sourceRect.left + (sourceRect.width / 2));
+        const fullDy = (targetRect.top + (targetRect.height / 2))
+          - (sourceRect.top + (sourceRect.height / 2));
+        const distance = Math.hypot(fullDx, fullDy);
+        if (distance < 1) continue;
+        const stopShort = Math.max(
+          16,
+          Math.min(46, Math.min(targetRect.width, targetRect.height) * 0.38),
+        );
+        const approach = Math.max(0, (distance - stopShort) / distance);
+        measured[plan.actorId] = {
+          ...plan,
+          dx: fullDx * approach,
+          dy: fullDy * approach,
+        };
+      }
+      setLungeMotions(measured);
+    };
+    measure();
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(battlefield);
+    return () => observer.disconnect();
+  }, [lungePlans, movementPhase]);
 
   useEffect(() => {
     if (!movementId) {
@@ -472,6 +600,7 @@ export function FormationBattlefield({
 
   return (
     <section
+      ref={battlefieldRef}
       className={`tow-formation-battlefield ${className}`.trim()}
       aria-label="Battle formations"
       aria-busy={movementPhase === "pending" || movementPhase === "settling"}
@@ -502,6 +631,7 @@ export function FormationBattlefield({
         moveDestinations={moveDestinations}
         arrivingMoves={arrivingMoves}
         consumedFeedbackActorIds={consumedFeedbackActorIds}
+        lungeMotions={lungeMotions}
       />
       <span className="tow-formation-battlefield__divide" aria-hidden="true" />
       <FormationGrid
@@ -521,6 +651,7 @@ export function FormationBattlefield({
         moveDestinations={moveDestinations}
         arrivingMoves={arrivingMoves}
         consumedFeedbackActorIds={consumedFeedbackActorIds}
+        lungeMotions={lungeMotions}
       />
     </section>
   );

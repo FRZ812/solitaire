@@ -307,6 +307,7 @@ describe("combat feedback receipts", () => {
     expect(timeline).toHaveLength(2);
     expect(timeline[0]).toMatchObject({
       kind: "hit",
+      basicMelee: true,
       sourceCell: { side: "enemy", index: 4 },
       targetCell: { side: "player", index: 4 },
     });

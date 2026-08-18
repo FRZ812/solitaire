@@ -10,9 +10,11 @@ import {
   actorAtCell,
   cellForActor,
   footprintCells,
+  formationColumn,
   formationRow,
   isFormationRulesVersion,
   livingActorIds,
+  LOCKED_LANE_FORMATION_RULES_VERSION,
   normalizeFormation,
   STATIC_FORMATION_RULES_VERSION,
 } from "./formation.js";
@@ -112,10 +114,11 @@ function livingInFootprint(state, formation, anchor, footprint) {
 /**
  * Legal anchors for one actor/ability, in stable row-major order.
  *
- * `melee` means the nearest occupied rank on the opposing side. A front rank that has been
- * wiped out therefore exposes the middle rank without moving any character or invalidating
- * a telegraphed cell. Area abilities may anchor an empty cell when their footprint still
- * reaches a living actor; single-target skills require an occupied anchor.
+ * Locked-lane melee means the foremost living combatant in each column. Defeating that
+ * blocker exposes the next combatant in the same lane without ever moving either actor.
+ * Legacy formation versions retain their original nearest-global-rank rule for replay.
+ * Area abilities may anchor an empty cell when their footprint still reaches a living
+ * actor; single-target skills require an occupied anchor.
  */
 export function legalSkillAnchors(state, skillOrDefinition, actorId = state.playerId) {
   const actor = state?.actors?.[actorId];
@@ -139,12 +142,18 @@ export function legalSkillAnchors(state, skillOrDefinition, actorId = state.play
     const occupied = FORMATION_CELLS.filter((index) => (
       state.actors[formation[index]]?.hp > 0
     ));
-    const frontRow = occupied.length > 0
-      ? Math.min(...occupied.map(formationRow))
-      : null;
-    candidates = frontRow === null
-      ? []
-      : FORMATION_CELLS.filter((index) => formationRow(index) === frontRow);
+    if (formations.version === LOCKED_LANE_FORMATION_RULES_VERSION) {
+      candidates = Array.from({ length: 3 }, (_, column) => (
+        occupied.find((index) => formationColumn(index) === column)
+      )).filter(Number.isSafeInteger).sort((left, right) => left - right);
+    } else {
+      const frontRow = occupied.length > 0
+        ? Math.min(...occupied.map(formationRow))
+        : null;
+      candidates = frontRow === null
+        ? []
+        : FORMATION_CELLS.filter((index) => formationRow(index) === frontRow);
+    }
   } else {
     candidates = [...FORMATION_CELLS];
   }

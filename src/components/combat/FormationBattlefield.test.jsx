@@ -3,7 +3,10 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { FormationBattlefield } from "./FormationBattlefield.jsx";
+import {
+  FormationBattlefield,
+  basicMeleeLungeCues,
+} from "./FormationBattlefield.jsx";
 
 let root;
 let container;
@@ -19,6 +22,7 @@ afterEach(async () => {
   root = null;
   container = null;
   vi.useRealTimers();
+  vi.restoreAllMocks();
   window.matchMedia = originalMatchMedia;
 });
 
@@ -31,6 +35,93 @@ async function renderFormation(props = {}) {
 }
 
 describe("formation battlefield", () => {
+  it("collapses multi-hit basic melee receipts into one timed out-and-back lunge", () => {
+    const sourceCell = { side: "player", index: 4 };
+    const targetCell = { side: "enemy", index: 1 };
+    expect(basicMeleeLungeCues([
+      {
+        id: "10-hit-0",
+        sequence: 10,
+        actionIndex: 2,
+        basicMelee: true,
+        attackerId: "knight",
+        sourceCell,
+        targetCell,
+        delayMs: 0,
+      },
+      {
+        id: "10-hit-1",
+        sequence: 10,
+        actionIndex: 2,
+        basicMelee: true,
+        attackerId: "knight",
+        sourceCell,
+        targetCell,
+        delayMs: 155,
+      },
+    ])).toEqual([expect.objectContaining({
+      actorId: "knight",
+      sourceCell,
+      targetCell,
+      delayMs: 0,
+      durationMs: 585,
+    })]);
+  });
+
+  it("lunges only the portrait toward contact while the actor and vitals stay in their cell", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function bounds() {
+      const side = this.dataset?.side;
+      const index = Number(this.dataset?.cellIndex);
+      if (!side || !Number.isSafeInteger(index)) {
+        return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+      }
+      const left = (index % 3) * 100;
+      const top = (side === "enemy" ? 0 : 300) + (Math.floor(index / 3) * 80);
+      return {
+        x: left,
+        y: top,
+        top,
+        left,
+        right: left + 100,
+        bottom: top + 80,
+        width: 100,
+        height: 80,
+      };
+    });
+    const mounted = await renderFormation({
+      actors: {
+        knight: { id: "knight", name: "Knight", side: "player", hp: 84, maxHp: 100 },
+        foe: { id: "foe", name: "Foe", side: "enemy", hp: 30, maxHp: 30 },
+      },
+      formations: {
+        player: [null, null, null, null, "knight"],
+        enemy: [null, "foe"],
+      },
+      feedbackCues: [{
+        id: "10-hit",
+        sequence: 10,
+        actionIndex: 1,
+        basicMelee: true,
+        attackerId: "knight",
+        targetId: "foe",
+        sourceCell: { side: "player", index: 4 },
+        targetCell: { side: "enemy", index: 1 },
+        delayMs: 40,
+      }],
+    });
+
+    const source = mounted.querySelector("[data-side='player'][data-cell-index='4']");
+    const lunge = source.querySelector(".tow-formation-unit.is-lunging");
+    expect(lunge).toBeTruthy();
+    expect(lunge.dataset.lungeId).toBe("10-hit-basic-melee-lunge");
+    expect(lunge.style.getPropertyValue("--tow-lunge-delay")).toBe("40ms");
+    expect(Number.parseFloat(lunge.style.getPropertyValue("--tow-lunge-y"))).toBeLessThan(0);
+    expect(source.querySelector("[aria-label='Knight health']")).toBeTruthy();
+    expect(mounted.querySelector("[data-side='enemy'][data-cell-index='1'] [aria-label='Knight health']"))
+      .toBeNull();
+    expect(mounted.querySelector(".tow-formation-grid--player.has-lunging-unit")).toBeTruthy();
+  });
+
   it("renders invisible logical vacancies and compact art-led unit vitals", async () => {
     const actors = {
       knight: { id: "knight", name: "Knight", hp: 84, maxHp: 100, resolve: 5, resolveMax: 8 },

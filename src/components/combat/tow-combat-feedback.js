@@ -48,9 +48,36 @@ function actionName(encounter, event, options) {
 }
 
 function enemyAttackName(encounter, event) {
-  const attack = encounter?.enemyAttacks?.[event.enemyId]
-    ?.find((entry) => entry.id === event.attackId);
+  const attack = enemyAttackDefinition(encounter, event);
   return attack?.name || words(event.attackId || "attack");
+}
+
+function enemyAttackDefinition(encounter, event) {
+  return encounter?.enemyAttacks?.[event.enemyId]
+    ?.find((entry) => entry.id === event.attackId) || null;
+}
+
+function safeSkillDefinition(skillId) {
+  if (!skillId) return null;
+  try {
+    return getSkill(skillId);
+  } catch {
+    return null;
+  }
+}
+
+function isBasicMeleeAction(encounter, event, spatial, visual) {
+  const enemyAttack = event.type === "enemy-attack"
+    ? enemyAttackDefinition(encounter, event)
+    : null;
+  const definition = safeSkillDefinition(event.skillId || enemyAttack?.skillId);
+  const isBasic = definition?.abilityType === "basic-attack"
+    // Formationless legacy enemies use a plain attack entry rather than a skill id. Those
+    // authored jabs/swings are the same basic-melee presentation contract.
+    || (event.type === "enemy-attack" && !enemyAttack?.skillId);
+  if (!isBasic) return false;
+  if (spatial?.castMode) return spatial.castMode === "melee";
+  return visual?.travel !== "source-to-target";
 }
 
 function resolvedHits(hits, baseDamage = null) {
@@ -840,6 +867,7 @@ export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
       affectedCells: spatial?.affectedCells || [],
       footprint: spatial?.footprint || "single",
       castMode: spatial?.castMode || null,
+      basicMelee: isBasicMeleeAction(spatialEncounter, event, spatial, cue.visual),
       presentationTier: spatial?.presentation || null,
       declarationLabel: declarationLabel(spatialEncounter, event),
       delayMs: eventOffset + (cue.delayMs || 0),
