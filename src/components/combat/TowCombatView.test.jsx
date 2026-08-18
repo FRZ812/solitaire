@@ -483,6 +483,55 @@ describe("compact combat HUD", () => {
     expect(document.activeElement).toBe(initiatingAction);
   });
 
+  it("previews the complete cross footprint on focus and keeps it after target selection", async () => {
+    const opening = openLabSession({
+      packageId: "rogue",
+      scenarioId: "formation-drill",
+    }).session.encounter;
+    const base = {
+      ...opening,
+      actors: {
+        ...opening.actors,
+        ...Object.fromEntries(opening.enemyIds.map((enemyId) => [
+          enemyId,
+          {
+            ...opening.actors[enemyId],
+            statuses: opening.actors[enemyId].statuses.filter(({ type }) => type !== "priority"),
+          },
+        ])),
+      },
+    };
+    const skillId = "clocktower-chain-explosion";
+    const encounter = replaceSkill(base, "emergency-evasion", skillId);
+    const anchors = legalSkillAnchors(encounter, skillId, encounter.playerId);
+    const firstPreview = resolveSkillTargets(encounter, skillId, encounter.playerId, {
+      anchorCell: anchors[0],
+    });
+    const onUseSkill = vi.fn();
+    const mounted = await renderView({ encounter, onUseSkill });
+
+    expect(anchors.length).toBeGreaterThan(1);
+    expect(firstPreview.ok).toBe(true);
+    expect(firstPreview.targetIds.length).toBeGreaterThan(1);
+
+    await act(async () => mounted.querySelector(`[data-skill-id='${skillId}']`).click());
+
+    const focusedAnchor = document.activeElement;
+    expect(cellCoordinates([focusedAnchor])).toEqual([anchors[0]]);
+    expect(focusedAnchor.classList.contains("is-preview-anchor")).toBe(true);
+    expect(mounted.querySelectorAll(".tow-formation-cell.is-selected-anchor")).toHaveLength(0);
+    expect(cellCoordinates([...mounted.querySelectorAll(".tow-formation-cell.is-affected")]))
+      .toEqual(firstPreview.affectedCells);
+
+    await act(async () => focusedAnchor.click());
+
+    expect(focusedAnchor.classList.contains("is-selected-anchor")).toBe(true);
+    expect(cellCoordinates([...mounted.querySelectorAll(".tow-formation-cell.is-affected")]))
+      .toEqual(firstPreview.affectedCells);
+    expect(mounted.querySelector(".tow-combat__target-commit").disabled).toBe(false);
+    expect(onUseSkill).not.toHaveBeenCalled();
+  });
+
   it("auto-commits a full-field ability without redundant anchors or confirmation", async () => {
     vi.useFakeTimers();
     try {

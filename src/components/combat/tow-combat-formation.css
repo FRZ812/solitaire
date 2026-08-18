@@ -62,7 +62,7 @@
   padding: 0;
   overflow: visible;
   border: 0;
-  border-radius: 50%;
+  border-radius: 0.52rem;
   outline: 0;
   background: transparent;
   color: inherit;
@@ -219,49 +219,49 @@
   animation: tow-formation-move-settle var(--tow-move-duration, 200ms) ease-out both;
 }
 
-/* A logical empty cell has no permanent chrome. Its ground exists only while the combat
-   domain marks it as a legal anchor, selected footprint, or incoming intent. */
+/* A logical empty cell has no permanent chrome. Targeting turns the exact logical cell
+   into a clipped tactical tile, so rows, columns and crosses read as one footprint rather
+   than a collection of small landing circles between the combatants. */
 .tow-formation-cell::before,
 .tow-formation-cell::after {
   position: absolute;
   z-index: 0;
-  right: 9%;
-  bottom: 0.08rem;
-  left: 9%;
-  height: clamp(0.72rem, 2.4vh, 1.3rem);
-  border-radius: 50%;
+  inset: 0.08rem 1.5%;
+  border-radius: 0.5rem;
+  clip-path: polygon(
+    0.42rem 0,
+    calc(100% - 0.42rem) 0,
+    100% 0.42rem,
+    100% calc(100% - 0.42rem),
+    calc(100% - 0.42rem) 100%,
+    0.42rem 100%,
+    0 calc(100% - 0.42rem),
+    0 0.42rem
+  );
   opacity: 0;
-  transform: scale(0.72);
+  transform: scale(0.94);
   content: "";
   pointer-events: none;
-  transition: opacity 150ms ease, transform 170ms cubic-bezier(.2,.76,.2,1), filter 150ms ease;
+  transition: opacity 130ms ease, transform 160ms cubic-bezier(.2,.76,.2,1), filter 130ms ease;
 }
 
 .tow-formation-cell::before {
   border: 1px solid transparent;
-  background: radial-gradient(ellipse, rgba(231, 215, 181, 0.12), transparent 68%);
-  box-shadow: inset 0 0 0.9rem rgba(255,255,255,0.05);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.055), transparent 38%),
+    rgba(7, 13, 17, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025), inset 0 -1.2rem 1.6rem rgba(0,0,0,0.16);
 }
 
 .tow-formation-cell::after {
-  filter: blur(0.42rem);
-  background: currentColor;
+  inset: 14% 8%;
+  border-radius: 0.62rem;
+  filter: blur(0.58rem);
+  background: radial-gradient(ellipse, currentColor, transparent 72%);
 }
 
 .tow-formation-cell.is-valid-anchor {
   color: var(--tow-formation-player);
-}
-
-.tow-formation-cell.is-valid-anchor::before,
-.tow-formation-cell.is-valid-anchor::after,
-.tow-formation-cell.is-affected::before,
-.tow-formation-cell.is-affected::after,
-.tow-formation-cell.is-selected-anchor::before,
-.tow-formation-cell.is-selected-anchor::after,
-.tow-formation-cell.is-intent-target::before,
-.tow-formation-cell.is-intent-target::after {
-  opacity: 0.54;
-  transform: scale(1);
 }
 
 .tow-formation-grid--enemy .tow-formation-cell.is-valid-anchor {
@@ -269,15 +269,27 @@
 }
 
 .tow-formation-cell.is-valid-anchor::before {
-  border-color: currentColor;
-  background: radial-gradient(ellipse, color-mix(in srgb, currentColor 25%, transparent), transparent 70%);
+  border-color: color-mix(in srgb, currentColor 52%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, currentColor 14%, transparent), transparent 46%),
+    rgba(7, 13, 17, 0.2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 10%, transparent);
+  opacity: 0.42;
+  transform: scale(0.97);
+}
+
+.tow-formation-cell.is-valid-anchor::after {
+  opacity: 0.08;
+  transform: scale(0.96);
 }
 
 .tow-formation-cell.is-valid-anchor:not(:disabled):hover::before,
 .tow-formation-cell.is-valid-anchor:not(:disabled):focus-visible::before {
-  opacity: 0.9;
-  transform: scale(1.08);
-  box-shadow: 0 0 1rem color-mix(in srgb, currentColor 38%, transparent), inset 0 0 0.9rem rgba(255,255,255,0.12);
+  opacity: 0.82;
+  transform: scale(1);
+  box-shadow:
+    0 0 0.8rem color-mix(in srgb, currentColor 22%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, currentColor 34%, transparent);
 }
 
 .tow-formation-cell.is-affected {
@@ -286,7 +298,36 @@
 
 .tow-formation-cell.is-affected::before {
   border-color: color-mix(in srgb, var(--tow-formation-affected) 80%, #fff 20%);
-  background: radial-gradient(ellipse, rgba(162, 118, 229, 0.38), rgba(79, 49, 137, 0.12) 48%, transparent 72%);
+  background:
+    linear-gradient(145deg, rgba(201, 171, 255, 0.3), rgba(118, 76, 184, 0.22) 48%, rgba(42, 24, 72, 0.14)),
+    rgba(8, 9, 18, 0.28);
+  box-shadow:
+    0 0 0.7rem rgba(155, 111, 224, 0.18),
+    inset 0 0 0 1px rgba(233, 219, 255, 0.12);
+  opacity: 0.74;
+  transform: scale(1);
+}
+
+.tow-formation-cell.is-affected::after {
+  opacity: 0.22;
+  transform: scale(1);
+}
+
+.tow-formation-cell.is-preview-anchor {
+  color: var(--tow-formation-gold);
+}
+
+.tow-formation-cell.is-preview-anchor::before {
+  border-color: rgba(248, 220, 161, 0.92);
+  opacity: 0.98;
+  box-shadow:
+    0 0 0.95rem rgba(230, 187, 104, 0.32),
+    inset 0 0 0 1px rgba(255, 241, 202, 0.24);
+}
+
+.tow-formation-cell.is-preview-anchor::after {
+  opacity: 0.3;
+  transform: scale(1);
 }
 
 .tow-formation-cell.is-selected-anchor {
@@ -296,7 +337,7 @@
 .tow-formation-cell.is-selected-anchor::before,
 .tow-formation-cell.is-selected-anchor::after {
   opacity: 0.92;
-  transform: scale(1.13);
+  transform: scale(1);
 }
 
 .tow-formation-cell.is-selected-anchor::before {
@@ -310,7 +351,9 @@
 
 .tow-formation-cell.is-intent-target:not(.is-selected-anchor)::before {
   border-color: rgba(241, 111, 92, 0.88);
-  background: radial-gradient(ellipse, rgba(202, 61, 48, 0.36), transparent 70%);
+  background: linear-gradient(145deg, rgba(202, 61, 48, 0.28), rgba(82, 25, 24, 0.08));
+  opacity: 0.58;
+  transform: scale(1);
   animation: tow-formation-intent 1.35s ease-in-out infinite alternate;
 }
 

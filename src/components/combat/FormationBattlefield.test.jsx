@@ -158,6 +158,7 @@ describe("formation battlefield", () => {
 
   it("exposes targeting, footprint, selection and intent states without enabling other cells", async () => {
     const onSelectCell = vi.fn();
+    const onPreviewCell = vi.fn();
     const mounted = await renderFormation({
       actors: {
         foe: { id: "foe", name: "Foe", hp: 20, maxHp: 20, resolve: 4, resolveMax: 4 },
@@ -165,28 +166,42 @@ describe("formation battlefield", () => {
       formations: { enemy: [null, "foe"], player: [] },
       validAnchors: [{ side: "enemy", index: 0 }, { side: "enemy", index: 1 }],
       affectedCells: [{ side: "enemy", index: 0 }, { side: "enemy", index: 1 }, { side: "enemy", index: 2 }],
+      previewAnchor: { side: "enemy", index: 1 },
       selectedAnchor: { side: "enemy", index: 0 },
       intentCells: [{ side: "player", index: 4 }],
       onSelectCell,
+      onPreviewCell,
     });
 
     const selected = mounted.querySelector("[data-side='enemy'][data-cell-index='0']");
     const affected = mounted.querySelector("[data-side='enemy'][data-cell-index='2']");
+    const previewed = mounted.querySelector("[data-side='enemy'][data-cell-index='1']");
     const intent = mounted.querySelector("[data-side='player'][data-cell-index='4']");
     const invalid = mounted.querySelector("[data-side='enemy'][data-cell-index='8']");
 
     expect(["is-empty", "is-valid-anchor", "is-affected", "is-selected-anchor"]
       .every((className) => selected.classList.contains(className))).toBe(true);
     expect(selected.disabled).toBe(false);
-    expect(selected.getAttribute("aria-label")).toMatch(/empty.*valid target.*selected target.*affected/i);
+    expect(selected.getAttribute("aria-label")).toMatch(/empty.*valid target.*selected target.*ability footprint/i);
     expect(affected.classList.contains("is-affected")).toBe(true);
     expect(affected.disabled).toBe(true);
+    expect(previewed.classList.contains("is-preview-anchor")).toBe(true);
+    expect(previewed.getAttribute("aria-label")).toMatch(/previewing the ability footprint/i);
     expect(intent.classList.contains("is-intent-target")).toBe(false);
     expect(invalid.disabled).toBe(true);
 
     await act(async () => selected.click());
     expect(onSelectCell).toHaveBeenCalledOnce();
     expect(onSelectCell).toHaveBeenCalledWith("enemy", 0);
+
+    await act(async () => previewed.focus());
+    expect(onPreviewCell).toHaveBeenLastCalledWith("enemy", 1);
+
+    const focusKeeper = document.createElement("button");
+    document.body.appendChild(focusKeeper);
+    await act(async () => focusKeeper.focus());
+    expect(onPreviewCell).toHaveBeenLastCalledWith(null, null);
+    focusKeeper.remove();
   });
 
   it("opens an occupied cell dossier without turning vacant cells into controls", async () => {

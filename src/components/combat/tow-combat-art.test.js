@@ -57,6 +57,27 @@ describe("Tower combat art", () => {
     expect(resolvePlayerCombatCutout("tow:ranger")).toBe(TOW_COMBAT_CUTOUTS.ranger);
   });
 
+  it("ships the normalized painterly v2 portrait cohort in every modular slot", () => {
+    const expectedFiles = {
+      knight: "knight-portrait-v2.png",
+      ranger: "ranger-portrait-v3.png",
+      artificer: "artificer-portrait-v2.png",
+      berserker: "berserker-portrait-v2.png",
+      sorcerer: "sorcerer-portrait-v2.png",
+      rogue: "rogue-portrait-v2.png",
+      warlock: "warlock-portrait-v2.png",
+      wizard: "wizard-portrait-v2.png",
+      paladin: "paladin-portrait-v2.png",
+      blademaster: "blademaster-portrait-v2.png",
+      vampire: "vampire-portrait-v2.png",
+      automaton: "automaton-portrait-v2.png",
+    };
+
+    for (const [id, fileName] of Object.entries(expectedFiles)) {
+      expect(String(TOW_COMBAT_CUTOUTS[id])).toMatch(new RegExp(`${fileName.replace(".", "\\.")}$`));
+    }
+  });
+
   it("gives legacy companions a half-body cutout from their profession", () => {
     expect(resolvePlayerCombatCutout(null, { name: "Kestrel", profession: "ranger" }))
       .toBe(TOW_COMBAT_CUTOUTS.wildstrider);

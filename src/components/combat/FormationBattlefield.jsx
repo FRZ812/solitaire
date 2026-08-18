@@ -151,13 +151,14 @@ function unitLabel(actor) {
   return `${actor.name || "Unknown combatant"}, ${health}${resolve}`;
 }
 
-function cellLabel({ side, index, actor, valid, affected, selected, intent }) {
+function cellLabel({ side, index, actor, valid, affected, previewed, selected, intent }) {
   const row = Math.floor(index / 3) + 1;
   const column = (index % 3) + 1;
   const states = [
     valid ? "valid target" : null,
+    previewed ? "previewing the ability footprint" : null,
     selected ? "selected target" : null,
-    affected ? "affected by the selected ability" : null,
+    affected ? "inside the ability footprint" : null,
     intent ? "threatened by an enemy intent" : null,
   ].filter(Boolean);
   return `${side === "enemy" ? "Enemy" : "Player"} formation, row ${row}, column ${column}: ${unitLabel(actor)}${states.length ? `. ${states.join(", ")}` : ""}`;
@@ -331,10 +332,12 @@ function FormationGrid({
   artForActor,
   valid,
   affected,
+  previewed,
   selected,
   intent,
   activeActorId,
   onSelectCell,
+  onPreviewCell,
   onInspectActor,
   renderActorOverlay,
   feedbackCues,
@@ -357,6 +360,7 @@ function FormationGrid({
         const key = cellKey(side, index);
         const isValid = valid.has(key);
         const isAffected = affected.has(key);
+        const isPreviewed = previewed === key;
         const isSelected = selected === key;
         // An intent threatens combatants, not vacant floor. Keeping the logical footprint
         // on occupied cells removes the permanent red landing circles that made an empty
@@ -370,6 +374,7 @@ function FormationGrid({
           actor ? "has-unit" : "is-empty",
           isValid ? "is-valid-anchor" : null,
           isAffected ? "is-affected" : null,
+          isPreviewed ? "is-preview-anchor" : null,
           isSelected ? "is-selected-anchor" : null,
           isIntent ? "is-intent-target" : null,
           destinationMove ? "is-move-destination" : null,
@@ -394,6 +399,7 @@ function FormationGrid({
               actor,
               valid: isValid,
               affected: isAffected,
+              previewed: isPreviewed,
               selected: isSelected,
               intent: isIntent,
             })}
@@ -403,6 +409,30 @@ function FormationGrid({
             onClick={() => {
               if (isValid) onSelectCell?.(side, index);
               else if (canInspect) onInspectActor(actor);
+            }}
+            onFocus={() => {
+              if (isValid) onPreviewCell?.(side, index);
+            }}
+            onBlur={(event) => {
+              if (!isValid || event.currentTarget.matches(":hover")) return;
+              const next = event.relatedTarget;
+              if (next?.matches?.(".tow-formation-cell.is-valid-anchor:not(:disabled)")) {
+                onPreviewCell?.(next.dataset.side, Number(next.dataset.cellIndex));
+              } else {
+                onPreviewCell?.(null, null);
+              }
+            }}
+            onMouseEnter={() => {
+              if (isValid) onPreviewCell?.(side, index);
+            }}
+            onMouseLeave={(event) => {
+              if (!isValid || document.activeElement === event.currentTarget) return;
+              const focused = event.currentTarget.ownerDocument.activeElement;
+              if (focused?.matches?.(".tow-formation-cell.is-valid-anchor:not(:disabled)")) {
+                onPreviewCell?.(focused.dataset.side, Number(focused.dataset.cellIndex));
+              } else {
+                onPreviewCell?.(null, null);
+              }
             }}
             style={destinationMove ? {
               "--tow-move-duration": `${destinationMove.durationMs}ms`,
@@ -450,10 +480,12 @@ export function FormationBattlefield({
   artForActor = null,
   validAnchors = [],
   affectedCells = [],
+  previewAnchor = null,
   selectedAnchor = null,
   intentCells = [],
   activeActorId = null,
   onSelectCell = null,
+  onPreviewCell = null,
   onInspectActor = null,
   renderActorOverlay = null,
   feedbackCues = NO_FEEDBACK_CUES,
@@ -594,6 +626,9 @@ export function FormationBattlefield({
   const valid = cellSet(validAnchors);
   const affected = cellSet(affectedCells);
   const intent = cellSet(presentedIntentCells);
+  const previewed = SIDES.includes(previewAnchor?.side) && Number.isInteger(previewAnchor?.index)
+    ? cellKey(previewAnchor.side, previewAnchor.index)
+    : null;
   const selected = SIDES.includes(selectedAnchor?.side) && Number.isInteger(selectedAnchor?.index)
     ? cellKey(selectedAnchor.side, selectedAnchor.index)
     : null;
@@ -621,10 +656,12 @@ export function FormationBattlefield({
         artForActor={artForActor}
         valid={valid}
         affected={affected}
+        previewed={previewed}
         selected={selected}
         intent={intent}
         activeActorId={activeActorId}
         onSelectCell={onSelectCell}
+        onPreviewCell={onPreviewCell}
         onInspectActor={onInspectActor}
         renderActorOverlay={renderActorOverlay}
         feedbackCues={feedbackCues}
@@ -641,10 +678,12 @@ export function FormationBattlefield({
         artForActor={artForActor}
         valid={valid}
         affected={affected}
+        previewed={previewed}
         selected={selected}
         intent={intent}
         activeActorId={activeActorId}
         onSelectCell={onSelectCell}
+        onPreviewCell={onPreviewCell}
         onInspectActor={onInspectActor}
         renderActorOverlay={renderActorOverlay}
         feedbackCues={feedbackCues}

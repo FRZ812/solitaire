@@ -1105,6 +1105,7 @@ export function TowCombatView({
   const satchelTriggerRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
   const [targetingDraft, setTargetingDraft] = useState(null);
+  const [previewAnchorCell, setPreviewAnchorCell] = useState(null);
   const [commanderId, setCommanderId] = useState(null);
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [inspectedStatus, setInspectedStatus] = useState(null);
@@ -1221,6 +1222,13 @@ export function TowCombatView({
     })
     : null;
   const resolvedPreview = targetPreview?.ok ? targetPreview : null;
+  const transientTargetPreview = targetingRow && previewAnchorCell
+    ? resolveSkillTargets(encounter, targetingRow.definition, activeCommander.id, {
+      anchorCell: previewAnchorCell,
+    })
+    : null;
+  const transientPreview = transientTargetPreview?.ok ? transientTargetPreview : null;
+  const footprintPreview = transientPreview || resolvedPreview;
   const combatItemRows = (commanderBuild?.combatItems || []).map((held) => {
     const item = getCombatItem(held.id);
     const legality = forcedWindow
@@ -1356,6 +1364,7 @@ export function TowCombatView({
     setInspectedActorId(null);
     setRecordExpanded(false);
     setSatchelOpen(false);
+    setPreviewAnchorCell(null);
     // A full-field ability has no meaningful anchor decision. Commit it immediately and do
     // not paint nine redundant target cells before the authored area effect begins.
     if (immediatePreview?.ok
@@ -1404,10 +1413,24 @@ export function TowCombatView({
     } : current);
   }
 
+  function previewFormationCell(side, index) {
+    if (!targetingRow || presentationLocked) {
+      setPreviewAnchorCell(null);
+      return;
+    }
+    if (side === null || index === null) {
+      setPreviewAnchorCell(null);
+      return;
+    }
+    if (!validAnchors.some((entry) => entry.side === side && entry.index === index)) return;
+    setPreviewAnchorCell({ side, index });
+  }
+
   function cancelSkillTargeting() {
     const returnTarget = targetingActionRef.current;
     targetingActionRef.current = null;
     setTargetingDraft(null);
+    setPreviewAnchorCell(null);
     const restoreTarget = () => {
       if (returnTarget?.isConnected && !returnTarget.disabled) returnTarget.focus();
       else firstActionRef.current?.focus();
@@ -1454,6 +1477,7 @@ export function TowCombatView({
     setRecordExpanded(false);
     setSatchelOpen(false);
     setTargetingDraft(null);
+    setPreviewAnchorCell(null);
     targetingActionRef.current = null;
     setActionBeat(beat);
     clearActionTimer("declaration");
@@ -1530,6 +1554,7 @@ export function TowCombatView({
     setRecordExpanded(false);
     setSatchelOpen(false);
     setTargetingDraft(null);
+    setPreviewAnchorCell(null);
     targetingActionRef.current = null;
   }, [activeCommander.id, encounter.round, terminal]);
 
@@ -1796,9 +1821,10 @@ export function TowCombatView({
             formations={formations}
             artForActor={combatArt}
             validAnchors={targetingDraft && !presentationLocked ? validAnchors : []}
-            affectedCells={resolvedPreview?.affectedCells
+            affectedCells={footprintPreview?.affectedCells
               || (actionBeat?.phase !== "resolve" ? actionBeat?.affectedCells : null)
               || []}
+            previewAnchor={transientPreview?.anchorCell || null}
             selectedAnchor={resolvedPreview?.anchorCell
               || targetingDraft?.anchorCell
               || (actionBeat?.phase !== "resolve" ? actionBeat?.anchorCell : null)
@@ -1807,6 +1833,7 @@ export function TowCombatView({
             intentCellsBeforeMove={intentCellsBeforeMove}
             activeActorId={activeCommander.id}
             onSelectCell={selectFormationCell}
+            onPreviewCell={previewFormationCell}
             onInspectActor={targetingDraft ? null : inspectCombatant}
             renderActorOverlay={renderFormationOverlay}
             feedbackCues={impactCues}
