@@ -27,4 +27,15 @@ describe("formation battlefield layout", () => {
       .toMatch(/position:\s*absolute;[\s\S]*bottom:\s*calc\(100% \+ 0\.55rem\);/);
     expect(cssBlock(".tow-combat__target-confirm")).toContain("margin: 0 auto");
   });
+
+  it("renders targeting as full tactical tiles instead of circular landing markers", () => {
+    expect(cssBlock(".tow-formation-cell")).toContain("border-radius: 0.52rem");
+    expect(cssBlock(".tow-formation-cell")).not.toContain("border-radius: 50%");
+    expect(formationCss).toMatch(/\.tow-formation-cell::before,\s*\n\.tow-formation-cell::after\s*\{[\s\S]*inset:\s*0\.08rem 1\.5%;/);
+    expect(formationCss).toMatch(/\.tow-formation-cell::before,\s*\n\.tow-formation-cell::after\s*\{[\s\S]*clip-path:\s*polygon\(/);
+    expect(cssBlock(".tow-formation-cell.is-affected::before"))
+      .toMatch(/linear-gradient[\s\S]*opacity:\s*0\.74;/);
+    expect(cssBlock(".tow-formation-cell.is-preview-anchor::before"))
+      .toMatch(/border-color:[\s\S]*opacity:\s*0\.98;/);
+  });
 });

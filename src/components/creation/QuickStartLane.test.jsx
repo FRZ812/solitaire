@@ -117,12 +117,27 @@ describe("the authored TOW character catalogue", () => {
 describe("the simple grid-to-preview flow", () => {
   it("opens on a portrait grid without creation fields or expanded mechanics", async () => {
     const mounted = await render(<ControlledStart />);
+    const expectedPortraitFiles = [
+      "knight-portrait-v2.png",
+      "ranger-portrait-v3.png",
+      "artificer-portrait-v2.png",
+      "berserker-portrait-v2.png",
+      "sorcerer-portrait-v2.png",
+      "rogue-portrait-v2.png",
+      "warlock-portrait-v2.png",
+      "wizard-portrait-v2.png",
+      "paladin-portrait-v2.png",
+      "blademaster-portrait-v2.png",
+      "vampire-portrait-v2.png",
+      "automaton-portrait-v2.png",
+    ];
     expect(mounted.querySelectorAll(".character-choice-card")).toHaveLength(STARTING_ARCHETYPES.length);
     expect(mounted.querySelectorAll(".character-choice-card img")).toHaveLength(STARTING_ARCHETYPES.length);
     expect(mounted.querySelectorAll(".character-choice-card__copy strong")).toHaveLength(STARTING_ARCHETYPES.length);
     STARTING_ARCHETYPES.forEach((entry, index) => {
-      expect(mounted.querySelectorAll(".character-choice-card__art")[index].getAttribute("src"))
-        .toBe(resolvePlayerCombatCutout(entry.character.portraitKey, entry.character));
+      const portraitSrc = mounted.querySelectorAll(".character-choice-card__art")[index].getAttribute("src");
+      expect(portraitSrc).toBe(resolvePlayerCombatCutout(entry.character.portraitKey, entry.character));
+      expect(portraitSrc).toMatch(new RegExp(`${expectedPortraitFiles[index].replace(".", "\\.")}$`));
     });
     expect(mounted.querySelector(".character-preview")).toBeNull();
     expect(mounted.querySelector("input")).toBeNull();
