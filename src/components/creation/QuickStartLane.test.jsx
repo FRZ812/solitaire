@@ -118,18 +118,18 @@ describe("the simple grid-to-preview flow", () => {
   it("opens on a portrait grid without creation fields or expanded mechanics", async () => {
     const mounted = await render(<ControlledStart />);
     const expectedPortraitFiles = [
-      "knight-portrait-v2.png",
-      "ranger-portrait-v3.png",
-      "artificer-portrait-v2.png",
-      "berserker-portrait-v2.png",
-      "sorcerer-portrait-v2.png",
-      "rogue-portrait-v2.png",
-      "warlock-portrait-v2.png",
-      "wizard-portrait-v2.png",
-      "paladin-portrait-v2.png",
-      "blademaster-portrait-v2.png",
-      "vampire-portrait-v2.png",
-      "automaton-portrait-v2.png",
+      "knight-portrait-v3.png",
+      "ranger-portrait-v4.png",
+      "artificer-portrait-v3.png",
+      "berserker-portrait-v3.png",
+      "sorcerer-portrait-v3.png",
+      "rogue-portrait-v3.png",
+      "warlock-portrait-v3.png",
+      "wizard-portrait-v3.png",
+      "paladin-portrait-v3.png",
+      "blademaster-portrait-v3.png",
+      "vampire-portrait-v3.png",
+      "automaton-portrait-v3.png",
     ];
     expect(mounted.querySelectorAll(".character-choice-card")).toHaveLength(STARTING_ARCHETYPES.length);
     expect(mounted.querySelectorAll(".character-choice-card img")).toHaveLength(STARTING_ARCHETYPES.length);

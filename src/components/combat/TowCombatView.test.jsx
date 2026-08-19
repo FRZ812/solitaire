@@ -672,7 +672,7 @@ describe("compact combat HUD", () => {
     expect(effects.map((effect) => effect.dataset.hitCount)).toEqual(["2", "2"]);
     expect(effects.map((effect) => effect.dataset.effectLane)).toEqual(["0", "1"]);
     expect(effects.map((effect) => effect.style.getPropertyValue("--tow-effect-delay")))
-      .toEqual(["0ms", "155ms"]);
+      .toEqual(["0ms", "210ms"]);
     expect(effects.every((effect) => effect.dataset.vfxSource === "imagegen-flipbook")).toBe(true);
     expect(effects.map((effect) => effect.dataset.vfxChoreography)).toEqual([
       "combo-left",
@@ -732,7 +732,7 @@ describe("compact combat HUD", () => {
       await act(async () => vi.advanceTimersByTime(150));
       expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp - 4));
 
-      await act(async () => vi.advanceTimersByTime(155));
+      await act(async () => vi.advanceTimersByTime(210));
       expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp - 9));
     } finally {
       vi.useRealTimers();
@@ -787,7 +787,7 @@ describe("compact combat HUD", () => {
         button.disabled === false && button.getAttribute("aria-disabled") === "true"
       ))).toBe(true);
 
-      await act(async () => vi.advanceTimersByTime(1604));
+      await act(async () => vi.advanceTimersByTime(1659));
       expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
       expect(enemyUnit.classList.contains("is-down")).toBe(true);
 
