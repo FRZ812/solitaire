@@ -4,7 +4,7 @@ import "./tow-combat-formation.css";
 export const FORMATION_CELL_COUNT = 9;
 const VITAL_CONTACT_OFFSET_MS = 150;
 const DEFAULT_MOVE_DURATION_MS = 200;
-const BASIC_MELEE_LUNGE_DURATION_MS = 430;
+const BASIC_MELEE_LUNGE_DURATION_MS = 620;
 const NO_FEEDBACK_CUES = Object.freeze([]);
 
 const SIDES = Object.freeze(["enemy", "player"]);
@@ -42,7 +42,7 @@ function combatCell(value) {
     && value.index < FORMATION_CELL_COUNT;
 }
 
-/** Collapse one basic-melee action's hit receipts into one out-and-back portrait lunge. */
+/** Collapse one basic-melee action's hit receipts into one out-and-back unit-card lunge. */
 export function basicMeleeLungeCues(cues = []) {
   const groups = new Map();
   for (const cue of cues) {
@@ -278,6 +278,7 @@ function FormationUnit({
   art,
   side,
   active,
+  overlay = null,
   feedbackCues,
   movement = null,
   lunge = null,
@@ -311,6 +312,11 @@ function FormationUnit({
       style={Object.keys(presentationStyle).length > 0 ? presentationStyle : undefined}
       data-lunge-id={lunge?.id || undefined}
     >
+      {overlay ? (
+        <span className="tow-formation-cell__overlays">
+          {overlay}
+        </span>
+      ) : null}
       <span className="tow-formation-unit__figure" aria-hidden="true">
         {art ? (
           <img src={art} alt="" draggable="false" decoding="async" />
@@ -445,17 +451,15 @@ function FormationGrid({
                 aria-hidden="true"
               />
             ) : null}
-            {actor && typeof renderActorOverlay === "function" ? (
-              <span className="tow-formation-cell__overlays">
-                {renderActorOverlay(actor, side)}
-              </span>
-            ) : null}
             {actor ? (
               <FormationUnit
                 actor={actor}
                 art={art}
                 side={side}
                 active={actor.id === activeActorId}
+                overlay={typeof renderActorOverlay === "function"
+                  ? renderActorOverlay(actor, side)
+                  : null}
                 feedbackCues={consumedFeedbackActorIds.has(actor.id)
                   ? NO_FEEDBACK_CUES
                   : feedbackCues}

@@ -28,14 +28,22 @@ describe("formation battlefield layout", () => {
     expect(cssBlock(".tow-combat__target-confirm")).toContain("margin: 0 auto");
   });
 
-  it("renders targeting as full tactical tiles instead of circular landing markers", () => {
-    expect(cssBlock(".tow-formation-cell")).toContain("border-radius: 0.52rem");
-    expect(cssBlock(".tow-formation-cell")).not.toContain("border-radius: 50%");
-    expect(formationCss).toMatch(/\.tow-formation-cell::before,\s*\n\.tow-formation-cell::after\s*\{[\s\S]*inset:\s*0\.08rem 1\.5%;/);
-    expect(formationCss).toMatch(/\.tow-formation-cell::before,\s*\n\.tow-formation-cell::after\s*\{[\s\S]*clip-path:\s*polygon\(/);
+  it("renders targeting as borderless backlight behind the unit card", () => {
+    expect(formationCss).toMatch(/\.tow-formation-cell::before,\s*\n\.tow-formation-cell::after\s*\{[\s\S]*border-radius:\s*50%;/);
+    expect(cssBlock(".tow-formation-cell::before")).not.toContain("border:");
+    expect(formationCss).not.toContain("clip-path: polygon(");
+    expect(cssBlock(".tow-formation-cell::before"))
+      .toMatch(/radial-gradient[\s\S]*filter:\s*blur\(0\.42rem\);/);
     expect(cssBlock(".tow-formation-cell.is-affected::before"))
-      .toMatch(/linear-gradient[\s\S]*opacity:\s*0\.74;/);
+      .toMatch(/opacity:\s*0\.68;[\s\S]*transform:\s*scale\(1\);/);
     expect(cssBlock(".tow-formation-cell.is-preview-anchor::before"))
-      .toMatch(/border-color:[\s\S]*opacity:\s*0\.98;/);
+      .toContain("opacity: 0.98");
+  });
+
+  it("moves the complete unit card rather than animating only the portrait", () => {
+    expect(cssBlock(".tow-formation-unit.is-lunging"))
+      .toMatch(/animation:\s*tow-formation-melee-lunge[\s\S]*620ms/);
+    expect(cssBlock(".tow-formation-unit.is-lunging .tow-formation-unit__figure"))
+      .not.toContain("animation:");
   });
 });

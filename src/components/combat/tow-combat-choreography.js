@@ -5,13 +5,13 @@ import {
 } from "./tow-combat-vfx.js";
 
 const MOTION_PROFILES = Object.freeze({
-  deliberate: Object.freeze({ windupMs: 430, recoveryMs: 980, paceLabel: "Committed", windupVerb: "commits to" }),
-  sequence: Object.freeze({ windupMs: 260, recoveryMs: 900, paceLabel: "Sequence", windupVerb: "sets the rhythm for" }),
-  guard: Object.freeze({ windupMs: 330, recoveryMs: 820, paceLabel: "Guard", windupVerb: "sets their footing for" }),
-  recovery: Object.freeze({ windupMs: 310, recoveryMs: 800, paceLabel: "Recovery", windupVerb: "draws breath for" }),
-  quick: Object.freeze({ windupMs: 190, recoveryMs: 660, paceLabel: "Quick", windupVerb: "finds the opening for" }),
-  invocation: Object.freeze({ windupMs: 340, recoveryMs: 880, paceLabel: "Invocation", windupVerb: "shapes" }),
-  measured: Object.freeze({ windupMs: 280, recoveryMs: 760, paceLabel: "Measured", windupVerb: "measures the distance for" }),
+  deliberate: Object.freeze({ windupMs: 560, recoveryMs: 1250, paceLabel: "Committed", windupVerb: "commits to" }),
+  sequence: Object.freeze({ windupMs: 360, recoveryMs: 1160, paceLabel: "Sequence", windupVerb: "sets the rhythm for" }),
+  guard: Object.freeze({ windupMs: 430, recoveryMs: 1050, paceLabel: "Guard", windupVerb: "sets their footing for" }),
+  recovery: Object.freeze({ windupMs: 410, recoveryMs: 1030, paceLabel: "Recovery", windupVerb: "draws breath for" }),
+  quick: Object.freeze({ windupMs: 260, recoveryMs: 840, paceLabel: "Quick", windupVerb: "finds the opening for" }),
+  invocation: Object.freeze({ windupMs: 450, recoveryMs: 1120, paceLabel: "Invocation", windupVerb: "shapes" }),
+  measured: Object.freeze({ windupMs: 370, recoveryMs: 980, paceLabel: "Measured", windupVerb: "measures the distance for" }),
 });
 
 const DELIBERATE_MOTIONS = new Set(["execution", "heavy", "inferno", "quake", "rolling"]);
@@ -67,8 +67,8 @@ export function combatChoreographyForAction(
     ...profile,
     visual,
     target: actionTarget(definition),
-    windupMs: reducedMotion ? 70 : (swift ? Math.min(profile.windupMs, 210) : profile.windupMs),
-    recoveryMs: reducedMotion ? 180 : (swift ? Math.min(profile.recoveryMs, 660) : profile.recoveryMs),
+    windupMs: reducedMotion ? 70 : (swift ? Math.min(profile.windupMs, 280) : profile.windupMs),
+    recoveryMs: reducedMotion ? 180 : (swift ? Math.min(profile.recoveryMs, 840) : profile.recoveryMs),
     paceLabel: swift ? "Swift" : profile.paceLabel,
   };
 }

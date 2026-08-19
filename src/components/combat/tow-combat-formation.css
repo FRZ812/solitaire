@@ -219,45 +219,35 @@
   animation: tow-formation-move-settle var(--tow-move-duration, 200ms) ease-out both;
 }
 
-/* A logical empty cell has no permanent chrome. Targeting turns the exact logical cell
-   into a clipped tactical tile, so rows, columns and crosses read as one footprint rather
-   than a collection of small landing circles between the combatants. */
+/* Logical cells never become visible tiles. Targeting is a diffuse light source behind the
+   unit card; on an empty legal anchor the same light remains as a soft, borderless locator. */
 .tow-formation-cell::before,
 .tow-formation-cell::after {
   position: absolute;
   z-index: 0;
-  inset: 0.08rem 1.5%;
-  border-radius: 0.5rem;
-  clip-path: polygon(
-    0.42rem 0,
-    calc(100% - 0.42rem) 0,
-    100% 0.42rem,
-    100% calc(100% - 0.42rem),
-    calc(100% - 0.42rem) 100%,
-    0.42rem 100%,
-    0 calc(100% - 0.42rem),
-    0 0.42rem
-  );
+  inset: 9% 7% 4%;
+  border-radius: 50%;
   opacity: 0;
-  transform: scale(0.94);
+  transform: scale(0.7);
   content: "";
   pointer-events: none;
-  transition: opacity 130ms ease, transform 160ms cubic-bezier(.2,.76,.2,1), filter 130ms ease;
+  transition: opacity 160ms ease, transform 190ms cubic-bezier(.2,.76,.2,1), filter 160ms ease;
 }
 
 .tow-formation-cell::before {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(135deg, rgba(255,255,255,0.055), transparent 38%),
-    rgba(7, 13, 17, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025), inset 0 -1.2rem 1.6rem rgba(0,0,0,0.16);
+  background: radial-gradient(
+    ellipse at 50% 62%,
+    color-mix(in srgb, currentColor 62%, white 10%) 0,
+    color-mix(in srgb, currentColor 28%, transparent) 31%,
+    transparent 72%
+  );
+  filter: blur(0.42rem);
 }
 
 .tow-formation-cell::after {
-  inset: 14% 8%;
-  border-radius: 0.62rem;
-  filter: blur(0.58rem);
-  background: radial-gradient(ellipse, currentColor, transparent 72%);
+  inset: 28% 15% 4%;
+  background: radial-gradient(ellipse at 50% 72%, currentColor 0, transparent 68%);
+  filter: blur(0.9rem);
 }
 
 .tow-formation-cell.is-valid-anchor {
@@ -269,27 +259,21 @@
 }
 
 .tow-formation-cell.is-valid-anchor::before {
-  border-color: color-mix(in srgb, currentColor 52%, transparent);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, currentColor 14%, transparent), transparent 46%),
-    rgba(7, 13, 17, 0.2);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 10%, transparent);
-  opacity: 0.42;
-  transform: scale(0.97);
+  opacity: 0.34;
+  transform: scale(0.88);
 }
 
 .tow-formation-cell.is-valid-anchor::after {
-  opacity: 0.08;
-  transform: scale(0.96);
+  opacity: 0.13;
+  transform: scale(0.84);
 }
 
 .tow-formation-cell.is-valid-anchor:not(:disabled):hover::before,
-.tow-formation-cell.is-valid-anchor:not(:disabled):focus-visible::before {
-  opacity: 0.82;
+.tow-formation-cell.is-valid-anchor:not(:disabled):focus-visible::before,
+.tow-formation-cell.is-valid-anchor:not(:disabled):hover::after,
+.tow-formation-cell.is-valid-anchor:not(:disabled):focus-visible::after {
+  opacity: 0.66;
   transform: scale(1);
-  box-shadow:
-    0 0 0.8rem color-mix(in srgb, currentColor 22%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, currentColor 34%, transparent);
 }
 
 .tow-formation-cell.is-affected {
@@ -297,19 +281,12 @@
 }
 
 .tow-formation-cell.is-affected::before {
-  border-color: color-mix(in srgb, var(--tow-formation-affected) 80%, #fff 20%);
-  background:
-    linear-gradient(145deg, rgba(201, 171, 255, 0.3), rgba(118, 76, 184, 0.22) 48%, rgba(42, 24, 72, 0.14)),
-    rgba(8, 9, 18, 0.28);
-  box-shadow:
-    0 0 0.7rem rgba(155, 111, 224, 0.18),
-    inset 0 0 0 1px rgba(233, 219, 255, 0.12);
-  opacity: 0.74;
+  opacity: 0.68;
   transform: scale(1);
 }
 
 .tow-formation-cell.is-affected::after {
-  opacity: 0.22;
+  opacity: 0.38;
   transform: scale(1);
 }
 
@@ -318,11 +295,7 @@
 }
 
 .tow-formation-cell.is-preview-anchor::before {
-  border-color: rgba(248, 220, 161, 0.92);
   opacity: 0.98;
-  box-shadow:
-    0 0 0.95rem rgba(230, 187, 104, 0.32),
-    inset 0 0 0 1px rgba(255, 241, 202, 0.24);
 }
 
 .tow-formation-cell.is-preview-anchor::after {
@@ -341,8 +314,7 @@
 }
 
 .tow-formation-cell.is-selected-anchor::before {
-  border-color: #f4d699;
-  box-shadow: 0 0 1.2rem rgba(233, 190, 102, 0.56), inset 0 0 0.8rem rgba(255,241,202,0.17);
+  filter: blur(0.3rem) brightness(1.18);
 }
 
 .tow-formation-cell.is-intent-target:not(.is-selected-anchor) {
@@ -350,8 +322,6 @@
 }
 
 .tow-formation-cell.is-intent-target:not(.is-selected-anchor)::before {
-  border-color: rgba(241, 111, 92, 0.88);
-  background: linear-gradient(145deg, rgba(202, 61, 48, 0.28), rgba(82, 25, 24, 0.08));
   opacity: 0.58;
   transform: scale(1);
   animation: tow-formation-intent 1.35s ease-in-out infinite alternate;
@@ -509,21 +479,21 @@
   animation: tow-formation-contact 260ms cubic-bezier(.2,.76,.2,1) both;
 }
 
-/* A basic melee attack is spatial theatre, never formation movement. Only the illustrated
-   figure leaves its tile, stops short of the target for contact, then returns; HUD and the
-   authoritative actor remain anchored to the starting cell throughout. */
+/* A basic melee attack is spatial theatre, never formation movement. The complete visual
+   card (portrait, attached overlays and both vital meters) lunges to contact and returns as one unit;
+   the authoritative actor remains in its starting cell throughout. */
 .tow-formation-unit.is-lunging {
   z-index: 16;
   overflow: visible;
+  transform-origin: 50% 84%;
+  animation: tow-formation-melee-lunge var(--tow-lunge-duration, 620ms)
+    cubic-bezier(.2,.74,.18,1) var(--tow-lunge-delay, 0ms) both;
+  will-change: transform, filter;
 }
 
 .tow-formation-unit.is-lunging .tow-formation-unit__figure {
   z-index: 15;
   overflow: hidden;
-  transform-origin: 50% 84%;
-  animation: tow-formation-melee-lunge var(--tow-lunge-duration, 430ms)
-    cubic-bezier(.2,.74,.18,1) var(--tow-lunge-delay, 0ms) both;
-  will-change: transform, filter;
 }
 
 .tow-formation-unit.is-down {
@@ -835,7 +805,7 @@
 
   .tow-formation-cell.is-intent-target::before { animation: none; }
   .tow-formation-unit.is-reacting .tow-formation-unit__figure { animation: none; }
-  .tow-formation-unit.is-lunging .tow-formation-unit__figure {
+  .tow-formation-unit.is-lunging {
     animation: tow-formation-contact 160ms ease-out var(--tow-lunge-delay, 0ms) both;
   }
   .tow-formation-unit.is-arriving { animation: none; }

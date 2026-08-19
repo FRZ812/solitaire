@@ -57,18 +57,18 @@ describe("formation battlefield", () => {
         attackerId: "knight",
         sourceCell,
         targetCell,
-        delayMs: 155,
+        delayMs: 210,
       },
     ])).toEqual([expect.objectContaining({
       actorId: "knight",
       sourceCell,
       targetCell,
       delayMs: 0,
-      durationMs: 585,
+      durationMs: 830,
     })]);
   });
 
-  it("lunges only the portrait toward contact while the actor and vitals stay in their cell", async () => {
+  it("lunges the complete portrait-and-vitals card while keeping actor authority in its cell", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function bounds() {
       const side = this.dataset?.side;
       const index = Number(this.dataset?.cellIndex);
@@ -108,6 +108,9 @@ describe("formation battlefield", () => {
         targetCell: { side: "enemy", index: 1 },
         delayMs: 40,
       }],
+      renderActorOverlay: (actor) => (
+        <span data-testid={`overlay-${actor.id}`}>Status</span>
+      ),
     });
 
     const source = mounted.querySelector("[data-side='player'][data-cell-index='4']");
@@ -117,6 +120,7 @@ describe("formation battlefield", () => {
     expect(lunge.style.getPropertyValue("--tow-lunge-delay")).toBe("40ms");
     expect(Number.parseFloat(lunge.style.getPropertyValue("--tow-lunge-y"))).toBeLessThan(0);
     expect(source.querySelector("[aria-label='Knight health']")).toBeTruthy();
+    expect(lunge.querySelector("[data-testid='overlay-knight']")).toBeTruthy();
     expect(mounted.querySelector("[data-side='enemy'][data-cell-index='1'] [aria-label='Knight health']"))
       .toBeNull();
     expect(mounted.querySelector(".tow-formation-grid--player.has-lunging-unit")).toBeTruthy();

@@ -211,9 +211,9 @@ describe("combat feedback receipts", () => {
     expect(cues).toHaveLength(4);
     expect(cues.map(({ id, delayMs, label, kind }) => ({ id, delayMs, label, kind }))).toEqual([
       { id: "18-hit-0", delayMs: 0, label: "-7", kind: "hit" },
-      { id: "18-hit-1", delayMs: 155, label: "-12", kind: "critical" },
-      { id: "18-hit-2", delayMs: 310, label: "0", kind: "ward" },
-      { id: "18-hit-3", delayMs: 465, label: "Evaded", kind: "evade" },
+      { id: "18-hit-1", delayMs: 210, label: "-12", kind: "critical" },
+      { id: "18-hit-2", delayMs: 420, label: "0", kind: "ward" },
+      { id: "18-hit-3", delayMs: 630, label: "Evaded", kind: "evade" },
     ]);
     expect(cues[1].kicker).toBe("Critical");
     expect(cues[2].kicker).toBe("Ward holds");

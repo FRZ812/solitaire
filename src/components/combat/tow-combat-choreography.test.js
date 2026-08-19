@@ -18,7 +18,8 @@ describe("combat action choreography", () => {
     const swift = combatChoreographyForAction(getSkill("clocktower-missile-support"));
     expect(strike.visual).toMatchObject({ variant: "threefold-cut", motion: "flurry" });
     expect(swift.paceLabel).toBe("Swift");
-    expect(swift.windupMs).toBeLessThanOrEqual(210);
+    expect(swift.windupMs).toBeLessThanOrEqual(280);
+    expect(strike.recoveryMs).toBeGreaterThanOrEqual(980);
   });
 
   it("keeps a short semantic beat when reduced motion is requested", () => {

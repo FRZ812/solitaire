@@ -456,7 +456,7 @@ function hitCue(encounter, event, hit, index, hitCount, visual) {
     targetSide: effectSide(encounter, targetId),
     hitIndex: index,
     hitCount,
-    delayMs: index * 155,
+    delayMs: index * 210,
     hpChange: toHp > 0 ? -toHp : 0,
     shieldChange: absorbed > 0 ? -absorbed : 0,
     absorbed,
@@ -685,37 +685,37 @@ export function combatCuesForEvent(encounter, event) {
         visual: combatVfxForStatus(type),
       })];
     });
-    return cues.map((cue, index) => ({ ...cue, hitIndex: index, hitCount: cues.length, delayMs: index * 155 }));
+    return cues.map((cue, index) => ({ ...cue, hitIndex: index, hitCount: cues.length, delayMs: index * 210 }));
   }
   return [];
 }
 
-const SAME_ACTION_EFFECT_GAP_MS = 105;
+const SAME_ACTION_EFFECT_GAP_MS = 150;
 const FORMATION_MOVE_DURATION_MS = 200;
 
 const EXCHANGE_GAPS = Object.freeze({
-  afterimage: 280,
-  barrage: 390,
-  brace: 440,
-  counter: 420,
-  cyclone: 420,
-  execution: 560,
-  flurry: 360,
-  fortress: 470,
-  heavy: 540,
-  inferno: 520,
-  mend: 430,
-  multi: 360,
-  projectile: 340,
-  quake: 580,
-  rapid: 290,
-  radiant: 460,
-  snap: 300,
-  volley: 390,
+  afterimage: 380,
+  barrage: 520,
+  brace: 570,
+  counter: 550,
+  cyclone: 550,
+  execution: 730,
+  flurry: 480,
+  fortress: 610,
+  heavy: 700,
+  inferno: 680,
+  mend: 560,
+  multi: 480,
+  projectile: 460,
+  quake: 760,
+  rapid: 390,
+  radiant: 600,
+  snap: 400,
+  volley: 520,
 });
 
 function exchangeGap(motion) {
-  return EXCHANGE_GAPS[motion] || 400;
+  return EXCHANGE_GAPS[motion] || 520;
 }
 
 function cueActionKey(event) {

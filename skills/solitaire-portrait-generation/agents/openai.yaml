@@ -1,0 +1,4 @@
+interface:
+  display_name: "Solitaire Portrait Generation"
+  short_description: "Author and QA Solitaire archetype portraits"
+  default_prompt: "Use $solitaire-portrait-generation to create or refine a Solitaire archetype portrait."
