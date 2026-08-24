@@ -61,8 +61,14 @@ new production rule.
 - True transparent background. Never paint a checkerboard or flat white matte.
 - Portrait orientation, head-to-mid-thigh three-quarter stance, face unobscured.
 - Final normalized canvas: 960 x 1280 RGBA.
-- Subject alpha bounds: 82-88% canvas width and 89-94% canvas height.
-- Safe margins: 5-7% clear top space, 6-9% each side, 1-3% bottom. The complete
+- Preserve the accepted source silhouette's aspect ratio. Normalize height first to
+  about 92% of the canvas and cap width at 94%; never force width and height to fixed
+  values independently. A narrow Sorcerer and a broad armored Artificer must not be
+  stretched into the same box.
+- Subject alpha bounds after the clean lower-HUD fade: 68-94% canvas width and
+  87-94% canvas height. Width varies naturally with the authored silhouette.
+- Safe margins: 5-7% clear top space, approximately 3-16% each side according to
+  the preserved aspect ratio, and 5-7% bottom after the HUD fade. The complete
   hair/headwear silhouette and every raised prop must sit below that top margin; nothing
   may touch or cross the top edge.
 - Face height: 17-20% of canvas; eye line: 18-23% from the top.
@@ -83,6 +89,9 @@ new production rule.
   explicitly changes framing. Never zoom out merely to contain a new prop.
 - Validate at full size and at the 120 x 145 combat-cell size on black, warm
   brown, and saturated violet backgrounds.
+- Match the legacy cutout edge: partial-alpha pixels should be a narrow antialias
+  band rather than a broad watercolor haze. Semi-transparent pixels must remain at
+  or below 3% of visible pixels, with no more than 64 pale low-alpha fringe pixels.
 
 ## Mandatory ImageGen usage
 

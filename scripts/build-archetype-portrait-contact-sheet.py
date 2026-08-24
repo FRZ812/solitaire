@@ -15,7 +15,11 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
 
-    files = sorted(args.input.glob("*.webp"))
+    files = sorted(
+        source
+        for pattern in ("*.png", "*.webp")
+        for source in args.input.glob(pattern)
+    )
     cell = (240, 320)
     columns = 4
     rows = max(1, (len(files) + columns - 1) // columns)

@@ -81,11 +81,17 @@ An apparent checkerboard is not evidence of transparency. Inspect the encoded fi
 - alpha must contain both 0 and 255 rather than 255 everywhere;
 - all four corners must have alpha 0;
 - transparent pixels should not retain a white or checker-colored matte;
-- the cutout must have clean antialiasing without pale fringe;
+- the cutout must have a crisp legacy-style antialias band without pale fringe;
 - side and bottom crop dissolves must preserve adjacent material color at partial alpha;
 - opaque or semi-opaque pale crop paint must be rejected on black, warm brown, and
   saturated violet backgrounds, even when it resembles watercolor paper at full size;
-- the normalizer must report no more than 256 suspect paper-white crop pixels;
+- normalization must preserve the source alpha-bounds aspect ratio rather than
+  forcing a common width and height; allow no more than 1% aspect-ratio drift;
+- normalize height first to about 92%, cap width at 94%, and accept the final clean
+  painted bounds only within 68-94% width and 87-94% height;
+- the normalizer must report `semiTransparentVisibleRatio <= 0.03` and no more than
+  64 `paleLowAlphaFringePixels`; raw light-pixel counts alone are not a rejection
+  gate because legitimate ivory cloth and pale armor can occupy the crop zone;
 - subject bounds and face scale must satisfy `art-direction.md`;
 - the thumbnail must remain readable at 120 x 145 on black, warm brown, and
   saturated violet.

@@ -45,7 +45,9 @@ presence. Never copy their identities, costumes, poses, anatomy, or scenery.
 - State every invariant that must remain unchanged. Make one coherent correction
   per pass.
 - Preserve accepted face size, crop, pose, identity, and palette unless the user
-  explicitly changes them. Never zoom out merely to contain a prop.
+  explicitly changes them. Preserve the source silhouette's aspect ratio; never
+  widen or squeeze a portrait to fill a fixed box. Never zoom out merely to contain
+  a prop.
 - If iterative edits drift, restart from the last user-approved source rather than
   editing the drifted result again.
 
@@ -94,7 +96,10 @@ For an accepted, validated asset:
 
 - preserve the raw generated source and exact prompt;
 - create a new versioned file rather than overwriting an accepted portrait;
-- normalize the final to 960 x 1280 RGBA only after real alpha is confirmed;
+- normalize the final to 960 x 1280 RGBA only after real alpha is confirmed,
+  scaling height first while preserving the source aspect ratio and capping width;
+- use `scripts/normalize-archetype-portrait.py`; never independently force the
+  portrait to a fixed width and height;
 - save under `src/assets/generated/archetypes/portraits/` using
   `<archetype>-portrait-vN.png`;
 - validate at full resolution and at 120 x 145 on dark backgrounds;

@@ -32,10 +32,11 @@ illustrative, never glossy 3D, photographic, or hyper-rendered digital concept a
 Composition/framing: portrait orientation; one character; head-to-mid-thigh
 three-quarter stance; face unobscured and dominant; compact readable silhouette;
 natural asymmetry in gaze, shoulders, hands, and weight; props close to the body.
-Leave 5-7% visibly empty space above the complete hair/headwear silhouette, 6-9%
-side margins, and 1-3% bottom margin. Nothing may touch or exit the top edge. Keep
-every body part inside the canvas. Face height 17-20% of canvas, eye line 18-23%
-from top.
+Leave 5-7% visibly empty space above the complete hair/headwear silhouette and
+natural side clearance appropriate to this specific silhouette. Nothing may touch
+or exit the top edge. Keep every body part inside the canvas. Face height 17-20%
+of canvas, eye line 18-23% from top. Do not widen, squeeze, or otherwise distort
+the body to fill a standardized box.
 
 Scene/backdrop: genuinely transparent alpha canvas only. No environment, floor,
 cast shadow, halo, vignette, panel, or checkerboard.
@@ -51,8 +52,9 @@ complementary-color split. Preserve airy midtones and painted variation.
 Constraints: true transparent background; clean antialiased edges; one character;
 coherent hands and equipment; large costume shapes before detail; generalized
 late-medieval fantasy construction; no text or watermark. Final asset will be
-normalized to 960x1280 RGBA and checked at 120x145. Preserve the accepted close
-subject scale during edits. Every visible prop must have realistic construction,
+normalized to 960x1280 RGBA with source aspect ratio preserved and checked at
+120x145. Preserve the accepted close subject scale and body proportions during
+edits. Every visible prop must have realistic construction,
 support, and attachment and never intersect anatomy, clothing, armor, or another
 prop. Long scabbards, cloaks, and lower garments may intentionally continue beyond
 the lower or outer crop when their direction and perspective make that continuation

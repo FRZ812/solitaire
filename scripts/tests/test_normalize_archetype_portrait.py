@@ -58,9 +58,16 @@ class PortraitNormalizationTests(unittest.TestCase):
 
         normalized = portrait.normalize_geometry(source)
         report = portrait.metrics(normalized, checker_period=None)
+        source_bbox = portrait.alpha_bbox(source)
+        normalized_bbox = portrait.alpha_bbox(normalized)
+        source_ratio = (source_bbox[2] - source_bbox[0]) / (source_bbox[3] - source_bbox[1])
+        normalized_ratio = (normalized_bbox[2] - normalized_bbox[0]) / (
+            normalized_bbox[3] - normalized_bbox[1]
+        )
 
         portrait.validate_contract(report)
         self.assertEqual(normalized.size, portrait.CANVAS_SIZE)
+        self.assertAlmostEqual(normalized_ratio, source_ratio, delta=0.01)
         self.assertEqual(report["cornerAlpha"], [0, 0, 0, 0])
         self.assertEqual(
             report["edgeAlphaPixels"],
@@ -94,13 +101,36 @@ class PortraitNormalizationTests(unittest.TestCase):
         self.assertEqual(int(alpha[500, 400]), 255)
         self.assertTrue(np.all(np.asarray(cleaned)[alpha == 0, :3] == 0))
 
-    def test_rejects_excess_paper_white_crop_paint(self) -> None:
+    def test_finishes_lower_crop_before_hud_overlap(self) -> None:
+        source = Image.new("RGBA", portrait.CANVAS_SIZE, (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((100, 80, 860, 1250), fill=(52, 61, 74, 255))
+
+        finished = portrait.finish_lower_crop(source)
+        alpha = np.asarray(finished.getchannel("A"), dtype=np.uint8)
+
+        self.assertEqual(int(alpha[1160, 400]), 255)
+        self.assertEqual(int(alpha[1240, 400]), 0)
+
+    def test_rejects_pale_low_alpha_crop_fringe(self) -> None:
         source = Image.new("RGBA", portrait.CANVAS_SIZE, (0, 0, 0, 0))
         ImageDraw.Draw(source).rectangle((77, 77, 882, 1254), fill=(37, 49, 63, 255))
         report = portrait.metrics(source, checker_period=None)
-        report["paperWhiteCropPixels"] = portrait.MAX_PAPER_WHITE_CROP_PIXELS + 1
+        report["paleLowAlphaFringePixels"] = (
+            portrait.MAX_PALE_LOW_ALPHA_FRINGE_PIXELS + 1
+        )
 
-        with self.assertRaisesRegex(ValueError, "paper-white crop paint exceeds contract"):
+        with self.assertRaisesRegex(ValueError, "pale low-alpha crop fringe exceeds contract"):
+            portrait.validate_contract(report)
+
+    def test_rejects_broad_semitransparent_fringe(self) -> None:
+        source = Image.new("RGBA", portrait.CANVAS_SIZE, (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((77, 77, 882, 1254), fill=(37, 49, 63, 255))
+        report = portrait.metrics(source, checker_period=None)
+        report["semiTransparentVisibleRatio"] = (
+            portrait.MAX_SEMITRANSPARENT_VISIBLE_RATIO + 0.001
+        )
+
+        with self.assertRaisesRegex(ValueError, "alpha fringe is broader"):
             portrait.validate_contract(report)
 
 
