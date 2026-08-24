@@ -77,6 +77,32 @@ class PortraitNormalizationTests(unittest.TestCase):
         self.assertTrue(np.all(resized[transparent, :3] == 0))
         self.assertGreater(int(resized[..., 3].max()), 0)
 
+    def test_removes_paper_white_crop_without_eroding_inboard_material(self) -> None:
+        source = Image.new("RGBA", portrait.CANVAS_SIZE, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(source)
+        draw.rectangle((100, 80, 860, 1250), fill=(37, 49, 63, 255))
+        draw.rectangle((100, 650, 150, 1180), fill=(226, 217, 205, 255))
+        draw.rectangle((180, 1130, 780, 1250), fill=(220, 213, 204, 255))
+        draw.ellipse((680, 520, 760, 610), fill=(226, 190, 164, 255))
+
+        cleaned = portrait.remove_paper_white_cutoff(source)
+        alpha = np.asarray(cleaned.getchannel("A"), dtype=np.uint8)
+
+        self.assertLess(int(alpha[900, 120]), 96)
+        self.assertLess(int(alpha[1200, 400]), 96)
+        self.assertEqual(int(alpha[565, 720]), 255)
+        self.assertEqual(int(alpha[500, 400]), 255)
+        self.assertTrue(np.all(np.asarray(cleaned)[alpha == 0, :3] == 0))
+
+    def test_rejects_excess_paper_white_crop_paint(self) -> None:
+        source = Image.new("RGBA", portrait.CANVAS_SIZE, (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((77, 77, 882, 1254), fill=(37, 49, 63, 255))
+        report = portrait.metrics(source, checker_period=None)
+        report["paperWhiteCropPixels"] = portrait.MAX_PAPER_WHITE_CROP_PIXELS + 1
+
+        with self.assertRaisesRegex(ValueError, "paper-white crop paint exceeds contract"):
+            portrait.validate_contract(report)
+
 
 if __name__ == "__main__":
     unittest.main()

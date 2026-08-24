@@ -25,6 +25,7 @@ TARGET_BBOX = (0.84, 0.92)
 TARGET_TOP = 0.06
 ALPHA_BBOX_THRESHOLD = 8
 CHECKER_RESIDUAL_THRESHOLD = 18
+MAX_PAPER_WHITE_CROP_PIXELS = 256
 
 
 def _period_score(gray: np.ndarray, period: int) -> float:
@@ -261,6 +262,94 @@ def decontaminate_fringe(image: Image.Image) -> Image.Image:
     return Image.fromarray(rgba, "RGBA")
 
 
+def _paper_white_crop_score(rgba: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Locate pale editorial paint only where soft material reaches a crop."""
+
+    alpha = rgba[..., 3]
+    visible_y, visible_x = np.nonzero(alpha > ALPHA_BBOX_THRESHOLD)
+    if not len(visible_x):
+        raise ValueError("portrait has no visible alpha")
+    left, right = int(visible_x.min()), int(visible_x.max()) + 1
+    top, bottom = int(visible_y.min()), int(visible_y.max()) + 1
+    height, width = alpha.shape
+    yy, xx = np.indices(alpha.shape)
+    side_band = max(1, round(width * 0.031))
+    lower_band = max(1, round(height * 0.141))
+    side_crop = (
+        ((xx <= left + side_band) | (xx >= right - side_band))
+        & (yy >= top + (bottom - top) * 0.30)
+    )
+    lower_crop = yy >= bottom - lower_band
+
+    rgb = rgba[..., :3].astype(np.float32)
+    minimum = rgb.min(axis=2)
+    maximum = np.maximum(rgb.max(axis=2), 1)
+    saturation = (rgb.max(axis=2) - minimum) / maximum
+    paper_score = np.clip((minimum - 82) / 138, 0, 1) * np.clip(
+        (0.75 - saturation) / 0.65,
+        0,
+        1,
+    )
+    return side_crop | lower_crop, paper_score
+
+
+def _local_subject_color(colors: np.ndarray, alpha: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Estimate material color from opaque non-target pixels around the crop."""
+
+    weight = ((alpha >= 224) & ~target).astype(np.float32)
+    weight_u8 = np.uint8(np.clip(weight * 255, 0, 255))
+    blur_radius = max(1, round(min(alpha.shape) * 0.019))
+    blurred_weight = np.asarray(
+        Image.fromarray(weight_u8, "L").filter(ImageFilter.GaussianBlur(blur_radius)),
+        dtype=np.float32,
+    ) / 255
+    result = colors.astype(np.float32).copy()
+    usable = blurred_weight > 0.04
+    for channel in range(3):
+        weighted_channel = np.uint8(
+            np.clip(colors[..., channel].astype(np.float32) * weight, 0, 255)
+        )
+        blurred_channel = np.asarray(
+            Image.fromarray(weighted_channel, "L").filter(ImageFilter.GaussianBlur(blur_radius)),
+            dtype=np.float32,
+        )
+        result[..., channel][usable] = blurred_channel[usable] / blurred_weight[usable]
+    return result
+
+
+def remove_paper_white_cutoff(image: Image.Image) -> Image.Image:
+    """Turn pale side/bottom paper strokes into local-color transparent coverage.
+
+    Generated watercolor edges sometimes use opaque paper-white paint to imply
+    an editorial crop. On Solitaire's dark field that paint reads as a spectral
+    glow. The correction is restricted to lower and outer crop bands and leaves
+    the safe top, face, hands, and central equipment untouched.
+    """
+
+    rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
+    alpha = rgba[..., 3]
+    rgb = rgba[..., :3]
+    crop_zone, paper_score = _paper_white_crop_score(rgba)
+    target = (alpha > 0) & crop_zone & (paper_score >= 0.05)
+    if not np.any(target):
+        return image.convert("RGBA")
+
+    local_colors = _local_subject_color(rgb, alpha, target)
+    rgb_float = rgb.astype(np.float32)
+    mix = np.clip(paper_score * 1.35, 0, 1)[..., None]
+    rgb_float[target] = (
+        rgb_float[target] * (1 - mix[target]) + local_colors[target] * mix[target]
+    )
+    alpha_float = alpha.astype(np.float32)
+    alpha_float[target] *= np.clip((0.36 - paper_score[target]) / 0.30, 0, 1)
+    alpha_float[alpha_float < 4] = 0
+
+    rgba[..., :3] = np.uint8(np.clip(rgb_float, 0, 255))
+    rgba[..., 3] = np.uint8(np.clip(alpha_float, 0, 255))
+    rgba[rgba[..., 3] == 0, :3] = 0
+    return Image.fromarray(rgba, "RGBA")
+
+
 def alpha_bbox(image: Image.Image, threshold: int = ALPHA_BBOX_THRESHOLD) -> tuple[int, int, int, int]:
     alpha = image.getchannel("A").point(lambda value: 255 if value > threshold else 0)
     bbox = alpha.getbbox()
@@ -314,6 +403,8 @@ def metrics(image: Image.Image, checker_period: int | None) -> dict[str, object]
         & (rgba[..., :3].min(axis=2) >= 210)
         & ((rgba[..., :3].max(axis=2) - rgba[..., :3].min(axis=2)) <= 20)
     )
+    crop_zone, paper_score = _paper_white_crop_score(rgba)
+    paper_white_crop = (alpha > 0) & crop_zone & (paper_score >= 0.36)
     return {
         "size": [width, height],
         "checkerPeriod": checker_period,
@@ -343,6 +434,7 @@ def metrics(image: Image.Image, checker_period: int | None) -> dict[str, object]
             int(alpha[-1, -1]),
         ],
         "paleLowAlphaFringePixels": int(np.count_nonzero(pale_fringe)),
+        "paperWhiteCropPixels": int(np.count_nonzero(paper_white_crop)),
     }
 
 
@@ -358,6 +450,11 @@ def validate_contract(report: dict[str, object]) -> None:
         raise ValueError("portrait corners must be transparent")
     if any(report["edgeAlphaPixels"].values()):
         raise ValueError(f"portrait touches canvas edge: {report['edgeAlphaPixels']}")
+    if report["paperWhiteCropPixels"] > MAX_PAPER_WHITE_CROP_PIXELS:
+        raise ValueError(
+            "paper-white crop paint exceeds contract: "
+            f"{report['paperWhiteCropPixels']} > {MAX_PAPER_WHITE_CROP_PIXELS}"
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -382,6 +479,7 @@ def main() -> None:
         raise ValueError("opaque source requires --recover-light-checker")
 
     normalized = normalize_geometry(source)
+    normalized = normalize_geometry(remove_paper_white_cutoff(normalized))
     report = metrics(normalized, checker_period)
     validate_contract(report)
     args.output.parent.mkdir(parents=True, exist_ok=True)

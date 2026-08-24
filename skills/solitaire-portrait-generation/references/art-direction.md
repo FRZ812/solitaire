@@ -69,9 +69,11 @@ or scenery must not be copied literally.
   attachment points must remain visible and resolved. No object may intersect
   another impossibly or terminate accidentally inside the crop. Keep every body part
   inside the canvas. Where a soft cloak or garment intentionally exits a side or the
-  bottom, feather its pigment through sparse paper-white watercolor dry-brush marks into
-  alpha so the editorial continuation reads as painted and deliberate. Do not apply this
-  whitewash as a global cutout halo or use it to hide rigid construction errors.
+  bottom, dissolve the garment's own local pigment into alpha so the editorial
+  continuation reads as painted and deliberate. Never introduce paper-white
+  underpainting, pale erosion, or a white dry-brush cutoff; semi-transparent edge RGB
+  must come from the adjacent cloth or material. Never use edge fading to hide rigid
+  construction errors.
 - An edit preserves the accepted face size and subject scale unless the request
   explicitly changes framing. Never zoom out merely to contain a new prop.
 - Validate at full size and at the 120 x 145 combat-cell size on black, warm
@@ -104,7 +106,8 @@ Reject an output when any of these are present:
 - generic same-face beauty, expressionless stare, or incorrect age read;
 - centered character-select posture, squared shoulders, camera-facing smile, or
   a gesture performed for the viewer rather than arising from the character;
-- crushed black clothing, harsh white rim light, white halo, or matte fringe;
+- crushed black clothing, harsh white rim light, paper-white crop paint, pale eroded
+  hems, white dry-brush cutoffs, white halos, or matte fringe;
 - full-body framing, tiny face, clipped head/hand/joint, or an unrequested zoom;
 - copied reference costume, pose, scenery, wings, ears, staff, or magic object;
 - accidentally truncated, floating, fused, unsupported, or physically impossible

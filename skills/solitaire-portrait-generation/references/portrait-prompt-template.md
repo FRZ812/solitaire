@@ -57,13 +57,15 @@ support, and attachment and never intersect anatomy, clothing, armor, or another
 prop. Long scabbards, cloaks, and lower garments may intentionally continue beyond
 the lower or outer crop when their direction and perspective make that continuation
 unambiguous; never zoom out just to reveal their tips. Where soft cloth deliberately exits
-a side or lower edge, fade its pigment through sparse paper-white watercolor dry-brush
-marks into alpha, not a global white matte. Keep all hair, headwear, hands, anatomy, and
-raised hard forms safely inside the top edge.
+a side or lower edge, dissolve that cloth's own local pigment into transparent alpha.
+Do not add paper-white crop paint, pale erosion, a white dry-brush cutoff, or light-colored
+underpainting; semi-transparent pixels must retain the adjacent material color. Keep all
+hair, headwear, hands, anatomy, and raised hard forms safely inside the top edge.
 
 Avoid: literal copying from references, photoreal skin, glossy 3D rendering,
 over-sharpening, excessive etched micro-detail, crushed blacks, harsh white rim,
-white matte or fringe, fake transparency, same-face beauty, chibi anatomy,
+paper-white crop fade, pale eroded hem, white dry-brush cutoff, white matte or fringe,
+fake transparency, same-face beauty, chibi anatomy,
 competing bright complementary colors, generic two-tone game-skin palettes,
 sexualized costume unless explicitly required, giant props, full-body framing,
 direct eye contact, presentation smile, centered character-select pose, clipped

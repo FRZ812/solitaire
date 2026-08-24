@@ -77,10 +77,10 @@ presence. Never copy their identities, costumes, poses, anatomy, or scenery.
   raised hands, and other hard forms may never touch or exit the top edge. Keep every
   body part inside the canvas. The lower body may pass behind the combat HUD, and soft
   cloaks or garments may continue through a side or bottom edge.
-- Where soft cloth deliberately exits a side or lower crop, dissolve its pigment with a
-  sparse paper-white watercolor dry-brush transition into alpha, matching the approved
-  Knight calibration. This is an intentional painted edge, not a white matte around the
-  whole cutout. Never use edge fading to conceal broken anatomy or equipment.
+- Where soft cloth deliberately exits a side or lower crop, dissolve its own local
+  material pigment into alpha. Semi-transparent crop pixels must inherit color from the
+  adjacent cloth, never paper-white underpainting, pale erosion, or a white dry-brush
+  cutoff. Never use edge fading to conceal broken anatomy or equipment.
 - Ability effects, particles, scenery, frames, text, and UI never belong in a
   reusable portrait cutout.
 

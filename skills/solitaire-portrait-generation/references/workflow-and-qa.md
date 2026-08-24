@@ -69,8 +69,9 @@ consistent direction and scale. Never crop a head, hand, joint, grip, guard, pom
 or attachment point to conceal broken construction. Require clear negative space above
 the full silhouette: no hair, headwear, hand, weapon, or prop may touch the top edge.
 Every body part stays inside the canvas. A soft cloak or garment may exit a side or the
-bottom through a controlled paper-white watercolor dry-brush fade into alpha; distinguish
-that authored fade from an accidental white matte or fringe during QA.
+bottom only by dissolving its own local material pigment into alpha. Paper-white crop
+paint, pale eroded hems, white dry-brush cutoffs, and light underpainting at the alpha
+boundary are defects, not authored watercolor treatment.
 
 ## Technical alpha and geometry gates
 
@@ -81,6 +82,10 @@ An apparent checkerboard is not evidence of transparency. Inspect the encoded fi
 - all four corners must have alpha 0;
 - transparent pixels should not retain a white or checker-colored matte;
 - the cutout must have clean antialiasing without pale fringe;
+- side and bottom crop dissolves must preserve adjacent material color at partial alpha;
+- opaque or semi-opaque pale crop paint must be rejected on black, warm brown, and
+  saturated violet backgrounds, even when it resembles watercolor paper at full size;
+- the normalizer must report no more than 256 suspect paper-white crop pixels;
 - subject bounds and face scale must satisfy `art-direction.md`;
 - the thumbnail must remain readable at 120 x 145 on black, warm brown, and
   saturated violet.
