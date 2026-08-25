@@ -8,18 +8,18 @@ import oathforged from "../../assets/generated/combat-cutouts/oathforged-cutout-
 import raiderFoe from "../../assets/generated/combat-cutouts/raider-foe-cutout-v1.webp";
 import wildstrider from "../../assets/generated/combat-cutouts/wildstrider-cutout-v1.webp";
 import wyrmAscendant from "../../assets/generated/combat-cutouts/wyrm-ascendant-cutout-v1.webp";
-import knight from "../../assets/generated/archetypes/portraits/knight-portrait-v3.png";
-import ranger from "../../assets/generated/archetypes/portraits/ranger-portrait-v4.png";
-import artificer from "../../assets/generated/archetypes/portraits/artificer-portrait-v3.png";
-import berserker from "../../assets/generated/archetypes/portraits/berserker-portrait-v3.png";
-import sorcerer from "../../assets/generated/archetypes/portraits/sorcerer-portrait-v3.png";
-import rogue from "../../assets/generated/archetypes/portraits/rogue-portrait-v3.png";
-import warlock from "../../assets/generated/archetypes/portraits/warlock-portrait-v3.png";
-import wizard from "../../assets/generated/archetypes/portraits/wizard-portrait-v3.png";
-import paladin from "../../assets/generated/archetypes/portraits/paladin-portrait-v3.png";
-import blademaster from "../../assets/generated/archetypes/portraits/blademaster-portrait-v3.png";
-import vampire from "../../assets/generated/archetypes/portraits/vampire-portrait-v3.png";
-import automaton from "../../assets/generated/archetypes/portraits/automaton-portrait-v3.png";
+import knight from "../../assets/generated/archetypes/portraits/knight-portrait-v5.png";
+import ranger from "../../assets/generated/archetypes/portraits/ranger-portrait-v6.png";
+import artificer from "../../assets/generated/archetypes/portraits/artificer-portrait-v5.png";
+import berserker from "../../assets/generated/archetypes/portraits/berserker-portrait-v5.png";
+import sorcerer from "../../assets/generated/archetypes/portraits/sorcerer-portrait-v5.png";
+import rogue from "../../assets/generated/archetypes/portraits/rogue-portrait-v5.png";
+import warlock from "../../assets/generated/archetypes/portraits/warlock-portrait-v5.png";
+import wizard from "../../assets/generated/archetypes/portraits/wizard-portrait-v5.png";
+import paladin from "../../assets/generated/archetypes/portraits/paladin-portrait-v5.png";
+import blademaster from "../../assets/generated/archetypes/portraits/blademaster-portrait-v5.png";
+import vampire from "../../assets/generated/archetypes/portraits/vampire-portrait-v5.png";
+import automaton from "../../assets/generated/archetypes/portraits/automaton-portrait-v5.png";
 
 export const TOW_COMBAT_CUTOUTS = Object.freeze({
   ironbound,

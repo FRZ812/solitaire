@@ -53,11 +53,20 @@ or scenery must not be copied literally.
 
 - One generalized, unnamed archetype; no scenery, companion, lettering, frame,
   particles, floor, or cast shadow.
-- True transparent background. Never paint a checkerboard or flat white matte.
+- Raw ImageGen source uses one perfectly uniform opaque high-chroma matte selected
+  opposite the character palette. Never ask ImageGen for alpha, a checkerboard, or
+  a white/off-white background. The normalized runtime asset is true RGBA.
 - Portrait orientation, head-to-mid-thigh three-quarter stance, face unobscured.
 - Final normalized canvas: 960 x 1280 RGBA.
-- Subject alpha bounds: 82-88% canvas width and 89-94% canvas height.
-- Safe margins: 5-7% clear top space, 6-9% each side, 1-3% bottom. The complete
+- Preserve the accepted source silhouette's aspect ratio. Normalize height first to
+  about 92% of the canvas and cap width at 94%; never force width and height to fixed
+  values independently. A narrow Sorcerer and a broad armored Artificer must not be
+  stretched into the same box.
+- Subject alpha bounds after the clean lower-HUD fade: 68-94% canvas width and
+  87-94% canvas height. Width varies naturally with the authored silhouette.
+- Safe margins: 5-7% clear top space, approximately 3-16% each side according to
+  the preserved aspect ratio, and 5-7% bottom after the HUD fade. Raw sources must
+  contain uninterrupted matte above and along both sides. The complete
   hair/headwear silhouette and every raised prop must sit below that top margin; nothing
   may touch or cross the top edge.
 - Face height: 17-20% of canvas; eye line: 18-23% from the top.
@@ -68,22 +77,28 @@ or scenery must not be copied literally.
   imply continuation. Heads, faces, hands, joints, grips, guards, pommels, and
   attachment points must remain visible and resolved. No object may intersect
   another impossibly or terminate accidentally inside the crop. Keep every body part
-  inside the canvas. Where a soft cloak or garment intentionally exits a side or the
-  bottom, feather its pigment through sparse paper-white watercolor dry-brush marks into
-  alpha so the editorial continuation reads as painted and deliberate. Do not apply this
-  whitewash as a global cutout halo or use it to hide rigid construction errors.
+  inside the canvas. No hair, cloth, anatomy, weapon, or prop may exit a top or side
+  edge; only lower clothing or a long downward prop may continue through the horizontal
+  bottom crop. Character pigment must meet the chroma matte directly with no generated
+  paper-white underpainting, pale erosion, dry-brush cutoff, rim light, glow, or halo.
+  The extraction step supplies alpha and decontaminates both pale and keyed fringe.
 - An edit preserves the accepted face size and subject scale unless the request
   explicitly changes framing. Never zoom out merely to contain a new prop.
 - Validate at full size and at the 120 x 145 combat-cell size on black, warm
   brown, and saturated violet backgrounds.
+- Match the legacy cutout edge: partial-alpha pixels should be a narrow antialias
+  band rather than a broad watercolor haze. Semi-transparent pixels must remain at
+  or below 3% of visible pixels, with no more than 64 pale low-alpha fringe pixels
+  and no more than 64 residual keyed-hue fringe pixels.
 
 ## Mandatory ImageGen usage
 
 Every initial portrait call must include all five files as style references.
 The prompt must name their role as `style and medium references only`,
 explicitly forbid literal character/costume/background copying, and repeat the
-runtime portrait contract above. Generate one archetype per call; never use a
-grid. For an edit, ImageGen's five-image input cap means the edit target plus
+runtime portrait contract above. It must request an opaque uniform chroma matte,
+not transparency, and must reserve visible matte above and down both sides. Generate
+one archetype per call; never use a grid. For an edit, ImageGen's five-image input cap means the edit target plus
 the four references most relevant to that correction; the initial target must
 already have been generated from the complete five-reference set.
 
@@ -104,9 +119,11 @@ Reject an output when any of these are present:
 - generic same-face beauty, expressionless stare, or incorrect age read;
 - centered character-select posture, squared shoulders, camera-facing smile, or
   a gesture performed for the viewer rather than arising from the character;
-- crushed black clothing, harsh white rim light, white halo, or matte fringe;
+- crushed black clothing, harsh white rim light, paper-white crop paint, pale eroded
+  hems, white dry-brush cutoffs, white halos, or matte fringe;
 - full-body framing, tiny face, clipped head/hand/joint, or an unrequested zoom;
 - copied reference costume, pose, scenery, wings, ears, staff, or magic object;
 - accidentally truncated, floating, fused, unsupported, or physically impossible
-  equipment; deliberate editorial continuation of a long scabbard is permitted;
-- text, watermark, border, checkerboard, opaque background, or fake alpha.
+  equipment; deliberate continuation of a long scabbard through the bottom is permitted;
+- text, watermark, border, checkerboard, white/off-white background, nonuniform
+  matte, missing top/side matte clearance, or matte-colored spill on the subject.
