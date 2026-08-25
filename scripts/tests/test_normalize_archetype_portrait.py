@@ -29,7 +29,60 @@ def synthetic_checker(period: int = 48, size: tuple[int, int] = (768, 768)) -> I
     return Image.fromarray(rgb, "RGB")
 
 
+def synthetic_chroma(
+    matte: tuple[int, int, int] = (0, 255, 0),
+    size: tuple[int, int] = (768, 1024),
+) -> Image.Image:
+    """Return an opaque keyed portrait source with a softly antialiased edge."""
+
+    source = Image.new("RGB", size, matte)
+    subject = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(subject)
+    draw.rounded_rectangle(
+        (104, 82, 664, 1008),
+        radius=86,
+        fill=(45, 52, 66, 255),
+    )
+    subject = subject.filter(portrait.ImageFilter.GaussianBlur(0.6))
+    source.paste(subject.convert("RGB"), mask=subject.getchannel("A"))
+    return source
+
+
 class PortraitNormalizationTests(unittest.TestCase):
+    def test_recovers_subject_alpha_from_green_chroma_matte(self) -> None:
+        recovered, matte = portrait.recover_chroma_matte(synthetic_chroma())
+        alpha = np.asarray(recovered.getchannel("A"), dtype=np.uint8)
+        rgba = np.asarray(recovered, dtype=np.uint8)
+
+        self.assertEqual(matte, [0, 255, 0])
+        self.assertEqual(int(alpha[0, 0]), 0)
+        self.assertGreaterEqual(int(alpha[512, 384]), 250)
+        self.assertTrue(np.all(rgba[alpha == 0, :3] == 0))
+        normalized = portrait.finish_lower_crop(portrait.normalize_geometry(recovered))
+        report = portrait.metrics(normalized, checker_period=None, matte_color=matte)
+        self.assertLessEqual(
+            report["chromaFringePixels"],
+            portrait.MAX_CHROMA_FRINGE_PIXELS,
+        )
+
+    def test_recovers_subject_alpha_from_magenta_chroma_matte(self) -> None:
+        recovered, matte = portrait.recover_chroma_matte(
+            synthetic_chroma(matte=(255, 0, 255))
+        )
+        alpha = np.asarray(recovered.getchannel("A"), dtype=np.uint8)
+
+        self.assertEqual(matte, [255, 0, 255])
+        self.assertEqual(int(alpha[0, 0]), 0)
+        self.assertGreaterEqual(int(alpha[512, 384]), 250)
+
+    def test_rejects_chroma_source_without_side_clearance(self) -> None:
+        source = Image.new("RGBA", (512, 768), (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((0, 40, 500, 767), fill=(42, 48, 60, 255))
+        ratios = portrait.source_clearance_ratios(source)
+
+        with self.assertRaisesRegex(ValueError, "left matte clearance"):
+            portrait.validate_source_clearance(ratios)
+
     def test_infers_full_checker_period(self) -> None:
         source = np.asarray(synthetic_checker().convert("RGB"), dtype=np.float32)
 
@@ -73,6 +126,26 @@ class PortraitNormalizationTests(unittest.TestCase):
             report["edgeAlphaPixels"],
             {"top": 0, "right": 0, "bottom": 0, "left": 0},
         )
+
+    def test_narrow_portrait_scales_uniformly_to_readable_width(self) -> None:
+        source = Image.new("RGBA", (500, 800), (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((55, 50, 443, 749), fill=(45, 52, 66, 255))
+        source_bbox = portrait.alpha_bbox(source)
+        source_ratio = (source_bbox[2] - source_bbox[0]) / (
+            source_bbox[3] - source_bbox[1]
+        )
+
+        normalized = portrait.normalize_geometry(source)
+        normalized_bbox = portrait.alpha_bbox(normalized)
+        normalized_ratio = (normalized_bbox[2] - normalized_bbox[0]) / (
+            normalized_bbox[3] - normalized_bbox[1]
+        )
+
+        self.assertGreaterEqual(
+            (normalized_bbox[2] - normalized_bbox[0]) / portrait.CANVAS_SIZE[0],
+            0.68,
+        )
+        self.assertAlmostEqual(normalized_ratio, source_ratio, delta=0.01)
 
     def test_premultiplied_resize_zeros_hidden_rgb(self) -> None:
         source = Image.new("RGBA", (8, 8), (250, 250, 250, 0))
@@ -120,6 +193,15 @@ class PortraitNormalizationTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "pale low-alpha crop fringe exceeds contract"):
+            portrait.validate_contract(report)
+
+    def test_rejects_key_color_fringe(self) -> None:
+        source = Image.new("RGBA", portrait.CANVAS_SIZE, (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((77, 77, 882, 1254), fill=(37, 49, 63, 255))
+        report = portrait.metrics(source, checker_period=None)
+        report["chromaFringePixels"] = portrait.MAX_CHROMA_FRINGE_PIXELS + 1
+
+        with self.assertRaisesRegex(ValueError, "key-color fringe exceeds contract"):
             portrait.validate_contract(report)
 
     def test_rejects_broad_semitransparent_fringe(self) -> None:

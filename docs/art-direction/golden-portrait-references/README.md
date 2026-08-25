@@ -58,7 +58,9 @@ new production rule.
 
 - One generalized, unnamed archetype; no scenery, companion, lettering, frame,
   particles, floor, or cast shadow.
-- True transparent background. Never paint a checkerboard or flat white matte.
+- Raw ImageGen source uses one perfectly uniform opaque high-chroma matte selected
+  opposite the character palette. Never ask ImageGen for alpha, a checkerboard, or
+  a white/off-white background. The normalized runtime asset is true RGBA.
 - Portrait orientation, head-to-mid-thigh three-quarter stance, face unobscured.
 - Final normalized canvas: 960 x 1280 RGBA.
 - Preserve the accepted source silhouette's aspect ratio. Normalize height first to
@@ -67,45 +69,55 @@ new production rule.
   stretched into the same box.
 - Subject alpha bounds after the clean lower-HUD fade: 68-94% canvas width and
   87-94% canvas height. Width varies naturally with the authored silhouette.
-- Safe margins: 5-7% clear top space, approximately 3-16% each side according to
-  the preserved aspect ratio, and 5-7% bottom after the HUD fade. The complete
+- Safe margins: 5-7% clear top space and visible clearance on each side according to
+  the preserved aspect ratio, and 5-7% bottom after the HUD fade. Raw sources must
+  contain uninterrupted matte above and along both sides. The complete
   hair/headwear silhouette and every raised prop must sit below that top margin; nothing
   may touch or cross the top edge.
 - Face height: 17-20% of canvas; eye line: 18-23% from the top.
 - Props never determine subject scale. Keep the authored close portrait crop
   instead of shrinking the character to display every hem or weapon tip. A long
-  scabbard, cloak, or lower garment may deliberately continue through the lower
-  or outer frame when its direction, width, construction, and perspective clearly
+  scabbard or lower garment may deliberately continue through the bottom
+  frame when its direction, width, construction, and perspective clearly
   imply continuation. Heads, faces, hands, joints, grips, guards, pommels, and
   attachment points must remain visible and resolved. No object may intersect
   another impossibly or terminate accidentally inside the crop. Keep every body part
-  inside the canvas. Where a soft cloak or garment intentionally exits a side or the
-  bottom, dissolve the garment's own local pigment into alpha so the editorial
-  continuation reads as painted and deliberate. Never introduce paper-white
-  underpainting, pale erosion, or a white dry-brush cutoff; semi-transparent edge RGB
-  must come from the adjacent cloth or material. Never use edge fading to hide rigid
-  construction errors.
+  inside the canvas. No hair, cloth, anatomy, weapon, or prop may exit a top or side
+  edge; only lower clothing or a long downward prop may continue through the horizontal
+  bottom crop. Character pigment must meet the chroma matte directly with no generated
+  paper-white underpainting, pale erosion, dry-brush cutoff, rim light, glow, or halo.
+  The extraction step supplies alpha and decontaminates both pale and keyed fringe.
 - An edit preserves the accepted face size and subject scale unless the request
   explicitly changes framing. Never zoom out merely to contain a new prop.
 - Validate at full size and at the 120 x 145 combat-cell size on black, warm
   brown, and saturated violet backgrounds.
 - Match the legacy cutout edge: partial-alpha pixels should be a narrow antialias
   band rather than a broad watercolor haze. Semi-transparent pixels must remain at
-  or below 3% of visible pixels, with no more than 64 pale low-alpha fringe pixels.
+  or below 3% of visible pixels, with no more than 64 pale low-alpha fringe pixels
+  and no more than 64 residual keyed-hue fringe pixels.
 
 ## Mandatory ImageGen usage
 
 Every initial portrait call must include all five files as style references.
 The prompt must name their role as `style and medium references only`,
 explicitly forbid literal character/costume/background copying, and repeat the
-runtime portrait contract above. Generate one archetype per call; never use a
-grid. For an edit, ImageGen's five-image input cap means the edit target plus
+runtime portrait contract above. It must request an opaque uniform chroma matte,
+not transparency, and must reserve visible matte above and down both sides. Generate
+one archetype per call; never use a grid. For an edit, ImageGen's five-image input cap means the edit target plus
 the four references most relevant to that correction; the initial target must
 already have been generated from the complete five-reference set.
 
 Use `portrait-prompt-template.md` as the shared base and change only the
 archetype-specific identity block. Record the final prompt and output path for
 each accepted portrait.
+
+## Production manifests
+
+- `2026-08-25-archetype-portrait-chroma-manifest.json` records the accepted
+  opaque-matte generation pass, exact revised prompts, source/final hashes, and
+  bottom-only crop contract.
+- `2026-08-19-archetype-portrait-manifest.json` is retained as historical
+  provenance for the superseded transparent/checker-backed pass.
 
 ## Rejection conditions
 
@@ -125,5 +137,6 @@ Reject an output when any of these are present:
 - full-body framing, tiny face, clipped head/hand/joint, or an unrequested zoom;
 - copied reference costume, pose, scenery, wings, ears, staff, or magic object;
 - accidentally truncated, floating, fused, unsupported, or physically impossible
-  equipment; deliberate editorial continuation of a long scabbard is permitted;
-- text, watermark, border, checkerboard, opaque background, or fake alpha.
+  equipment; deliberate continuation of a long scabbard through the bottom is permitted;
+- text, watermark, border, checkerboard, white/off-white background, nonuniform
+  matte, missing top/side matte clearance, or matte-colored spill on the subject.

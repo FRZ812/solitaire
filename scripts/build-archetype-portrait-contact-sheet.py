@@ -13,7 +13,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--background",
+        default="#1c191f",
+        help="contact-sheet background as #RRGGBB",
+    )
     args = parser.parse_args()
+
+    background = args.background.removeprefix("#")
+    if len(background) != 6:
+        raise ValueError("--background must be #RRGGBB")
+    background_rgb = tuple(int(background[index : index + 2], 16) for index in (0, 2, 4))
 
     files = sorted(
         source
@@ -23,7 +33,11 @@ def main() -> None:
     cell = (240, 320)
     columns = 4
     rows = max(1, (len(files) + columns - 1) // columns)
-    sheet = Image.new("RGBA", (cell[0] * columns, cell[1] * rows), (28, 25, 31, 255))
+    sheet = Image.new(
+        "RGBA",
+        (cell[0] * columns, cell[1] * rows),
+        (*background_rgb, 255),
+    )
     draw = ImageDraw.Draw(sheet)
     for index, source in enumerate(files):
         x = (index % columns) * cell[0]

@@ -57,20 +57,20 @@ describe("Tower combat art", () => {
     expect(resolvePlayerCombatCutout("tow:ranger")).toBe(TOW_COMBAT_CUTOUTS.ranger);
   });
 
-  it("ships the normalized painterly v2 portrait cohort in every modular slot", () => {
+  it("ships the current normalized painterly portrait cohort in every modular slot", () => {
     const expectedFiles = {
-      knight: "knight-portrait-v3.png",
-      ranger: "ranger-portrait-v4.png",
-      artificer: "artificer-portrait-v3.png",
-      berserker: "berserker-portrait-v3.png",
-      sorcerer: "sorcerer-portrait-v3.png",
-      rogue: "rogue-portrait-v3.png",
-      warlock: "warlock-portrait-v3.png",
-      wizard: "wizard-portrait-v3.png",
-      paladin: "paladin-portrait-v3.png",
-      blademaster: "blademaster-portrait-v3.png",
-      vampire: "vampire-portrait-v3.png",
-      automaton: "automaton-portrait-v3.png",
+      knight: "knight-portrait-v4.png",
+      ranger: "ranger-portrait-v5.png",
+      artificer: "artificer-portrait-v4.png",
+      berserker: "berserker-portrait-v4.png",
+      sorcerer: "sorcerer-portrait-v4.png",
+      rogue: "rogue-portrait-v4.png",
+      warlock: "warlock-portrait-v4.png",
+      wizard: "wizard-portrait-v4.png",
+      paladin: "paladin-portrait-v4.png",
+      blademaster: "blademaster-portrait-v4.png",
+      vampire: "vampire-portrait-v4.png",
+      automaton: "automaton-portrait-v4.png",
     };
 
     for (const [id, fileName] of Object.entries(expectedFiles)) {

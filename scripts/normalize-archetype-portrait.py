@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Recover and normalize ImageGen archetype cutouts for combat-cell use.
 
-The built-in image generator occasionally bakes its transparency checker into
-an opaque PNG.  This tool models that repeating light checker from the source
-corner, recovers a decontaminated alpha edge, and places the subject on the
-canonical 960x1280 portrait canvas.  It also validates the framing contract so
-an out-of-scale portrait fails before it can be wired into the game.
+The preferred source is now an opaque portrait on a uniform high-chroma matte.
+That keeps paper-white paint out of the generated silhouette and lets this tool
+derive alpha deterministically.  Legacy baked-checker sources remain supported.
+Both paths decontaminate the antialias edge, preserve the authored aspect ratio,
+and validate framing before a portrait can be wired into the game.
 """
 
 from __future__ import annotations
@@ -22,14 +22,22 @@ from PIL import Image, ImageFilter
 
 CANVAS_SIZE = (960, 1280)
 TARGET_HEIGHT_RATIO = 0.92
+MAX_TARGET_HEIGHT_RATIO = 0.97
+MIN_TARGET_WIDTH_RATIO = 0.72
 MAX_TARGET_WIDTH_RATIO = 0.94
 TARGET_TOP = 0.06
 ALPHA_BBOX_THRESHOLD = 8
 CHECKER_RESIDUAL_THRESHOLD = 18
+CHROMA_BACKGROUND_DISTANCE = 10
+CHROMA_FOREGROUND_DISTANCE = 42
+CHROMA_FOREGROUND_EXCESS = 52
+MIN_SOURCE_TOP_CLEARANCE_RATIO = 0.01
+MIN_SOURCE_SIDE_CLEARANCE_RATIO = 0.01
 MAX_PALE_LOW_ALPHA_FRINGE_PIXELS = 64
+MAX_CHROMA_FRINGE_PIXELS = 64
 MAX_SEMITRANSPARENT_VISIBLE_RATIO = 0.03
-ALPHA_CRISP_LOW = 104
-ALPHA_CRISP_HIGH = 216
+ALPHA_CRISP_LOW = 112
+ALPHA_CRISP_HIGH = 208
 PAPER_WHITE_CLEANUP_PASSES = 4
 
 
@@ -83,6 +91,118 @@ def repeated_checker(template: np.ndarray, shape: tuple[int, int]) -> np.ndarray
     period = template.shape[0]
     yy, xx = np.indices((height, width))
     return template[yy % period, xx % period]
+
+
+def infer_chroma_matte(rgb: np.ndarray) -> np.ndarray:
+    """Infer a uniform matte from the outer border and reject noisy backdrops."""
+
+    height, width, _ = rgb.shape
+    band = max(8, round(min(height, width) * 0.015))
+    border = np.concatenate(
+        (
+            rgb[:band].reshape(-1, 3),
+            # The horizontal bottom edge is the one intentional portrait crop,
+            # so lower clothing may occupy it.  Infer only from the mandatory
+            # top and full-height side safety bands.
+            rgb[band:, :band].reshape(-1, 3),
+            rgb[band:, -band:].reshape(-1, 3),
+        ),
+        axis=0,
+    )
+    matte = np.median(border, axis=0)
+    residual = np.sqrt(np.mean((border - matte) ** 2, axis=1))
+    stable_ratio = float(np.mean(residual <= CHROMA_BACKGROUND_DISTANCE))
+    chroma = float(matte.max() - matte.min())
+    if chroma < 170:
+        raise ValueError(f"source border is not a high-chroma matte (chroma {chroma:.1f})")
+    if stable_ratio < 0.92:
+        raise ValueError(
+            "source border is not uniformly keyed "
+            f"({stable_ratio:.1%} within {CHROMA_BACKGROUND_DISTANCE} RGB distance)"
+        )
+    return matte.astype(np.float32)
+
+
+def _matte_excess(rgb: np.ndarray, matte: np.ndarray) -> tuple[np.ndarray, float]:
+    """Return the keyed-channel excess for green, magenta, or another RGB matte."""
+
+    dominant = int(np.argmax(matte))
+    weakest = int(np.argmin(matte))
+    if dominant == 1 and matte[1] - max(matte[0], matte[2]) >= 150:
+        return rgb[..., 1] - np.maximum(rgb[..., 0], rgb[..., 2]), float(
+            matte[1] - max(matte[0], matte[2])
+        )
+    if weakest == 1 and min(matte[0], matte[2]) - matte[1] >= 150:
+        return np.minimum(rgb[..., 0], rgb[..., 2]) - rgb[..., 1], float(
+            min(matte[0], matte[2]) - matte[1]
+        )
+    other_channels = [index for index in range(3) if index != dominant]
+    return rgb[..., dominant] - np.maximum(
+        rgb[..., other_channels[0]], rgb[..., other_channels[1]]
+    ), float(
+        matte[dominant] - max(matte[other_channels[0]], matte[other_channels[1]])
+    )
+
+
+def recover_chroma_matte(source: Image.Image) -> tuple[Image.Image, list[int]]:
+    """Recover alpha from a uniform saturated matte without retaining key spill."""
+
+    rgb = np.asarray(source.convert("RGB"), dtype=np.float32)
+    matte = infer_chroma_matte(rgb)
+    distance = np.sqrt(np.mean((rgb - matte) ** 2, axis=2))
+    excess, matte_excess = _matte_excess(rgb, matte)
+    if matte_excess < 150:
+        raise ValueError("chroma matte does not have enough keyed-channel separation")
+
+    distance_alpha = np.clip(
+        (distance - CHROMA_BACKGROUND_DISTANCE)
+        / (CHROMA_FOREGROUND_DISTANCE - CHROMA_BACKGROUND_DISTANCE),
+        0,
+        1,
+    )
+    excess_alpha = np.clip(
+        (matte_excess - excess) / (matte_excess - CHROMA_FOREGROUND_EXCESS),
+        0,
+        1,
+    )
+    alpha = np.minimum(distance_alpha, excess_alpha)
+
+    # Limit the recovered edge to the central authored cutout.  The generous
+    # dilation retains thin hair, bowstrings, and antialiasing while excluding
+    # isolated matte compression speckles.
+    confident_subject = central_subject_component(
+        (distance >= CHROMA_FOREGROUND_DISTANCE)
+        & (excess <= CHROMA_FOREGROUND_EXCESS)
+    )
+    support = np.asarray(
+        Image.fromarray(np.uint8(confident_subject) * 255, "L").filter(
+            ImageFilter.MaxFilter(11)
+        ),
+        dtype=np.uint8,
+    ) > 0
+    alpha[~support] = 0
+    alpha = np.asarray(
+        Image.fromarray(np.uint8(np.clip(alpha * 255, 0, 255)), "L").filter(
+            ImageFilter.GaussianBlur(0.35)
+        ),
+        dtype=np.float32,
+    ) / 255
+    alpha[alpha < (3 / 255)] = 0
+
+    alpha_3 = alpha[..., None]
+    recovered = np.zeros_like(rgb)
+    visible = alpha > 0
+    recovered[visible] = np.clip(
+        (rgb[visible] - (1 - alpha_3[visible]) * matte) / alpha_3[visible],
+        0,
+        255,
+    )
+    rgba = np.dstack((np.uint8(recovered), np.uint8(np.clip(alpha * 255, 0, 255))))
+    result = decontaminate_chroma_fringe(
+        Image.fromarray(rgba, "RGBA"),
+        matte,
+    )
+    return result, [int(round(value)) for value in matte]
 
 
 def exterior_background(raw_foreground: np.ndarray) -> np.ndarray:
@@ -221,7 +341,10 @@ def recover_light_checker(source: Image.Image) -> tuple[Image.Image, int]:
     return decontaminate_fringe(Image.fromarray(rgba, "RGBA")), period
 
 
-def decontaminate_fringe(image: Image.Image) -> Image.Image:
+def decontaminate_fringe(
+    image: Image.Image,
+    extra_matte_mask: np.ndarray | None = None,
+) -> Image.Image:
     """Pull subject colors through semitransparent edges without changing alpha."""
 
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
@@ -236,6 +359,10 @@ def decontaminate_fringe(image: Image.Image) -> Image.Image:
         & (rgba[..., :3].min(axis=2) >= 120)
         & (chroma <= 55)
     )
+    if extra_matte_mask is not None:
+        if extra_matte_mask.shape != alpha.shape:
+            raise ValueError("extra matte mask must match the image dimensions")
+        pale_edge_matte |= extra_matte_mask
     known = (alpha >= 192) & ~pale_edge_matte
     pending = ((alpha > 0) & ~known) | pale_edge_matte
 
@@ -265,6 +392,27 @@ def decontaminate_fringe(image: Image.Image) -> Image.Image:
     rgba[..., :3] = np.uint8(np.clip(colors, 0, 255))
     rgba[alpha == 0, :3] = 0
     return Image.fromarray(rgba, "RGBA")
+
+
+def decontaminate_chroma_fringe(
+    image: Image.Image,
+    matte: np.ndarray,
+    threshold: float = 20,
+    radius: int = 31,
+) -> Image.Image:
+    """Replace residual keyed hues near transparency with local material color."""
+
+    rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
+    alpha = rgba[..., 3]
+    key_excess, _ = _matte_excess(rgba[..., :3].astype(np.float32), matte)
+    near_transparent = np.asarray(
+        Image.fromarray((alpha == 0).astype(np.uint8) * 255, "L").filter(
+            ImageFilter.MaxFilter(radius)
+        ),
+        dtype=np.uint8,
+    ) > 0
+    chroma_spill = (alpha > 0) & near_transparent & (key_excess > threshold)
+    return decontaminate_fringe(image, extra_matte_mask=chroma_spill)
 
 
 def _crop_zone(alpha: np.ndarray) -> np.ndarray:
@@ -500,6 +648,34 @@ def alpha_bbox(image: Image.Image, threshold: int = ALPHA_BBOX_THRESHOLD) -> tup
     return bbox
 
 
+def source_clearance_ratios(image: Image.Image) -> dict[str, float]:
+    """Measure the authored matte border before canonical geometry scaling."""
+
+    left, top, right, _bottom = alpha_bbox(image)
+    width, height = image.size
+    return {
+        "top": round(top / height, 4),
+        "left": round(left / width, 4),
+        "right": round((width - right) / width, 4),
+    }
+
+
+def validate_source_clearance(ratios: dict[str, float]) -> None:
+    """Reject sources clipped at the top or either side before padding can hide it."""
+
+    if ratios["top"] < MIN_SOURCE_TOP_CLEARANCE_RATIO:
+        raise ValueError(
+            "source subject lacks top matte clearance: "
+            f"{ratios['top']} < {MIN_SOURCE_TOP_CLEARANCE_RATIO}"
+        )
+    for side in ("left", "right"):
+        if ratios[side] < MIN_SOURCE_SIDE_CLEARANCE_RATIO:
+            raise ValueError(
+                f"source subject lacks {side} matte clearance: "
+                f"{ratios[side]} < {MIN_SOURCE_SIDE_CLEARANCE_RATIO}"
+            )
+
+
 def resize_premultiplied(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     rgba = np.asarray(image.convert("RGBA"), dtype=np.float32)
     alpha = rgba[..., 3:4] / 255
@@ -531,6 +707,19 @@ def normalize_geometry(image: Image.Image) -> Image.Image:
         scale = maximum_width / source_width
         target_width = maximum_width
         target_height = round(source_height * scale)
+    minimum_width = round(CANVAS_SIZE[0] * MIN_TARGET_WIDTH_RATIO)
+    maximum_height = round(CANVAS_SIZE[1] * MAX_TARGET_HEIGHT_RATIO)
+    if target_width < minimum_width:
+        minimum_scale = minimum_width / source_width
+        minimum_height = round(source_height * minimum_scale)
+        if minimum_height <= maximum_height:
+            # Scale uniformly: narrow authored silhouettes become readable
+            # without the horizontal widening that distorted earlier assets.
+            # The extra height may cross only the authorized bottom crop; the
+            # fixed top placement and width cap preserve top/side clearance.
+            scale = minimum_scale
+            target_width = minimum_width
+            target_height = minimum_height
     subject = resize_premultiplied(subject, (target_width, target_height))
     canvas = Image.new("RGBA", CANVAS_SIZE, (0, 0, 0, 0))
     left = (CANVAS_SIZE[0] - target_width) // 2
@@ -541,7 +730,12 @@ def normalize_geometry(image: Image.Image) -> Image.Image:
     return Image.fromarray(rgba, "RGBA")
 
 
-def metrics(image: Image.Image, checker_period: int | None) -> dict[str, object]:
+def metrics(
+    image: Image.Image,
+    checker_period: int | None,
+    matte_color: list[int] | None = None,
+    source_clearance: dict[str, float] | None = None,
+) -> dict[str, object]:
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8)
     alpha = rgba[..., 3]
     left, top, right, bottom = alpha_bbox(image)
@@ -552,6 +746,19 @@ def metrics(image: Image.Image, checker_period: int | None) -> dict[str, object]
         & (rgba[..., :3].min(axis=2) >= 210)
         & ((rgba[..., :3].max(axis=2) - rgba[..., :3].min(axis=2)) <= 20)
     )
+    chroma_fringe_pixels = 0
+    if matte_color is not None:
+        matte = np.asarray(matte_color, dtype=np.float32)
+        key_excess, _ = _matte_excess(rgba[..., :3].astype(np.float32), matte)
+        near_transparent = np.asarray(
+            Image.fromarray((alpha == 0).astype(np.uint8) * 255, "L").filter(
+                ImageFilter.MaxFilter(21)
+            ),
+            dtype=np.uint8,
+        ) > 0
+        chroma_fringe_pixels = int(
+            np.count_nonzero((alpha > 0) & near_transparent & (key_excess > 52))
+        )
     whitewash_score, _ = _effective_crop_whitewash_score(rgba)
     paper_white_crop = (alpha > 0) & (whitewash_score >= 0.36)
     visible_pixels = int(np.count_nonzero(alpha > 0))
@@ -559,6 +766,8 @@ def metrics(image: Image.Image, checker_period: int | None) -> dict[str, object]
     return {
         "size": [width, height],
         "checkerPeriod": checker_period,
+        "matteColor": matte_color,
+        "sourceClearanceRatios": source_clearance,
         "alphaExtrema": [int(alpha.min()), int(alpha.max())],
         "transparentPixels": int(np.sum(alpha == 0)),
         "semiTransparentPixels": semitransparent_pixels,
@@ -589,6 +798,7 @@ def metrics(image: Image.Image, checker_period: int | None) -> dict[str, object]
             int(alpha[-1, -1]),
         ],
         "paleLowAlphaFringePixels": int(np.count_nonzero(pale_fringe)),
+        "chromaFringePixels": chroma_fringe_pixels,
         "paperWhiteCropPixels": int(np.count_nonzero(paper_white_crop)),
     }
 
@@ -611,6 +821,11 @@ def validate_contract(report: dict[str, object]) -> None:
             f"{report['paleLowAlphaFringePixels']} > "
             f"{MAX_PALE_LOW_ALPHA_FRINGE_PIXELS}"
         )
+    if report["chromaFringePixels"] > MAX_CHROMA_FRINGE_PIXELS:
+        raise ValueError(
+            "key-color fringe exceeds contract: "
+            f"{report['chromaFringePixels']} > {MAX_CHROMA_FRINGE_PIXELS}"
+        )
     if report["semiTransparentVisibleRatio"] > MAX_SEMITRANSPARENT_VISIBLE_RATIO:
         raise ValueError(
             "alpha fringe is broader than the legacy cutout contract: "
@@ -623,10 +838,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument(
+    recovery = parser.add_mutually_exclusive_group()
+    recovery.add_argument(
         "--recover-light-checker",
         action="store_true",
         help="recover alpha from an opaque light checker before normalization",
+    )
+    recovery.add_argument(
+        "--recover-chroma-matte",
+        action="store_true",
+        help="recover alpha from a uniform high-chroma matte before normalization",
     )
     return parser.parse_args()
 
@@ -635,17 +856,36 @@ def main() -> None:
     args = parse_args()
     source = Image.open(args.input).convert("RGBA")
     checker_period: int | None = None
+    matte_color: list[int] | None = None
+    source_clearance: dict[str, float] | None = None
     if args.recover_light_checker:
         source, checker_period = recover_light_checker(source)
+    elif args.recover_chroma_matte:
+        source, matte_color = recover_chroma_matte(source)
+        source_clearance = source_clearance_ratios(source)
+        validate_source_clearance(source_clearance)
     elif source.getchannel("A").getextrema() == (255, 255):
-        raise ValueError("opaque source requires --recover-light-checker")
+        raise ValueError(
+            "opaque source requires --recover-chroma-matte or --recover-light-checker"
+        )
 
     normalized = normalize_geometry(source)
-    for _ in range(PAPER_WHITE_CLEANUP_PASSES):
-        normalized = remove_paper_white_cutoff(normalized)
-    normalized = normalize_geometry(normalized)
+    if not args.recover_chroma_matte:
+        for _ in range(PAPER_WHITE_CLEANUP_PASSES):
+            normalized = remove_paper_white_cutoff(normalized)
+        normalized = normalize_geometry(normalized)
     normalized = finish_lower_crop(normalized)
-    report = metrics(normalized, checker_period)
+    if matte_color is not None:
+        normalized = decontaminate_chroma_fringe(
+            normalized,
+            np.asarray(matte_color, dtype=np.float32),
+        )
+    report = metrics(
+        normalized,
+        checker_period,
+        matte_color=matte_color,
+        source_clearance=source_clearance,
+    )
     validate_contract(report)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     normalized.save(args.output, "PNG", optimize=True)

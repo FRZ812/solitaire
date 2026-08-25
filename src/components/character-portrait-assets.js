@@ -25,18 +25,18 @@ import undyingChampion from "../assets/generated/character-portraits/undying-cha
 import demonWarlock from "../assets/generated/character-portraits/demon-warlock-grounded-v3.webp";
 import dragonAscendant from "../assets/generated/character-portraits/dragon-ascendant-grounded-v3.webp";
 import enchanterTyrant from "../assets/generated/character-portraits/enchanter-tyrant-grounded-v3.webp";
-import knight from "../assets/generated/archetypes/portraits/knight-portrait-v3.png";
-import rangerArchetype from "../assets/generated/archetypes/portraits/ranger-portrait-v4.png";
-import artificer from "../assets/generated/archetypes/portraits/artificer-portrait-v3.png";
-import berserker from "../assets/generated/archetypes/portraits/berserker-portrait-v3.png";
-import sorcerer from "../assets/generated/archetypes/portraits/sorcerer-portrait-v3.png";
-import rogue from "../assets/generated/archetypes/portraits/rogue-portrait-v3.png";
-import warlock from "../assets/generated/archetypes/portraits/warlock-portrait-v3.png";
-import wizard from "../assets/generated/archetypes/portraits/wizard-portrait-v3.png";
-import paladin from "../assets/generated/archetypes/portraits/paladin-portrait-v3.png";
-import blademaster from "../assets/generated/archetypes/portraits/blademaster-portrait-v3.png";
-import vampire from "../assets/generated/archetypes/portraits/vampire-portrait-v3.png";
-import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v3.png";
+import knight from "../assets/generated/archetypes/portraits/knight-portrait-v4.png";
+import rangerArchetype from "../assets/generated/archetypes/portraits/ranger-portrait-v5.png";
+import artificer from "../assets/generated/archetypes/portraits/artificer-portrait-v4.png";
+import berserker from "../assets/generated/archetypes/portraits/berserker-portrait-v4.png";
+import sorcerer from "../assets/generated/archetypes/portraits/sorcerer-portrait-v4.png";
+import rogue from "../assets/generated/archetypes/portraits/rogue-portrait-v4.png";
+import warlock from "../assets/generated/archetypes/portraits/warlock-portrait-v4.png";
+import wizard from "../assets/generated/archetypes/portraits/wizard-portrait-v4.png";
+import paladin from "../assets/generated/archetypes/portraits/paladin-portrait-v4.png";
+import blademaster from "../assets/generated/archetypes/portraits/blademaster-portrait-v4.png";
+import vampire from "../assets/generated/archetypes/portraits/vampire-portrait-v4.png";
+import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v4.png";
 
 export const CHARACTER_PORTRAITS = Object.freeze({
   sellsword, reaver, ranger: rangerLegacy, cutthroat, devout,

@@ -35,8 +35,9 @@ presence. Never copy their identities, costumes, poses, anatomy, or scenery.
   composition.
 - Author a distinct generalized archetype identity and one practical observed
   moment. Do not depict a named lore character.
-- Ask for genuine transparent alpha, close head-to-mid-thigh framing, and the
-  runtime geometry in the art-direction reference.
+- Ask for an opaque, perfectly uniform chroma matte selected opposite the costume
+  palette, close head-to-mid-thigh framing, and the runtime geometry in the
+  art-direction reference. Do not ask ImageGen for alpha.
 
 ### Edit an accepted direction
 
@@ -71,35 +72,36 @@ presence. Never copy their identities, costumes, poses, anatomy, or scenery.
   pockets. Let vocation read through behavior, books, instruments, and one restrained
   magical tell, not armor-like filigree, ceremonial collars, gemstone coverage, or
   generic ornamental RPG robes.
-- Long scabbards, cloaks, and lower garments may deliberately continue beyond the
-  lower or outer crop when their direction and perspective make continuation clear.
+- Long scabbards and lower garments may deliberately continue beyond the bottom
+  crop when their direction and perspective make continuation clear. Nothing may
+  continue through a top or side edge.
   Heads, hands, joints, grips, guards, pommels, and attachment points may not be
   accidentally clipped or concealed.
-- Preserve clear negative space above the complete silhouette. Hair, headwear, weapons,
-  raised hands, and other hard forms may never touch or exit the top edge. Keep every
-  body part inside the canvas. The lower body may pass behind the combat HUD, and soft
-  cloaks or garments may continue through a side or bottom edge.
-- Where soft cloth deliberately exits a side or lower crop, dissolve its own local
-  material pigment into alpha. Semi-transparent crop pixels must inherit color from the
-  adjacent cloth, never paper-white underpainting, pale erosion, or a white dry-brush
-  cutoff. Never use edge fading to conceal broken anatomy or equipment.
+- Preserve clear negative space above the complete silhouette and uninterrupted
+  matte columns on both sides. Hair, clothing, weapons, hands, and props may never
+  touch or exit the top or either side. The lower body may pass behind the combat
+  HUD; only the horizontal bottom edge may crop lower clothing.
+- Character pigment must meet the chroma matte directly. Never generate a white or
+  off-white separation layer, paper underpainting, rim light, dry-brush fade, pale
+  erosion, glow, or feathered halo around hair, clothing, armor, skin, or props.
 - Ability effects, particles, scenery, frames, text, and UI never belong in a
   reusable portrait cutout.
 
 ## Acceptance and integration
 
 Do not copy or wire an output into the game until the user accepts its art direction
-and it passes technical QA. A visible checkerboard in an opaque RGB file is fake
-transparency and fails immediately.
+and it passes technical QA. The raw source is intentionally opaque on a keyed matte;
+a checkerboard, white background, gradient, textured matte, or matte-colored spill
+inside the subject fails immediately.
 
 For an accepted, validated asset:
 
 - preserve the raw generated source and exact prompt;
 - create a new versioned file rather than overwriting an accepted portrait;
-- normalize the final to 960 x 1280 RGBA only after real alpha is confirmed,
-  scaling height first while preserving the source aspect ratio and capping width;
-- use `scripts/normalize-archetype-portrait.py`; never independently force the
-  portrait to a fixed width and height;
+- recover alpha and normalize to 960 x 1280 RGBA with
+  `scripts/normalize-archetype-portrait.py --recover-chroma-matte`, scaling
+  uniformly while preserving the source aspect ratio and capping width;
+- never independently force the portrait to a fixed width and height;
 - save under `src/assets/generated/archetypes/portraits/` using
   `<archetype>-portrait-vN.png`;
 - validate at full resolution and at 120 x 145 on dark backgrounds;
