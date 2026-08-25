@@ -59,18 +59,18 @@ describe("Tower combat art", () => {
 
   it("ships the current normalized painterly portrait cohort in every modular slot", () => {
     const expectedFiles = {
-      knight: "knight-portrait-v4.png",
-      ranger: "ranger-portrait-v5.png",
-      artificer: "artificer-portrait-v4.png",
-      berserker: "berserker-portrait-v4.png",
-      sorcerer: "sorcerer-portrait-v4.png",
-      rogue: "rogue-portrait-v4.png",
-      warlock: "warlock-portrait-v4.png",
-      wizard: "wizard-portrait-v4.png",
-      paladin: "paladin-portrait-v4.png",
-      blademaster: "blademaster-portrait-v4.png",
-      vampire: "vampire-portrait-v4.png",
-      automaton: "automaton-portrait-v4.png",
+      knight: "knight-portrait-v5.png",
+      ranger: "ranger-portrait-v6.png",
+      artificer: "artificer-portrait-v5.png",
+      berserker: "berserker-portrait-v5.png",
+      sorcerer: "sorcerer-portrait-v5.png",
+      rogue: "rogue-portrait-v5.png",
+      warlock: "warlock-portrait-v5.png",
+      wizard: "wizard-portrait-v5.png",
+      paladin: "paladin-portrait-v5.png",
+      blademaster: "blademaster-portrait-v5.png",
+      vampire: "vampire-portrait-v5.png",
+      automaton: "automaton-portrait-v5.png",
     };
 
     for (const [id, fileName] of Object.entries(expectedFiles)) {

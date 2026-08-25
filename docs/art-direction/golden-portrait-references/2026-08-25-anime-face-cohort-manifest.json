@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-25",
+  "tool": "OpenAI built-in ImageGen",
+  "sourceSession": "01a0046a-a7d2-7c61-add8-171ecb1025c1",
+  "baseCohortManifest": "docs/art-direction/golden-portrait-references/2026-08-25-archetype-portrait-chroma-manifest.json",
+  "reviewSheets": [
+    "docs/art-direction/golden-portrait-references/2026-08-25-anime-face-cohort-sheet.png",
+    "docs/art-direction/golden-portrait-references/2026-08-25-anime-face-cohort-sheet-combat-scale.png"
+  ],
+  "generationContract": {
+    "operation": "Identity-preserving anime-watercolor face, skin, and hair repaint over the approved candid pose, equipment, silhouette, and single-accent palette.",
+    "matte": "Uniform opaque high-chroma source matte; no transparency request, white separation, rim light, paper fade, or scenery.",
+    "framing": "Head-to-mid-thigh with uninterrupted source matte above the complete hair and along both side edges; only lower clothing or a long downward prop may crop at the bottom."
+  },
+  "normalization": {
+    "tool": "scripts/normalize-archetype-portrait.py",
+    "outputContract": "960x1280 RGBA with zero top/side edge alpha, zero keyed-hue fringe, zero pale low-alpha fringe, and semitransparent visible ratio no greater than 3%."
+  },
+  "portraits": [
+    {
+      "archetype": "knight",
+      "mode": "regenerate",
+      "imageGenCallId": "exec-ba55a963-fd09-4478-aea0-3400d5a04e8c",
+      "rawSource": {
+        "filename": "exec-ba55a963-fd09-4478-aea0-3400d5a04e8c.png",
+        "sha256": "8e41318a3376619b3e91ea6d01787ca3e6729fe66457e85f6669d8823bd82d85"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/knight-portrait-v5.png",
+        "sha256": "6b719c1dd5fea93bab56b98d52cb107044fa39e1844f872cead4d437f7fa2a4d"
+      },
+      "finalPrompt": "Create a wholly new Knight illustration from scratch. Do not retouch or inherit facial texture from Image 1.\n\nImage roles:\n1. Image 1 is ONLY the exact pose, crop, equipment-layout, and safe-silhouette blueprint. Match its close scale, large left/right empty columns, screen-left gaze, torso turn, crossing forearms, high screen-left sword placement, and vertically falling narrow cloak shape.\n2-3. Facial-medium references only: learn their premium watercolor/gouache anime rendering, luminous colored skin, clear expressive eyes, elegant stylized planes, restrained blush, and grouped painterly hair. Do not copy identities, feminine anatomy, hair colors, costume, staff, or magic.\n4-5. Medium/age references only; do not copy identity, costume, or scenery.\n\nSubject: one handsome adult masculine Knight, early thirties, strong straight nose, angular jaw, warm olive-peach skin, alert hazel-brown eyes looking screen-left, short dark-brown wind-tossed hair, controlled natural stubble. Fresh high-quality anime-watercolor face: soft colored planes, clear brows/eyes/mouth, subtle circulation at cheeks/ears/lips, painted hair masses, selective crisp accents. No pores, etched realism, muddy skin, waxiness, harsh photoreal planes, overworked texture, or copied feminine face.\n\nLOCKED PRACTICAL GESTURE: exactly ONE bare flesh hand and exactly ONE armored gauntlet. The upper hand at SCREEN-RIGHT is completely bare human skin—five correct bare fingers, bare palm and knuckles—emerging from a quiet brown leather wrist bracer. That bare hand crosses inward and tightens the cuff/strap of the opposite fully armored articulated steel gauntlet. The lower crossing hand/forearm is the fully armored gauntlet with five coherent metal fingers. Do not put metal finger plates on the bare tightening hand. Do not make both hands armored or both hands bare. Hands do not fuse and no extra fingers.\n\nRecreate practical iron armor and chain, neutral leather, muted brass, and one dominant weathered vermilion cloak. Sword is carried high at screen-left waist behind the bent armored forearm: pommel inward/up-right, guard down-left, scabbard continuing diagonally through the BOTTOM only. Every grip, joint, guard, pommel, buckle and suspension is visible and physically coherent. The cloak falls vertically close to the body and must not flare horizontally.\n\nHard composition: preserve Image 1's same close head-to-mid-thigh scale and no-wider-than-78-percent silhouette. Leave at least 10 percent continuous empty background along the ENTIRE left edge and 10 percent along the ENTIRE right edge; leave at least 7 percent above all hair. Nothing—hair, cloak, shoulder, elbow, hand, armor, sword hardware, or stray pixel—may enter those top/side safety bands. Only lower clothing, lower cloak, and the long scabbard may continue through the horizontal bottom.\n\nBackdrop: perfectly uniform, opaque, unlit PURE CHROMA MAGENTA #FF00FF in every non-character pixel and every gap. The top and both side border bands must be a single exact saturated magenta with no variation. No transparency, checkerboard, green, gradient, texture, shadow, glow, rim light, white/off-white separation, paper fade, dry-brush edge, scenery, particles, frame, text, UI, or watermark."
+    },
+    {
+      "archetype": "ranger",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-e2c31eb2-abd5-4602-b79a-46cd0ed216f6",
+      "rawSource": {
+        "filename": "exec-e2c31eb2-abd5-4602-b79a-46cd0ed216f6.png",
+        "sha256": "ea295d67304c96c1a77d5700acb429aeeead38f0ca6202943c85c5e35f2478d8"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/ranger-portrait-v6.png",
+        "sha256": "eaa1638cfb28be195134d77128b46ee7be71389a1fe9cbf45b1a96e4acef2ac9"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial-rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, tool, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nRANGER-SPECIFIC: Preserve the attractive young adult woman with a long softly angular face, prominent freckled cheeks, vivid green eyes looking screen-right, copper-auburn hair in a loose side braid, alert outdoor expression, forest-green cloak, brown fitted working clothes, and exact one-bow-string inspection pose with the correctly constructed bow and both hands. Repaint her with the soft luminous anime-watercolor facial language: living warm peach skin, subtle sun warmth and freckles, clear green irises, expressive but unsmiling mouth, and copper hair grouped into fluid painted masses with gold-russet variation. Keep her distinct from Wizard and Priest, outdoors-capable rather than glamorous, and do not alter bow geometry, string, grip, hands, clothing, braid silhouette, or pose. Use a perfectly uniform pure chroma-magenta matte."
+    },
+    {
+      "archetype": "artificer",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-47d1d5d3-f6f9-4d9d-8a93-fd13a3ace0be",
+      "rawSource": {
+        "filename": "exec-47d1d5d3-f6f9-4d9d-8a93-fd13a3ace0be.png",
+        "sha256": "4c6e328920d71da054a80bd7151796e38fedea4bc139ce291103893b25484cfa"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/artificer-portrait-v5.png",
+        "sha256": "e277b2406c35547990b144972edb615bd0a295e36eb4063ad354c40a406bb154"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial-rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, tool, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nARTIFICER-SPECIFIC: Preserve the handsome lean adult man with warm olive-brown skin, long angular face, strong slightly hooked nose, thick dark brows, tousled near-black wavy hair, concentrated downward gaze at the small gear, mustard-ochre cape, charcoal workwear, leather apron, brass wrist instrument, and exact two-hand mechanism-inspection action. Give him clear dark-amber eyes, softly painted warm skin and controlled workshop smudges only where already implied; the face must feel alive and anime-handsome, not gritty photoreal, orange-stained, or generically European. Retain his distinct narrow face and practical inventor intensity. Use a perfectly uniform pure chroma-magenta matte."
+    },
+    {
+      "archetype": "berserker",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-ad81c2ef-8b75-4772-8e70-eee65862bec3",
+      "rawSource": {
+        "filename": "exec-ad81c2ef-8b75-4772-8e70-eee65862bec3.png",
+        "sha256": "7f95d41e2154c68e9137efded40b6f8551ad983d47366d28c5f99a7249219b00"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/berserker-portrait-v5.png",
+        "sha256": "c7bbcbba3f672f12b643aac2651c650751c574fc3f2aef2163acffb27b8e3627"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial-rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, tool, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nBERSERKER-SPECIFIC: Preserve the powerful mature man around forty, broad square face, heavy brow, short dark-brown hair with restrained gray at the temples, close dark beard, old facial scars, weathered screen-left vigilance, two-handed upright axe grip, fur collar, iron armor, and dark-red cloak. Translate him into the same premium anime-watercolor facial language without making him young, delicate, smooth-shaven, feminine, or pretty-boy generic. Use warm sun-browned skin with muted red circulation, clear steel-gray eyes, simplified but credible scars, strong masculine jaw, and grouped painterly beard/hair shapes. Keep lived experience and intimidating strength while removing pore-level realism and muddy texture. Use a perfectly uniform pure chroma-green matte."
+    },
+    {
+      "archetype": "rogue",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-609333ee-90cb-4809-8c27-635cc1f45611",
+      "rawSource": {
+        "filename": "exec-609333ee-90cb-4809-8c27-635cc1f45611.png",
+        "sha256": "9ab737a3e7ca23f9ed11c95930de424d72f019cdd545ad6e363b6b00d4a90bb2"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/rogue-portrait-v5.png",
+        "sha256": "5b8264fc831e1fa807e1c46c79744847d4120c1c1f9b567494be7f1b72309fb5"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, book, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nROGUE-SPECIFIC: Preserve the attractive young adult masculine rogue identity, ash-blond tousled hair, narrow elegant jaw, observant screen-left gaze, crossed-forearm bracer-buckle action, black-and-wine-red clothing, cloak, lockpick roll, and sheathed dagger. Correct the current corpse-gray/desaturated face: give him living fair neutral-peach skin with restrained rose at cheeks, ears, eyelids, knuckles, and lips; clear cool gray-blue eyes with readable irises; and ash-blond hair containing warm champagne and taupe pigment variation rather than flat gray. Keep him pale and nocturnal but healthy, attractive, and alive—not vampire-like, chalky, sickly, or sunburned. Do not feminize him or copy the anchors' faces. Use a perfectly uniform pure chroma-green matte."
+    },
+    {
+      "archetype": "warlock",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-0deab0b1-3958-4b8d-927b-92566e7b497b",
+      "rawSource": {
+        "filename": "exec-0deab0b1-3958-4b8d-927b-92566e7b497b.png",
+        "sha256": "b5359bd04265a5ffb954f74de7fd263fbf011bfb3d36676350a23eeaf396b52b"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/warlock-portrait-v5.png",
+        "sha256": "c32447c7a843b7dcd19bca34767659978d75ac5d92594d40e58c8670dfd94b31"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, book, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nWARLOCK-SPECIFIC: Preserve the attractive adult woman with long wavy near-black hair, strong dark brows, long oval face, guarded screen-left gaze, black working dress, violet cloak, compact strapped black grimoire, and the exact physically supported strap-and-buckle hand action. Repaint face and hair with the refined Priest/Sorcerer anime-watercolor quality: warm light-olive skin with quiet rose circulation, deep amber-brown expressive eyes, elegant individual facial planes, and near-black hair containing plum and umber midtones so it reads alive rather than as a crushed black mass. Keep her mature, intense, beautiful, and distinct; do not make her cute, smiling, pale-gothic, or identical to the anchors. Absolutely no letter, envelope, seal, floating object, or added magic. Use a perfectly uniform pure chroma-green matte."
+    },
+    {
+      "archetype": "wizard",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-182fd899-26c1-43be-9e17-50845d0386d7",
+      "rawSource": {
+        "filename": "exec-182fd899-26c1-43be-9e17-50845d0386d7.png",
+        "sha256": "75668a87d99185bbdb62bde07bff4642bfc8aac50f8843076cbaa9fed4a08e5b"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/wizard-portrait-v5.png",
+        "sha256": "d37f980bafef15d5ab16e40723e56f4546c459fa0589e401df2cfe0ce6bb73cb"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, book, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nWIZARD-SPECIFIC: Preserve the attractive young adult woman, honey-chestnut hair in a loose practical scholar's updo, warm hazel eyes looking screen-right, thoughtful interrupted reading gesture, deep-lapis scholarly layers, supported open grimoire, brass page tool, and restrained thin blue page-edge glow. Refine her into a more unmistakably painterly-anime heroine with softer heart-oval facial construction, expressive clear eyes, delicate but individual nose and lips, translucent warm peach-gold skin, and clean grouped honey-brown hair shapes. She must remain distinct from Priest and Sorcerer rather than becoming their face. Do not alter hands, book geometry, page tool, costume, or magic. Use a perfectly uniform pure chroma-magenta matte."
+    },
+    {
+      "archetype": "blademaster",
+      "mode": "face-treatment-edit",
+      "imageGenCallId": "exec-948c794f-d337-4423-9453-5a10e1ca3b3f",
+      "rawSource": {
+        "filename": "exec-948c794f-d337-4423-9453-5a10e1ca3b3f.png",
+        "sha256": "48ef83ed11e336127bb4fa909c238d4b4bf07195c02d61ac7b3c714252c836e4"
+      },
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/blademaster-portrait-v5.png",
+        "sha256": "fd0cb643f573f30c549703da4451109f4fb567ab2d0261d130ae2a914653a298"
+      },
+      "finalPrompt": "Use case: style-transfer. Asset type: opaque chroma-key source for a premium painterly-anime mobile RPG portrait. Image 1 is the ONLY edit target and composition/identity source. Images 2 and 3 are facial-rendering references only: learn their soft watercolor-gouache anime facial planes, luminous living skin, restrained blush, clean expressive eye shapes, elegant noses and mouths, and naturally grouped painted hair strands. Never copy their identities, feminine anatomy, pink/silver hair, clothing, props, pose, or palette. Images 4 and 5 are medium references only. Preserve the target's unique age, gender presentation, ethnicity, facial bone structure, hair color/style, expression, gaze direction, and personality; do not make a same-face cohort.\n\nChange ONLY the rendering treatment of the face, ears, neck, exposed skin, and hair. Repaint those regions freshly at high quality so they feel like the same living person rendered in the Priest/Sorcerer visual language: clearly anime-esque rather than realistic, attractive and expressive, softly modeled colored skin rather than gray or photographic skin, selective crisp eyelashes/brows/irises, subtle warm circulation around cheeks/ears/lips, and painterly hair masses with a few deliberate flyaways. Remove etched skin texture, pores, muddy desaturation, waxiness, hard photoreal planes, oversharpening, and generational-edit artifacts. Keep anatomy credible and age appropriate.\n\nEverything below the hairline/neck is locked: exact pose, gesture, body proportions, shoulder angle, clothing construction, equipment, hand anatomy, object relationships, single-accent palette, lighting direction, crop, and silhouette. Do not add, remove, simplify, relocate, or redesign any garment, hand, weapon, tool, strap, buckle, pouch, jewelry, or prop. Preserve the candid off-camera observed moment. No direct eye contact or presentation smile. Head-to-mid-thigh portrait; same face size and eye-line; no zoom, stretch, widening, or restaging. Output one character against a perfectly uniform opaque high-chroma matte, with uninterrupted matte above the complete hair and down both sides. Nothing may touch or exit the top or side edges; only lower clothing or a long downward prop may crop through the bottom. Character pigment meets matte directly: no white/off-white separation, halo, rim light, paper texture, dry-brush fade, glow, scenery, shadow, particles, text, UI, or watermark.\n\nBLADEMASTER-SPECIFIC: Preserve the attractive young adult East Asian woman, refined oval face, dark almond eyes looking down toward the blade, black hair in a practical high travel bun with loose temple strands, quiet seasoned expression, black-and-oxblood road-worn sword clothing, and exact sword-cleaning pose with both hands and cloth. Refine her face/skin/hair into the Priest/Sorcerer anime-watercolor quality while retaining East Asian facial structure and a capable experienced traveler read. Give warm light-gold skin with restrained natural flush, clean dark irises, and deep black-brown hair with warm ink-like variation. Do not lighten her costume, make her naive/cute, copy the anchors' faces, or alter the blade, grip, cloth, hands, scabbard, or garment. Use a perfectly uniform pure chroma-green matte."
+    },
+    {
+      "archetype": "sorcerer",
+      "mode": "retained-approved-anchor-renormalized",
+      "promptProvenance": "See the matching archetype in baseCohortManifest.",
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/sorcerer-portrait-v5.png",
+        "sha256": "2f37dc302cd292b9dc2fbfe6c1b5ef6ea1be30d263876ce13298fe36b81a84c1"
+      }
+    },
+    {
+      "archetype": "paladin",
+      "mode": "retained-approved-anchor-renormalized",
+      "promptProvenance": "See the matching archetype in baseCohortManifest.",
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/paladin-portrait-v5.png",
+        "sha256": "b4448430dd36744e55a2486b4cb424c96c86226f8459fe7311f3ebe9e8d3efc7"
+      }
+    },
+    {
+      "archetype": "vampire",
+      "mode": "retained-approved-anchor-renormalized",
+      "promptProvenance": "See the matching archetype in baseCohortManifest.",
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/vampire-portrait-v5.png",
+        "sha256": "df9629906d221c9aaa9ca5c7bbdfcc5d66213b0cec4d05bf85e41e18ad9be14b"
+      }
+    },
+    {
+      "archetype": "automaton",
+      "mode": "retained-approved-anchor-renormalized",
+      "promptProvenance": "See the matching archetype in baseCohortManifest.",
+      "finalAsset": {
+        "path": "src/assets/generated/archetypes/portraits/automaton-portrait-v5.png",
+        "sha256": "b849cbf64949c4bc6c1ffc69c4fbbf147768418d51e898a738d42a975e924861"
+      }
+    }
+  ]
+}
