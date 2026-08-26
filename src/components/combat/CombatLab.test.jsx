@@ -56,7 +56,7 @@ describe("opening a lab session", () => {
   it("returns a real production session", () => {
     const opened = openLabSession({ packageId: "fighter", scenarioId: "training-yard" });
     expect(opened.ok).toBe(true);
-    expect(opened.session.rulesetId).toBe("solitaire-tow-v1");
+    expect(opened.session.rulesetId).toBe("solitaire-tow-v1.2");
     expect(opened.session.revision).toBe(0);
     expect(verifyTowSession(opened.session)).toMatchObject({ ok: true });
   });
@@ -117,8 +117,8 @@ describe("the lab surface", () => {
   it("shows ruleset, seed, revision, checksum, intents and commands at once", async () => {
     const mounted = await render(<CombatLab onExit={() => {}} />);
     const state = mounted.querySelector(".combat-lab__state").textContent;
-    expect(state).toContain("solitaire-tow-v1");
-    expect(state).toContain("practice::solitaire-tow-v1");
+    expect(state).toContain("solitaire-tow-v1.2");
+    expect(state).toContain("practice::solitaire-tow-v1.2");
     expect(state).toContain("integrity-v1:");
     expect(state).toContain("verified");
     expect(mounted.querySelector(".combat-lab__intents").textContent).toMatch(/→/);
@@ -134,7 +134,10 @@ describe("the lab surface", () => {
         .find((button) => button.getAttribute("aria-disabled") !== "true");
       await chooseAndConfirmAction(mounted, action);
       expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
-      expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
+      // The command has already committed; the presentation is in its cosmetic tail.
+      expect(["windup", "resolve"]).toContain(
+        mounted.querySelector(".tow-combat").dataset.presentationPhase,
+      );
       expect(action.classList.contains("is-committed")).toBe(true);
       await act(async () => vi.advanceTimersByTime(600));
       // The action and its automatic enemy advance both landed on the real session.

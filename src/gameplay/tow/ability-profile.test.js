@@ -75,7 +75,7 @@ describe("derived ability profiles", () => {
     expect(abilityProfile("witch-skull-throw").roles).toEqual(["damage"]);
     expect(abilityProfile("blade-inversion").roles).toEqual(["damage"]);
     expect(abilityProfile("assassin-cold-blood").roles).toEqual(["cleanse"]);
-    expect(abilityProfile("automaton-interception", 1).roles).toEqual([]);
+    expect(abilityProfile("automaton-interception", 1).roles).toEqual(["tank-control"]);
     expect(abilityProfile("automaton-interception", 2).roles).toEqual(["tank-control"]);
   });
 
@@ -98,11 +98,11 @@ describe("derived ability profiles", () => {
     expect(abilityRoleLabel("cleanse", "witch-nullification")).toBe("Dispel");
   });
 
-  it("keeps mixed effect recipients explicit", () => {
+  it("keeps mixed and source-fixed effect recipients explicit", () => {
     expect(abilityProfile("arctic-mortal-blow").effectRecipients)
       .toEqual(["anchor", "caster"]);
     expect(abilityProfile("first-aid").effectRecipients)
-      .toEqual(["anchor", "anchor"]);
+      .toEqual(["caster", "caster"]);
   });
 
   it("maps Resolve prices into stable descriptive cost bands", () => {

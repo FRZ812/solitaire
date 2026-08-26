@@ -18,6 +18,7 @@
 
 import { createRng, nextInt } from "../kernel/rng.js";
 import { getStatusDefinition, statusCount } from "../kernel/status-stack.js";
+import { TOW_COMBAT_BALANCE_POLICY } from "./combat-policy.js";
 import {
   actorScaleValue,
   createTowEncounter,
@@ -173,18 +174,39 @@ export function projectedDamage(state, skillState, targetId) {
   const player = state.actors[state.playerId];
   const target = state.actors[targetId];
   if (!definition || !target) return 0;
+  let directBudget = Number.isFinite(player.resolve)
+    ? Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.directSkillDamageFraction))
+    : Number.POSITIVE_INFINITY;
+  const spendDirectBudget = (authoredPerHit, hits = 1) => {
+    const amount = Math.min(
+      authoredPerHit,
+      Number.isFinite(directBudget) ? Math.floor(directBudget / hits) : authoredPerHit,
+    );
+    const applied = Math.max(0, amount) * hits;
+    directBudget = Math.max(0, directBudget - applied);
+    return applied;
+  };
   return definition.effects.reduce((total, effect, index) => {
     if (effect.type === "damage-enemy-lost-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-      return total + Math.floor(((target.maxHp - target.hp) * magnitude) / 100);
+      const authored = Math.floor(((target.maxHp - target.hp) * magnitude) / 100);
+      return total + spendDirectBudget(authored);
     }
     if (effect.type === "damage-self-lost-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-      return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
+      const authored = Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
+      return total + spendDirectBudget(authored);
     }
     if (effect.type === "damage-enemy-max-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-      return total + Math.floor((target.maxHp * magnitude) / 100);
+      const authored = Math.floor((target.maxHp * magnitude) / 100);
+      const applied = Number.isFinite(player.resolve)
+        ? Math.min(
+          authored,
+          Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.maxHpSkillDamageFraction)),
+        )
+        : authored;
+      return total + applied;
     }
     if (effect.type === "delayed-damage") {
       return total + effectMagnitude(skillState.id, index, skillState.rank);
@@ -214,7 +236,10 @@ export function projectedDamage(state, skillState, targetId) {
     }
     if (effect.type !== "damage") return total;
     const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-    return total + projectedSourceAmount(player, target, effect, magnitude) * (effect.hits || 1);
+    return total + spendDirectBudget(
+      projectedSourceAmount(player, target, effect, magnitude),
+      effect.hits || 1,
+    );
   }, 0);
 }
 

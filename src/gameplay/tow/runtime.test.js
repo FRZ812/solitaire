@@ -38,6 +38,7 @@ import {
   markTowSessionSettled,
   spendTowSessionStream,
   streamSequencer,
+  towSessionChecksum,
 } from "./session.js";
 import { settleTowEncounter } from "./settlement.js";
 
@@ -139,6 +140,32 @@ describe("Tower runtime registration", () => {
       .toBe(JSON.stringify([TOW_SESSION_VERSION, TOW_RULESET_ID]));
   });
 
+  it("gives archived v1 fights a dedicated update boundary", () => {
+    const legacyIdentity = { version: 1, rulesetId: "solitaire-tow-v1" };
+    const legacySession = { ...openSession(), ...legacyIdentity };
+
+    expect(TOW_RULESET_ID).not.toBe(legacyIdentity.rulesetId);
+    expect(supportsTowRuntime(legacyIdentity)).toBe(false);
+    expect(decodeTowRuntimeSession(legacySession)).toEqual({
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.legacyRuntime,
+      session: null,
+    });
+  });
+
+  it("retires v1.1 before source-correct General mechanics become current", () => {
+    const retiredIdentity = { version: 1, rulesetId: "solitaire-tow-v1.1" };
+    const retiredSession = { ...openSession(), ...retiredIdentity };
+
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.2");
+    expect(supportsTowRuntime(retiredIdentity)).toBe(false);
+    expect(decodeTowRuntimeSession(retiredSession)).toEqual({
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.legacyRuntime,
+      session: null,
+    });
+  });
+
   it("requires both selectors and does not infer a runtime from formation data or ids", () => {
     expect(towRuntimeIdentity({ version: 1 })).toBe(null);
     expect(towRuntimeIdentity({ rulesetId: TOW_RULESET_ID })).toBe(null);
@@ -179,6 +206,48 @@ describe("Tower runtime registration", () => {
       session: null,
     });
   });
+
+  it("rejects accessor identity selectors without executing them", () => {
+    let reads = 0;
+    const payload = {};
+    Object.defineProperties(payload, {
+      version: {
+        enumerable: true,
+        get() {
+          reads += 1;
+          return TOW_SESSION_VERSION;
+        },
+      },
+      rulesetId: {
+        enumerable: true,
+        get() {
+          reads += 1;
+          return TOW_RULESET_ID;
+        },
+      },
+    });
+
+    expect(decodeTowRuntimeSession(payload)).toEqual({
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.invalidIdentity,
+      session: null,
+    });
+    expect(reads).toBe(0);
+  });
+
+  it("translates identity descriptor failures into a stable rejection", () => {
+    const payload = new Proxy({}, {
+      getOwnPropertyDescriptor() {
+        throw new Error("descriptor-ran");
+      },
+    });
+
+    expect(decodeTowRuntimeSession(payload)).toEqual({
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.invalidIdentity,
+      session: null,
+    });
+  });
 });
 
 describe("v1 runtime compatibility", () => {
@@ -194,6 +263,29 @@ describe("v1 runtime compatibility", () => {
     const session = openSession();
     expect(decodeTowRuntimeSession(session)).toEqual(decodeTowSession(session));
     expect(encodeTowRuntimeSession(session)).toEqual(encodeTowSession(session));
+  });
+
+  it("rejects a structurally valid runtime payload that diverges from its replay", () => {
+    const session = openSession();
+    const blocked = dispatchTowCommand(session, {
+      id: "runtime-block",
+      expectedRevision: 0,
+      type: "use-skill",
+      actorId: "wanderer",
+      skillId: "block",
+      targetId: "wanderer",
+    });
+    expect(blocked.ok).toBe(true);
+    const tampered = JSON.parse(JSON.stringify(blocked.session));
+    tampered.encounter.actors.wanderer.hp -= 1;
+    tampered.checksum = towSessionChecksum(tampered);
+    expect(decodeTowSession(tampered).ok).toBe(true);
+
+    expect(decodeTowRuntimeSession(tampered)).toMatchObject({
+      ok: false,
+      reason: "replay-state-divergence",
+      session: null,
+    });
   });
 
   it("dispatches low-level and App-facing player commands exactly as v1", () => {

@@ -37,6 +37,29 @@ function possessive(name) {
   return name === "You" ? "Your" : `${name}'s`;
 }
 
+function objectPossessive(name) {
+  return name === "You" ? "your" : `${name}'s`;
+}
+
+function isBeneficialStatus(status) {
+  return DEFENSIVE_STATUSES.has(status)
+    || EVASIVE_STATUSES.has(status)
+    || EMPOWERING_STATUSES.has(status);
+}
+
+function scaledStatusCueKind(event) {
+  const changes = Array.isArray(event.changes) ? event.changes : [];
+  const score = changes.reduce((total, change) => {
+    const delta = change.after - change.before;
+    return total + (isBeneficialStatus(change.status) ? delta : -delta);
+  }, 0);
+  if (score !== 0) return score > 0 ? "empower" : "afflict";
+  const statuses = event.statuses || [];
+  const beneficial = statuses.length > 0 && statuses.every(isBeneficialStatus);
+  const increasing = event.percent >= 100;
+  return beneficial === increasing ? "empower" : "afflict";
+}
+
 function actionName(encounter, event, options) {
   const supplied = options?.skillName?.(event, encounter);
   if (supplied) return supplied;
@@ -215,6 +238,20 @@ export function combatEventReceipt(encounter, event, options = {}) {
       text: `${possessive(actor)} ${actionName(encounter, event, options)} restores ${event.restored} Resolve.`,
     };
   }
+  if (event.type === "skill-uses-restored") {
+    return {
+      sequence: event.sequence,
+      kind: "resource",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} restores ${event.restored} legacy ability uses.`,
+    };
+  }
+  if (event.type === "initiative-converted") {
+    return {
+      sequence: event.sequence,
+      kind: "tempo",
+      text: `${actor} converts ${event.initiativeSpent} Initiative into ${event.priorityGained} Priority; ${event.remainder} Initiative remains.`,
+    };
+  }
   if (event.type === "combat-item-used") {
     const item = getCombatItem(event.itemId);
     const name = item?.name || words(event.itemId);
@@ -248,6 +285,13 @@ export function combatEventReceipt(encounter, event, options = {}) {
       text: `${possessive(actor)} remaining ${event.amount} ward expires with the opposing command window.`,
     };
   }
+  if (event.type === "skill-max-hp") {
+    return {
+      sequence: event.sequence,
+      kind: "status",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} grants ${event.amount} maximum health for ${event.turns} turns${event.fatal ? "; the caster falls to 0 health when the timer expires" : ""}.`,
+    };
+  }
   if (event.type === "skill-heal") {
     return {
       sequence: event.sequence,
@@ -269,6 +313,32 @@ export function combatEventReceipt(encounter, event, options = {}) {
       sequence: event.sequence,
       kind: "status",
       text: `${actionName(encounter, event, options)} gives ${target} ${event.count} ${words(event.status)}.`,
+    };
+  }
+  if (event.type === "skill-status-modified") {
+    const target = actorName(encounter, event.targetId, actor);
+    const outcome = event.delta === 0
+      ? `leaves ${target}'s ${words(event.status)} unchanged at ${event.after}`
+      : `changes ${target}'s ${words(event.status)} ${event.before}→${event.after}`;
+    return {
+      sequence: event.sequence,
+      kind: "status",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} ${outcome}.`,
+    };
+  }
+  if (event.type === "skill-status-scaled") {
+    const target = actorName(encounter, event.targetId, "the target");
+    const changes = Array.isArray(event.changes) ? event.changes : [];
+    const detail = changes.length > 0
+      ? changes.map((change) => `${words(change.status)} ${change.before}→${change.after}`).join(", ")
+      : (event.statuses || []).map(words).join(" / ");
+    const verb = event.percent === 0
+      ? "removes"
+      : event.percent < 100 ? "reduces" : "amplifies";
+    return {
+      sequence: event.sequence,
+      kind: "status",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} ${verb} ${objectPossessive(target)} statuses: ${detail}.`,
     };
   }
   if (event.type === "skill-status-amplified") {
@@ -326,9 +396,16 @@ export function combatEventReceipt(encounter, event, options = {}) {
       ["Poison", event.poison || 0],
       ["Bleed", event.bleed || 0],
       ["Misfortune", event.misfortune || 0],
+      ["Void Monster", event.voidMonster || 0],
+      ["Hellfire Spirit", event.hellfireSpirit || 0],
+      ["Fatal Blade", event.fatalBlade || 0],
+      ["Delayed Damage", event.delayedDamage || 0],
+      ["Forbidden Ritual", event.fatalDamage || 0],
     ];
     const sources = entries.filter(([, amount]) => amount > 0);
-    const total = sources.reduce((sum, [, amount]) => sum + amount, 0);
+    const total = Number.isFinite(event.applied)
+      ? event.applied
+      : sources.reduce((sum, [, amount]) => sum + amount, 0);
     return {
       sequence: event.sequence,
       kind: "damage",
@@ -585,6 +662,33 @@ export function combatCuesForEvent(encounter, event) {
       shieldChange: -event.amount,
     })];
   }
+  if (event.type === "skill-max-hp") {
+    return [simpleCue(encounter, event, {
+      suffix: "maximum-health",
+      kind: "empower",
+      label: `+${event.amount}`,
+      kicker: `Maximum health · ${event.turns} turns`,
+      targetId: event.targetId || event.actorId,
+    })];
+  }
+  if (event.type === "skill-resolve-restored") {
+    return [simpleCue(encounter, event, {
+      suffix: "resolve-restored",
+      kind: "empower",
+      label: `+${event.restored}`,
+      kicker: "Resolve",
+      targetId: event.targetId || event.actorId,
+    })];
+  }
+  if (event.type === "skill-uses-restored") {
+    return [simpleCue(encounter, event, {
+      suffix: "uses-restored",
+      kind: "empower",
+      label: `+${event.restored}`,
+      kicker: "Ability uses",
+      targetId: event.targetId || event.actorId,
+    })];
+  }
   if (event.type === "skill-heal") {
     return [simpleCue(encounter, event, {
       suffix: "heal",
@@ -619,6 +723,40 @@ export function combatCuesForEvent(encounter, event) {
       kicker: event.count > 0 ? `+${event.count}` : null,
       targetId,
       targetSide: effectSide(encounter, targetId, event.target === "enemy" ? "enemy" : "player"),
+    })];
+  }
+  if (event.type === "initiative-converted") {
+    return [simpleCue(encounter, event, {
+      suffix: "initiative-converted",
+      kind: "empower",
+      label: `+${event.priorityGained}`,
+      kicker: `Priority · ${event.remainder} Initiative remains`,
+      targetId: event.actorId,
+      targetSide: effectSide(encounter, event.actorId, "player"),
+    })];
+  }
+  if (event.type === "skill-status-modified") {
+    const delta = event.delta || 0;
+    return [simpleCue(encounter, event, {
+      suffix: "status-modified",
+      kind: delta < 0 ? "afflict" : "empower",
+      label: delta > 0 ? `+${delta}` : `${delta}`,
+      kicker: words(event.status),
+      targetId: event.targetId,
+      targetSide: effectSide(encounter, event.targetId, "player"),
+    })];
+  }
+  if (event.type === "skill-status-scaled") {
+    const label = event.percent === 0
+      ? "Removed"
+      : event.percent < 100 ? "Reduced" : "Amplified";
+    return [simpleCue(encounter, event, {
+      suffix: "status-scaled",
+      kind: scaledStatusCueKind(event),
+      label,
+      kicker: event.changed > 0 ? `${event.changed} stacks` : null,
+      targetId: event.targetId,
+      targetSide: effectSide(encounter, event.targetId, "enemy"),
     })];
   }
   if (event.type === "skill-status-amplified") {
@@ -671,18 +809,38 @@ export function combatCuesForEvent(encounter, event) {
     })];
   }
   if (event.type === "tick-damage") {
-    const cues = ["burn", "doom", "poison", "bleed", "misfortune"].flatMap((type) => {
-      const amount = event[type] || 0;
+    const sources = [
+      ["burn", "Burn", "burn"],
+      ["doom", "Doom", "doom"],
+      ["poison", "Poison", "poison"],
+      ["bleed", "Bleed", "bleed"],
+      ["misfortune", "Misfortune", "misfortune"],
+      ["voidMonster", "Void Monster", "void-monster"],
+      ["hellfireSpirit", "Hellfire Spirit", "hellfire-spirit"],
+      ["fatalBlade", "Fatal Blade", "fatal-blade"],
+      ["delayedDamage", "Delayed Damage", event.delayedStatuses?.[0] || "limited-life-sentence"],
+      ["fatalDamage", "Forbidden Ritual", "forbidden-ritual"],
+    ];
+    let remainingApplied = Number.isFinite(event.applied)
+      ? Math.max(0, event.applied)
+      : null;
+    const cues = sources.flatMap(([field, label, status]) => {
+      const requested = event[field] || 0;
+      if (requested <= 0) return [];
+      const amount = remainingApplied === null
+        ? requested
+        : Math.min(requested, remainingApplied);
+      if (remainingApplied !== null) remainingApplied = Math.max(0, remainingApplied - amount);
       if (amount <= 0) return [];
       return [simpleCue(encounter, event, {
-        suffix: type,
+        suffix: field,
         kind: "hit",
         label: `-${amount}`,
-        kicker: words(type),
+        kicker: label,
         attackerId: null,
         targetId: event.actorId,
         hpChange: -amount,
-        visual: combatVfxForStatus(type),
+        visual: combatVfxForStatus(status),
       })];
     });
     return cues.map((cue, index) => ({ ...cue, hitIndex: index, hitCount: cues.length, delayMs: index * 210 }));

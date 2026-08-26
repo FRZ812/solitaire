@@ -51,6 +51,15 @@ describe("combat status presentation", () => {
       .toContain("entire stack is spent");
   });
 
+  it("explains Foul Ceremony as a countdown for its casting ability's self-damage", () => {
+    expect(towStatusPresentation({ type: "foul-ceremony", count: 4 })).toMatchObject({
+      name: "Foul Ceremony",
+      countLabel: "4 stacks",
+      effect: expect.stringContaining("scheduled self-damage"),
+      lifecycle: expect.stringContaining("Loses 1 stack at the end of the turn"),
+    });
+  });
+
   it("gives every kernel status readable copy, raster VFX, and dedicated generated icon cells", () => {
     const icons = [];
     for (const type of statusTypes()) {

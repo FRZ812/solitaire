@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
 import { CHARACTER_TEMPLATES } from "../data/templates.js";
-import { ArsenalView, arsenalAbilityGroups } from "./ArsenalView.jsx";
+import { ArsenalView, arsenalAbilityGroups, towArsenalAbilityRows } from "./ArsenalView.jsx";
 import { InventoryView } from "./InventoryView.jsx";
 
 function singularSavantState() {
@@ -118,6 +118,36 @@ describe("inventory and arsenal atlas integration", () => {
     expect(html).not.toContain("Firebolt");
     expect(html).not.toContain("Signature Utility Mode");
     expect(html).not.toContain("core actions ·");
+  });
+
+  it("preserves owned Tower rank, rarity, and numbers in the Arsenal projection", () => {
+    const [ability] = towArsenalAbilityRows([{ id: "arctic-strike", rank: 2 }]);
+
+    expect(ability).toMatchObject({
+      rank: 2,
+      rarity: "uncommon",
+      description: expect.stringContaining("115% ATK"),
+    });
+  });
+
+  it("shows a promoted General ability's live cost, action lane, and cooldown", () => {
+    const [ability] = towArsenalAbilityRows([{ id: "rapid-cooling", rank: 5 }]);
+    expect(ability).toMatchObject({
+      rank: 5,
+      rarity: "mythical",
+      resolveCost: 3,
+      action: "main",
+      cooldown: 3,
+    });
+
+    const state = makeInitialState();
+    state.character.progressionModel = "tow-archetype";
+    state.mechanics = {
+      ...state.mechanics,
+      build: { traits: {}, skills: [{ id: "rapid-cooling", rank: 5 }], runes: [] },
+    };
+    const html = renderToStaticMarkup(<ArsenalView state={state} />);
+    expect(html).toContain("General ability · mythical · Rank 5 · 3 Resolve · Main action · 3-turn cooldown");
   });
 
   it("surfaces selected Sorcerer repertoire and authored utility modes", () => {

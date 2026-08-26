@@ -69,9 +69,8 @@ describe("the catalogue", () => {
       rank: 5,
       usesRemaining: 7,
     });
-    // The source capture has one fixed mechanic row, so promotion changes rarity without
-    // manufacturing an unsupported damage value or use-count curve.
-    expect(effectMagnitude("penetration", 0, 5)).toBe(180);
+    // The pinned source carries one explicit mechanic row per rarity.
+    expect(effectMagnitude("penetration", 0, 5)).toBe(340);
 
     expect(skillRarityChoices("judge-of-fate")).toEqual(["legendary", "mythical"]);
     expect(skillRankForRarity("judge-of-fate", "mythical")).toBe(2);
@@ -102,17 +101,18 @@ describe("the catalogue", () => {
   it("knows which skills leave the turn open", () => {
     for (const id of ["emergency-evasion", "elixir-of-wrath", "shouting", "sudden-blow",
       "thirst-for-blood", "unbendable-will", "urgent-guard", "warcry", "threatening-cry",
-      "judge-of-fate"]) {
+    ]) {
       expect(getSkill(id).consumesTurn).toBe(false);
     }
     expect(getSkill("strike").consumesTurn).toBe(true);
     expect(getSkill("sleep-grenade").consumesTurn).toBe(true);
+    expect(getSkill("judge-of-fate").consumesTurn).toBe(true);
   });
 
   it("carries the recorded cooldowns", () => {
     expect(getSkill("rapid-cooling").cooldown).toBe(3);
     expect(getSkill("sleep-grenade").cooldown).toBe(6);
-    expect(getSkill("judge-of-fate").cooldown).toBe(6);
+    expect(getSkill("judge-of-fate").cooldown).toBe(5);
     expect(getSkill("thirst-for-blood").cooldown).toBe(9);
     expect(getSkill("strike").cooldown).toBe(0);
   });
@@ -164,6 +164,10 @@ describe("the catalogue", () => {
     }
   });
 
+  it("reports no scalar magnitude for a fixed-policy effect", () => {
+    expect(effectMagnitude("first-aid", 1, 1)).toBeNull();
+  });
+
   it("returns null for unknown ids", () => {
     expect(getSkill("nonsense")).toBeNull();
     expect(getSkill(null)).toBeNull();
@@ -179,7 +183,7 @@ describe("the catalogue", () => {
     // Mortal Blow costs the user a Paralyze.
     expect(getSkill("mortal-blow").effects[1]).toMatchObject({ status: "paralyze", target: "self" });
     // Rapid Cooling paralyses the enemy but gives it a Solidity back.
-    expect(getSkill("rapid-cooling").effects.map((e) => e.target)).toEqual(["enemy", "self"]);
+    expect(getSkill("rapid-cooling").effects.map((e) => e.target)).toEqual(["enemy", "enemy"]);
   });
 });
 
@@ -302,11 +306,11 @@ describe("acquiring skills", () => {
     expect(effectMagnitude("thirst-for-blood", 0, 2)).toBe(20);
   });
 
-  it("promotes a General ability while holding its last sourced mechanic value", () => {
-    // Sleep Grenade can advance from Rare to Epic, but its captured duration remains 3.
+  it("promotes a General ability with its source use progression", () => {
+    // Sleep Grenade advances from four to five source uses while duration remains 3.
     const spent = [{ ...createSkillState("sleep-grenade"), usesRemaining: 1, cooldownRemaining: 4 }];
     const result = acquireSkill(spent, "sleep-grenade");
-    expect(result.loadout[0]).toMatchObject({ rank: 2, usesRemaining: 4, cooldownRemaining: 0 });
+    expect(result.loadout[0]).toMatchObject({ rank: 2, usesRemaining: 5, cooldownRemaining: 0 });
     expect(skillRarityAtRank("sleep-grenade", 2)).toBe("epic");
     expect(effectMagnitude("sleep-grenade", 0, 2)).toBe(3);
   });

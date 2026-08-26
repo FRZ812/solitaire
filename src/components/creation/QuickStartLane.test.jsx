@@ -441,7 +441,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(panel.querySelector(".ability-swap-picker__rarity-stepper output").textContent)
       .toBe("Mythical");
     expect(panel.querySelector('[role="option"][aria-selected="true"] .ability-swap-picker__option-summary').textContent)
-      .toContain("180% ATK");
+      .toContain("340% ATK");
     expect(panel.querySelector('[data-action="promote-rarity"]').disabled).toBe(true);
 
     await click(panel.querySelector('[data-action="confirm-ability-swap"]'));

@@ -123,6 +123,7 @@ import {
 import { combatItemsFromInventory } from "./gameplay/tow/combat-items.js";
 import { DEFAULT_PRACTICE_ALLY_GROUP_ID } from "./gameplay/tow/practice-scenarios.js";
 import {
+  TOW_RUNTIME_REASONS,
   TOW_V1_RUNTIME_IDENTITY,
   createTowRuntimeSession,
   createTowRuntimeStreamSequencer,
@@ -745,6 +746,10 @@ export function Solitaire() {
     ? combatSession.encounter
     : null;
   const towCombatInvalid = storedTowCombat != null && !towCombat.ok;
+  const towCombatNeedsUpdate = towCombatInvalid
+    && towCombat.reason === TOW_RUNTIME_REASONS.legacyRuntime;
+  const towCombatSettledNeedsUpdate = towCombatNeedsUpdate
+    && storedTowCombat?.status === "settled";
 
   // An owed scene is a fact about the campaign, not about this tab. Reading it off the queue
   // rather than off component state is what makes the offer survive a reload — otherwise the
@@ -3297,7 +3302,11 @@ export function Solitaire() {
         {
           id: `tow-combat-recovery:${base.beats?.length || 0}`,
           type: "narration",
-          content: "The record of that fight could not be read back. It was discarded explicitly; no outcome, wound, or spoil was applied.",
+          content: towCombatSettledNeedsUpdate
+            ? "A retired fight record marked settled under older combat rules was discarded after the update; no campaign result was applied or undone."
+            : towCombatNeedsUpdate
+              ? "The unfinished fight used older combat rules and was discarded after the update; no outcome, wound, or spoil was applied."
+              : "The unreadable fight record was discarded explicitly; no campaign result was applied or undone.",
         },
       ],
     }, null);
@@ -4224,12 +4233,20 @@ export function Solitaire() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#fca5a5", marginBottom: "2px" }}>
-                {towCombatInvalid ? "Unreadable saved fight" : "Combat"}
+                {towCombatSettledNeedsUpdate
+                  ? "Old fight record"
+                  : towCombatNeedsUpdate
+                    ? "Fight update required"
+                  : towCombatInvalid ? "Unreadable saved fight" : "Combat"}
               </div>
               <div style={{ fontSize: "13px", color: "#fde8e4", lineHeight: 1.35 }}>
-                {towCombatInvalid
-                  ? `The saved fight cannot be trusted (${towCombat.reason}). Nothing has been applied to the campaign.`
-                  : towCombatFeedback}
+                {towCombatSettledNeedsUpdate
+                  ? "This retired fight record is marked settled under older combat rules. Discarding it removes only that unreadable record and does not apply or undo any outcome, wound, or spoil."
+                  : towCombatNeedsUpdate
+                    ? "This fight was saved under older combat rules and cannot be resumed safely. Discarding it applies no outcome, wound, or spoil."
+                    : towCombatInvalid
+                      ? `The saved fight record cannot be read (${towCombat.reason}). Discarding it applies or undoes no campaign result.`
+                      : towCombatFeedback}
               </div>
             </div>
             {towCombatInvalid && (
@@ -4237,7 +4254,9 @@ export function Solitaire() {
                 padding: "9px 12px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
                 border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
               }}>
-                Discard unreadable fight
+                {towCombatSettledNeedsUpdate
+                  ? "Discard old record"
+                  : towCombatNeedsUpdate ? "Discard old fight" : "Discard unreadable fight"}
               </button>
             )}
           </div>

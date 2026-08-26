@@ -1,7 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
+import { PROVISIONAL_CONTROL_LIFECYCLE } from "../../gameplay/kernel/status-stack.js";
 import { Icon } from "../Icon.jsx";
 import {
+  combatSkillLegality,
   combatItemLegality,
   declaredIntents,
   priorityAdvantageFor,
@@ -14,12 +16,12 @@ import {
 import {
   getSkill,
   resolveCost,
-  skillLegality,
   skillRarityAtRank,
   UNLIMITED_USES,
   usesPerAct,
 } from "../../gameplay/tow/skills.js";
 import { abilityTargeting, presentationTier } from "../../gameplay/tow/ability-targeting.js";
+import { combatPolicyClausesForSkill } from "../../gameplay/tow/combat-policy.js";
 import {
   encounterFormations,
   formationCellForActor,
@@ -63,14 +65,17 @@ const REFUSALS = {
   "action-nullified": () => "control forfeits this turn automatically",
   "priority-preempted": () => "enemy Priority resolves first",
   "invalid-skill-state": () => "unavailable",
+  "no-effective-outcome": () => "no useful effect",
 };
 
 const HOLD_FOR_DETAILS_MS = 420;
 const CONTACT_REACTIONS = new Set(["block", "critical", "evade", "hit", "ward"]);
 const VITAL_CONTACT_OFFSET_MS = 150;
-const TERMINAL_REVEAL_PADDING_MS = 1450;
-const FORCED_WINDOW_READ_MS = 900;
-const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep"]);
+// Presentation never holds authority: the outcome is already canonical when the events
+// arrive, so the reveal timer only lets the final contact cues land before the tally
+// shows. It bounds the wait instead of creating one.
+const TERMINAL_REVEAL_PADDING_MS = 620;
+const CONTROL_STATUS_TYPES = PROVISIONAL_CONTROL_LIFECYCLE.types;
 
 function refusalText(reason, skillState) {
   const render = REFUSALS[reason];
@@ -131,8 +136,40 @@ function AbilityArt({ src, className = "" }) {
   );
 }
 
-function effectDetail(_definition, effect, _effectIndex, rank) {
-  return describeCharacterAbilityEffect(effect, rank);
+function effectDetail(definition, effect, _effectIndex, rank) {
+  const described = describeCharacterAbilityEffect(effect, rank);
+  return abilityTargeting(definition).anchorSide === "ally"
+    ? described.replaceAll("yourself", "the target ally")
+    : described;
+}
+
+const FOOTPRINT_DETAIL = Object.freeze({
+  row: "target row",
+  column: "target column",
+  "cross-short": "target and adjacent cells",
+  "cross-full": "target row and column",
+  all: "entire target field",
+});
+
+function skillContractClauses(definition) {
+  const targeting = abilityTargeting(definition);
+  let target = "self";
+  if (definition.effects.some((effect) => effect.target === "all")) {
+    target = "all combatants";
+  } else if (targeting.anchorSide === "ally") {
+    target = "one ally (including you)";
+  } else if (targeting.anchorSide === "enemy") {
+    target = targeting.footprint === "single" ? "one enemy" : "enemy field";
+  }
+  const clauses = [`Target: ${target}`];
+  if (targeting.footprint !== "single") {
+    clauses.push(`Area: ${FOOTPRINT_DETAIL[targeting.footprint]}`);
+  }
+  if (definition.effects.some((effect) => effect.type === "shield")) {
+    clauses.push("Ward refreshes instead of stacking and expires after the opposing command window");
+  }
+  clauses.push(`Cooldown: ${definition.cooldown > 0 ? `${definition.cooldown} rounds` : "none"}`);
+  return clauses;
 }
 
 export function towSkillDetail(definition, skillState, weaponPresentation = null) {
@@ -143,6 +180,8 @@ export function towSkillDetail(definition, skillState, weaponPresentation = null
     effectDetail(definition, effect, index, skillState.rank)
   ));
   if (definition.note) effects.push(definition.note.replace(/-/g, " "));
+  effects.push(...combatPolicyClausesForSkill(definition));
+  effects.push(...skillContractClauses(definition));
   return effects.join(" · ") || "No immediate combat effect";
 }
 
@@ -323,13 +362,18 @@ function intentOutcomeText(intent) {
   return `${intent.kind || "ability"} effect`;
 }
 
+function intentTargetName(intent, primaryTarget = null) {
+  if (intent?.target === "area") return intent.targetName || "the formation";
+  return primaryTarget?.name || intent?.targetName || "your party";
+}
+
 function IntentBadge({ intent, target, source }) {
   if (!intent) return null;
   const visual = combatVfxForIntent(intent);
   const damage = intent.damage > 0
     ? intent.hits > 1 ? `${intent.hits}×${intent.damage}` : intent.damage
     : ({ afflict: "HEX", boon: "BOON", recover: "MEND", ward: "WARD" }[intent.kind] || "ACT");
-  const targetName = target?.name || intent.targetName || "your party";
+  const targetName = intentTargetName(intent, target);
   const sourceName = source?.name || "Enemy";
   const outcome = intentOutcomeText(intent);
   const targetText = intent.target === "self" ? "self" : targetName;
@@ -740,20 +784,12 @@ function CombatantPlate({
   );
 }
 
-function targetLabel(actor, intent) {
-  if (actor.hp <= 0) return `${actor.name}, down`;
-  const health = `${actor.hp} of ${actor.maxHp} health`;
-  if (!intent) return `Target ${actor.name}, ${health}`;
-  const blow = intentOutcomeText(intent);
-  return `Target ${actor.name}, ${health}, preparing ${intent.name} for ${blow}`;
-}
-
 function actionsLeft(encounter, actorId) {
   if (actorId === encounter.playerId) return encounter.turn.actionsRemaining;
   return encounter.turn.allies?.[actorId] ?? 0;
 }
 
-function eventTouchesStatus(event, actorId, statusType) {
+export function eventTouchesStatus(event, actorId, statusType) {
   if (event.type === "trait-fired") {
     const targetMatches = Array.isArray(event.targetIds)
       ? event.targetIds.includes(actorId)
@@ -764,8 +800,14 @@ function eventTouchesStatus(event, actorId, statusType) {
     const targetId = event.targetId || (event.target === "self" ? event.actorId : null);
     return targetId === actorId && event.status === statusType;
   }
-  if (event.type === "skill-status-amplified") {
+  if (event.type === "skill-status-modified") {
+    return event.targetId === actorId && event.status === statusType;
+  }
+  if (["skill-status-amplified", "skill-status-scaled", "skill-cleanse"].includes(event.type)) {
     return event.targetId === actorId && event.statuses?.includes(statusType);
+  }
+  if (event.type === "initiative-converted") {
+    return event.actorId === actorId && ["initiative", "priority"].includes(statusType);
   }
   return false;
 }
@@ -1124,8 +1166,18 @@ export function TowCombatView({
   const living = enemies.filter((enemy) => enemy.hp > 0);
   const authoritativeTerminal = encounter.phase !== "player";
   const terminal = authoritativeTerminal && terminalRevealed;
+  // The outcome is canonical before it is shown; the reveal hold is a cosmetic beat that
+  // lets the final contact cues land before the tally replaces the field.
   const terminalHold = authoritativeTerminal && !terminalRevealed;
+  // Visual-only presentation state: dims the scene, marks assistive tech busy, and styles
+  // the exchange. It never gates a command.
   const presentationLocked = Boolean(actionBeat) || terminalHold || impactCues.length > 0;
+  // Authoritative input gate: only a genuinely undecided moment suppresses commands —
+  // the brief mythical cut-in before its commit, or a fight that is already over.
+  // Impact cues, windups, recoveries, and open target previews never count: the next
+  // command is legal the instant the kernel is, and presentation may not veto it.
+  const mythicDeclaring = actionBeat?.phase === "declaration";
+  const inputSuppressed = mythicDeclaring || authoritativeTerminal;
   const activeTarget = living.find((enemy) => enemy.id === targetId)?.id || living[0]?.id || null;
   const commandable = playerSide.filter((actor) => actor.hp > 0);
   const activeCommander = commandable.find((actor) => (
@@ -1175,10 +1227,7 @@ export function TowCombatView({
     const definition = getSkill(skillState.id);
     const legality = forcedWindow
       ? { ok: false, reason: forcedWindow.kind === "control" ? "action-nullified" : "priority-preempted" }
-      : skillLegality(skillState, {
-        turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
-        resolveAvailable: activeCommander.resolve,
-      });
+      : combatSkillLegality(encounter, skillState.id, activeCommander.id);
     return {
       art: resolveTowAbilityArt(definition, commanderWeapon),
       definition,
@@ -1276,10 +1325,13 @@ export function TowCombatView({
   const receipts = recentCombatReceipts(encounter, receiptOptions);
   const tempoReceipt = combatTempoReceipt(encounter, activeCommander.id);
   const activeIntent = intents[staged?.id];
+  const activeIntentTargetName = activeIntent
+    ? intentTargetName(activeIntent, encounter.actors[activeIntent.targetId])
+    : null;
   const openingReceipt = activeIntent ? {
     sequence: `intent-${encounter.round}-${staged?.id}`,
     kind: "intent",
-    text: `${staged.name} declares ${activeIntent.name}${activeIntent.target === "self" ? "" : ` against ${encounter.actors[activeIntent.targetId]?.name || activeIntent.targetName || "the party"}`}: ${intentOutcomeText(activeIntent)}. ${activeCommander.id === encounter.playerId ? "You have" : `${activeCommander.name} has`} ${actionsLeft(encounter, activeCommander.id)} action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}.`,
+    text: `${staged.name} declares ${activeIntent.name}${activeIntent.target === "self" ? "" : ` against ${activeIntentTargetName}`}: ${intentOutcomeText(activeIntent)}. ${activeCommander.id === encounter.playerId ? "You have" : `${activeCommander.name} has`} ${actionsLeft(encounter, activeCommander.id)} action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}.`,
   } : null;
   const swiftReceipt = (() => {
     if (receipts.length === 0) return null;
@@ -1349,7 +1401,7 @@ export function TowCombatView({
   }
 
   function beginSkillTargeting(row, initiatingAction = null) {
-    if (presentationLocked || !row.legality.ok) return;
+    if (inputSuppressed || !row.legality.ok) return;
     targetingActionRef.current = initiatingAction;
     const anchors = legalSkillAnchors(encounter, row.definition, activeCommander.id);
     const profile = abilityTargeting(row.definition);
@@ -1376,7 +1428,7 @@ export function TowCombatView({
   }
 
   function inspectCombatant(actor) {
-    if (!actor || presentationLocked || targetingDraft) return;
+    if (!actor || inputSuppressed) return;
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setInspectedActorId(null);
@@ -1391,12 +1443,15 @@ export function TowCombatView({
   }
 
   function selectFormationCell(side, index) {
-    if (!targetingRow || presentationLocked) return;
+    if (!targetingRow || inputSuppressed) return;
     if (!validAnchors.some((entry) => entry.side === side && entry.index === index)) return;
     const anchorCell = { side, index };
     const formations = encounterFormations(encounter);
     const occupant = formations[side]?.[index];
     if (occupant && encounter.actors[occupant]?.side === "enemy") setTargetId(occupant);
+    // Input always uses the current authoritative formation. While no target decision is
+    // open, movement may keep showing its pre-move cosmetic frame; opening targeting drops
+    // that cosmetic snapshot so visible cells, previews, and the committed anchor agree.
     const preview = resolveSkillTargets(
       encounter,
       targetingRow.definition,
@@ -1414,7 +1469,7 @@ export function TowCombatView({
   }
 
   function previewFormationCell(side, index) {
-    if (!targetingRow || presentationLocked) {
+    if (!targetingRow || inputSuppressed) {
       setPreviewAnchorCell(null);
       return;
     }
@@ -1443,7 +1498,7 @@ export function TowCombatView({
   }
 
   function queueSkillAction(row = targetingRow, preview = resolvedPreview) {
-    if (presentationLocked || !row?.legality.ok || !preview?.ok) return;
+    if (inputSuppressed || !row?.legality.ok || !preview?.ok) return;
     const reducedMotion = typeof window !== "undefined"
       && typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1479,30 +1534,32 @@ export function TowCombatView({
     setTargetingDraft(null);
     setPreviewAnchorCell(null);
     targetingActionRef.current = null;
-    setActionBeat(beat);
+    setActionBeat({ ...beat, phase: declarationMs > 0 ? "declaration" : "windup" });
     clearActionTimer("declaration");
     clearActionTimer("commit");
-    if (declarationMs > 0) {
-      actionTimersRef.current.declaration = setTimeout(() => {
-        actionTimersRef.current.declaration = null;
-        setActionBeat((current) => current ? { ...current, phase: "windup" } : current);
-      }, declarationMs);
-    }
-    actionTimersRef.current.commit = setTimeout(() => {
-      actionTimersRef.current.commit = null;
-      try {
-        onUseSkill(
-          row.skillState.id,
-          preview.primaryTargetId,
-          activeCommander.id,
-          preview.anchorCell,
-        );
-      } finally {
-        setActionBeat((current) => current ? { ...current, phase: "resolve" } : current);
-        clearActionTimer("release");
-        actionTimersRef.current.release = setTimeout(releaseActionBeat, choreography.recoveryMs);
+    clearActionTimer("release");
+    // Dispatch first, decorate second: the kernel owns truth, so the command leaves for
+    // the engine immediately and the declaration/recovery rhythm plays as a cosmetic
+    // tail. The player's next legal command is never held hostage to either.
+    try {
+      onUseSkill(
+        row.skillState.id,
+        preview.primaryTargetId,
+        activeCommander.id,
+        preview.anchorCell,
+      );
+    } finally {
+      if (declarationMs > 0) {
+        actionTimersRef.current.declaration = setTimeout(() => {
+          actionTimersRef.current.declaration = null;
+          setActionBeat((current) => current ? { ...current, phase: "resolve" } : current);
+        }, declarationMs);
       }
-    }, declarationMs + choreography.windupMs);
+      actionTimersRef.current.release = setTimeout(
+        releaseActionBeat,
+        declarationMs + choreography.recoveryMs,
+      );
+    }
   }
 
   useEffect(() => {
@@ -1542,11 +1599,11 @@ export function TowCombatView({
   }, [terminal]);
 
   useEffect(() => {
-    if (!targetingDraft?.skillId || presentationLocked) return;
+    if (!targetingDraft?.skillId || inputSuppressed) return;
     combatRef.current
       ?.querySelector(".tow-formation-cell.is-valid-anchor:not(:disabled)")
       ?.focus();
-  }, [presentationLocked, targetingDraft?.skillId]);
+  }, [inputSuppressed, targetingDraft?.skillId]);
 
   useEffect(() => {
     setInspectedSkillId(null);
@@ -1568,8 +1625,8 @@ export function TowCombatView({
   }, [satchelOpen]);
 
   useEffect(() => {
-    if (combatItemRows.length === 0 || presentationLocked) setSatchelOpen(false);
-  }, [combatItemRows.length, presentationLocked]);
+    if (combatItemRows.length === 0 || inputSuppressed) setSatchelOpen(false);
+  }, [combatItemRows.length, inputSuppressed]);
 
   useLayoutEffect(() => {
     const previousPhase = authoritativePhaseRef.current;
@@ -1631,33 +1688,29 @@ export function TowCombatView({
     return undefined;
   }, [encounter, encounter.sequence]);
 
-  // A controlled or out-prioritised command window is presentation, never input. Keeping
-  // the authoritative Stand Down command means the skipped window remains replayable; the
-  // short read hold lets the status rail and declaration explain why before the enemy line
-  // advances on its own. The sequence key prevents Strict Mode or a harmless rerender from
-  // dispatching the same forced command twice.
+  // A controlled or out-prioritised command window is presentation, never input. There
+  // is nothing for the player to decide inside it, so the view announces the reason via
+  // the command rail and hands the turn straight back instead of holding the round
+  // behind an unskippable read delay. The sequence key prevents Strict Mode or a harmless
+  // rerender from dispatching the same forced command twice.
   useEffect(() => {
     if (
       terminal
-      || presentationLocked
       || !forcedWindow
       || actionsLeft(encounter, activeCommander.id) <= 0
       || typeof onStandDown !== "function"
     ) return undefined;
     const key = `${encounter.sequence}:${activeCommander.id}:${forcedWindow.kind}`;
     if (forcedAdvanceRef.current === key) return undefined;
-    const timer = setTimeout(() => {
-      forcedAdvanceRef.current = key;
-      onStandDown(activeCommander.id);
-    }, FORCED_WINDOW_READ_MS);
-    return () => clearTimeout(timer);
+    forcedAdvanceRef.current = key;
+    onStandDown(activeCommander.id);
+    return undefined;
   }, [
     activeCommander.id,
     encounter,
     encounter.sequence,
     forcedWindow?.kind,
     onStandDown,
-    presentationLocked,
     terminal,
   ]);
 
@@ -1682,8 +1735,6 @@ export function TowCombatView({
       } else if (targetingDraft) {
         event.preventDefault();
         cancelSkillTargeting();
-      } else if (presentationLocked) {
-        event.preventDefault();
       } else if (onEscape) {
         event.preventDefault();
         onEscape();
@@ -1708,38 +1759,6 @@ export function TowCombatView({
       event.preventDefault();
       first.focus();
     }
-  }
-
-  function enemyToken(enemy) {
-    const targetable = !terminal && enemy.hp > 0;
-    const body = (
-      <>
-        <span className="tow-combat__foe-token-state" aria-hidden="true" />
-        <span className="tow-combat__foe-token-name">{enemy.name}</span>
-        <span className="tow-combat__foe-token-hp">{enemy.hp}/{enemy.maxHp}</span>
-      </>
-    );
-    return targetable ? (
-      <button
-        key={enemy.id}
-        type="button"
-        className="tow-combat__foe-token production-combat__fighter--target"
-        aria-label={targetLabel(enemy, intents[enemy.id])}
-        aria-pressed={enemy.id === activeTarget}
-        disabled={presentationLocked}
-        onClick={() => setTargetId(enemy.id)}
-      >
-        {body}
-      </button>
-    ) : (
-      <article
-        key={enemy.id}
-        className={`tow-combat__foe-token${enemy.hp <= 0 && terminal ? " is-down" : ""}`}
-        aria-label={`Foe: ${enemy.name}`}
-      >
-        {body}
-      </article>
-    );
   }
 
   const formations = encounterFormations(encounter);
@@ -1778,11 +1797,10 @@ export function TowCombatView({
             <span>Round</span>
             <strong>{encounter.round}</strong>
             {!terminal ? (
-              <em>{presentationLocked
-                ? actionBeat?.phase === "declaration"
-                  ? "Mythical ability"
-                  : actionBeat?.phase === "windup" ? "Action committed" : "Reading the exchange"
-                : "Your move"}</em>
+              <em>{actionBeat?.phase === "declaration"
+                ? "Mythical ability"
+                : actionBeat ? "Resolving"
+                  : forcedWindow ? `${forcedWindow.label}` : "Your move"}</em>
             ) : null}
           </p>
           <p className="tow-combat__context">
@@ -1796,7 +1814,7 @@ export function TowCombatView({
                 type="button"
                 className="tow-combat__escape tow-combat__escape--retreat"
                 onClick={() => onRetreat(activeCommander.id)}
-                disabled={presentationLocked || Boolean(forcedWindow)}
+                disabled={inputSuppressed || Boolean(forcedWindow)}
                 aria-label={`Attempt retreat. ${retreat.chancePercent}% chance. Spends ${commanderPossessive} action on failure.`}
               >
                 <Icon name="arrowLeft" size={15} />
@@ -1804,7 +1822,7 @@ export function TowCombatView({
               </button>
             ) : null}
             {onEscape ? (
-              <button type="button" className="tow-combat__escape" onClick={onEscape} disabled={presentationLocked}>
+              <button type="button" className="tow-combat__escape" onClick={onEscape} disabled={mythicDeclaring}>
                 <Icon name="x" size={15} />
                 <span>{escapeLabel}</span>
               </button>
@@ -1820,7 +1838,7 @@ export function TowCombatView({
             actors={encounter.actors}
             formations={formations}
             artForActor={combatArt}
-            validAnchors={targetingDraft && !presentationLocked ? validAnchors : []}
+            validAnchors={!inputSuppressed ? validAnchors : []}
             affectedCells={footprintPreview?.affectedCells
               || (actionBeat?.phase !== "resolve" ? actionBeat?.affectedCells : null)
               || []}
@@ -1830,14 +1848,14 @@ export function TowCombatView({
               || (actionBeat?.phase !== "resolve" ? actionBeat?.anchorCell : null)
               || null}
             intentCells={terminal ? [] : intentCells}
-            intentCellsBeforeMove={intentCellsBeforeMove}
-            activeActorId={activeCommander.id}
+            intentCellsBeforeMove={targetingRow ? [] : intentCellsBeforeMove}
+            activeActorId={terminal ? null : activeCommander.id}
             onSelectCell={selectFormationCell}
             onPreviewCell={previewFormationCell}
-            onInspectActor={targetingDraft ? null : inspectCombatant}
+            onInspectActor={inspectCombatant}
             renderActorOverlay={renderFormationOverlay}
             feedbackCues={impactCues}
-            movementCue={movementCue}
+            movementCue={targetingRow ? null : movementCue}
           />
 
           {!terminal ? (
@@ -1863,7 +1881,7 @@ export function TowCombatView({
         {!terminal ? (
           <footer
             className={`tow-combat__command${presentationLocked ? " is-committed" : ""}${forcedWindow ? " is-forced" : ""}`}
-            aria-busy={presentationLocked || Boolean(forcedWindow)}
+            aria-busy={inputSuppressed || Boolean(forcedWindow)}
           >
             <p className="tow-combat__sr-only" aria-live="polite">
               {forcedWindow
@@ -1893,7 +1911,7 @@ export function TowCombatView({
                 <button
                   type="button"
                   className="tow-combat__target-commit"
-                  disabled={!resolvedPreview || presentationLocked}
+                  disabled={!resolvedPreview || inputSuppressed}
                   onClick={() => queueSkillAction(targetingRow, resolvedPreview)}
                 >
                   Confirm
@@ -1915,7 +1933,7 @@ export function TowCombatView({
                   weaponPresentation={row.weaponPresentation}
                   legality={row.legality}
                   active={row.skillState.id === inspectedSkillId}
-                  busy={presentationLocked}
+                  busy={inputSuppressed}
                   committed={row.skillState.id === actionBeat?.skillId || row.skillState.id === targetingDraft?.skillId}
                   onShowDetails={() => {
                     setInspectedStatus(null);
@@ -1941,7 +1959,7 @@ export function TowCombatView({
                       aria-haspopup="dialog"
                       aria-expanded={satchelOpen}
                       aria-controls={satchelOpen ? "tow-combat-satchel" : undefined}
-                      disabled={presentationLocked || Boolean(forcedWindow)}
+                      disabled={inputSuppressed || Boolean(forcedWindow)}
                       onClick={() => {
                         setInspectedSkillId(null);
                         setInspectedStatus(null);
@@ -1983,7 +2001,7 @@ export function TowCombatView({
                                 key={item.id}
                                 type="button"
                                 className="tow-combat__satchel-item"
-                                disabled={presentationLocked || !legality.ok}
+                                disabled={inputSuppressed || !legality.ok}
                                 aria-label={`${item.name}. ${describeCombatItemEffect(item)}. ${held.quantity} left${legality.ok ? ". Use item" : `. ${refusalText(legality.reason, held)}`}`}
                                 onClick={() => {
                                   setSatchelOpen(false);
@@ -2024,9 +2042,9 @@ export function TowCombatView({
                 <button
                   type="button"
                   className="tow-combat__hold"
-                  aria-disabled={presentationLocked}
+                  aria-disabled={inputSuppressed}
                   onClick={() => {
-                    if (!presentationLocked) onStandDown?.(activeCommander.id);
+                    if (!inputSuppressed) onStandDown?.(activeCommander.id);
                   }}
                 >
                   {activeCommander.id === encounter.playerId

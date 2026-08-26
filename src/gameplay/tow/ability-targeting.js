@@ -5,7 +5,7 @@
 // invalidate old receipts. This adapter therefore leaves `effect.target` untouched and
 // describes where an action may be anchored and how each effect follows that anchor.
 
-export const ABILITY_TARGETING_VERSION = 1;
+export const ABILITY_TARGETING_VERSION = 2;
 
 export const ABILITY_ANCHOR_SIDES = Object.freeze(["enemy", "ally", "self"]);
 export const ABILITY_REACHES = Object.freeze(["self", "melee", "ranged", "global"]);
@@ -49,14 +49,6 @@ const RESTRAINED_COMPATIBILITY_IDS = new Set([
 // to one allied anchor (including the caster). Fixed defenses, movement, transformations,
 // summons, fatal bargains, and resource restoration are intentionally absent.
 export const ALLY_TARGET_ABILITY_IDS = Object.freeze([
-  "elixir-of-wrath",
-  "first-aid",
-  "transcendence",
-  "unbendable-will",
-  "urgent-guard",
-  "stone-skin-elixir",
-  "protection-scroll",
-  "killing-instinct",
   "arctic-gather-strength",
   "arctic-battle-cry",
   "arctic-thirst-for-blood",
@@ -151,7 +143,6 @@ const FOOTPRINT_BY_ID = Object.freeze({
   "arctic-cross-slash": "cross-short",
   "arctic-giants-smash": "cross-short",
   "demon-smoke-bomb": "cross-short",
-  "sleep-grenade": "cross-short",
   "assassin-flash-bomb": "cross-short",
   "north-king-boulder-toss": "cross-short",
   "clocktower-grenade-toss": "cross-short",
@@ -176,6 +167,7 @@ const FOOTPRINT_BY_ID = Object.freeze({
   "sleepless-fire-rain": "all",
   "vampire-rain-of-death": "all",
   "automaton-scorched-earth": "all",
+  "peace-declaration": "all",
 });
 
 const RANGED_ARCHETYPES = new Set([

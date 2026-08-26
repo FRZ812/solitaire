@@ -1,21 +1,10 @@
-import { cloneJsonData } from "./json-data.js";
+import { canonicalJsonData, cloneJsonData } from "./json-data.js";
 import { isEncounterState } from "./model.js";
 import { resolveCommand } from "./resolve.js";
 
 export const CHECKSUM_ALGORITHM = "fnv1a64-utf16-v1";
 export const REPLAY_RECEIPT_VERSION = 1;
 export const MAX_REPLAY_COMMANDS = 4096;
-
-function canonicalize(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -25,15 +14,17 @@ function deepFreeze(value) {
 }
 
 export function gameplayChecksum(value) {
-  const json = canonicalize(cloneJsonData(value));
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  const mask = 0xffffffffffffffffn;
+  const json = canonicalJsonData(value);
+  let high = 0xcbf29ce4;
+  let low = 0x84222325;
   for (let index = 0; index < json.length; index += 1) {
-    hash ^= BigInt(json.charCodeAt(index));
-    hash = (hash * prime) & mask;
+    low = (low ^ json.charCodeAt(index)) >>> 0;
+    const lowProduct = low * 0x1b3;
+    const carry = Math.floor(lowProduct / 0x1_0000_0000);
+    high = (high * 0x1b3 + low * 0x100 + carry) >>> 0;
+    low = lowProduct >>> 0;
   }
-  return hash.toString(16).padStart(16, "0");
+  return high.toString(16).padStart(8, "0") + low.toString(16).padStart(8, "0");
 }
 
 function sealReceipt(body) {

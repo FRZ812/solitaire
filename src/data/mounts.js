@@ -349,7 +349,7 @@ export function generateMountName(race) {
 // companion (companionCodexEntry), plus the mount block and riding linkage.
 export function mountCodexEntry(tmpl, name) {
   const entry = {
-    id: tmpl.id, kind: "mount",
+    id: tmpl.id, kind: "mount", portraitKey: `mount:${tmpl.id}`,
     name: name || tmpl.name, species: tmpl.name, race: tmpl.race,
     profession: mountProfession(tmpl), archetype: `${tmpl.id}-mount`,
     level: MOUNT_PROGRESSION_LEVEL_BY_TIER[tmpl.tier] || 10,

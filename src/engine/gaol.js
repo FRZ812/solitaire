@@ -5,7 +5,7 @@
 
 import { makeRng } from "./town-gen.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
-import { WANTED_POOL, PRISONER_POOL, GAOL_REFRESH_DAYS } from "../data/gaol.js";
+import { WANTED_POOL, PRISONER_POOL, GAOL_REFRESH_DAYS, wantedCodexEntry } from "../data/gaol.js";
 
 export function gaolBucket(day) {
   return Math.floor((day || 0) / GAOL_REFRESH_DAYS);
@@ -37,14 +37,37 @@ export function generateGaol(tileKey, day) {
 export function acceptBounty(state, b) {
   const quests = state.world.quests || [];
   if (quests.some((q) => q.id === b.id)) return { state, ok: false, reason: "Already taken." };
+  const targetCharacterId = `wanted-${b.key}`;
   const q = {
     id: b.id, title: `Bounty: ${b.name}`, giver: "the warden", type: "bounty",
-    target: b.name, crime: b.crime, desc: b.desc,
+    target: b.name, targetKey: b.key, targetCharacterId, crime: b.crime, desc: b.desc,
     rewardCp: b.rewardAliveCp, rewardDeadCp: b.rewardDeadCp,
     loc: b.target || null, locName: b.targetName || null, // last-seen haunt for the map
     day: state.time.day, status: "active",
   };
-  return { ok: true, state: { ...state, world: { ...state.world, quests: [...quests, q] } } };
+  const codex = state.world.codex || {};
+  const characters = codex.characters || {};
+  const existingTarget = characters[targetCharacterId];
+  const target = existingTarget
+    ? {
+        ...existingTarget,
+        kind: existingTarget.kind || "wanted",
+        portraitKey: typeof existingTarget.portraitKey === "string" && existingTarget.portraitKey.trim()
+          ? existingTarget.portraitKey
+          : `wanted:${b.key}`,
+      }
+    : wantedCodexEntry(b);
+  return {
+    ok: true,
+    state: {
+      ...state,
+      world: {
+        ...state.world,
+        quests: [...quests, q],
+        codex: { ...codex, characters: { ...characters, [targetCharacterId]: target } },
+      },
+    },
+  };
 }
 
 // Pay the warden for a prisoner's rights. Deducts coin; the custody scene that

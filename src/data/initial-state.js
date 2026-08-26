@@ -21,6 +21,7 @@ import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./pl
 import { migrateProgressionState } from "../engine/progression.js";
 import { normalizeMemoryBank } from "../engine/memory.js";
 import { DEFAULT_NARRATOR_SETTINGS, normalizeNarratorSettings } from "../engine/narrator-settings.js";
+import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -1012,6 +1013,41 @@ function migrateWorldVersions(world) {
   };
 }
 
+const WANTED_BY_KEY = new Map(WANTED_POOL.map((person) => [person.key, person]));
+
+function wantedPersonForActiveBounty(quest) {
+  if (quest?.type !== "bounty" || quest.status !== "active") return null;
+  if (WANTED_BY_KEY.has(quest.targetKey)) return WANTED_BY_KEY.get(quest.targetKey);
+  const characterKey = typeof quest.targetCharacterId === "string"
+    ? quest.targetCharacterId.replace(/^wanted-/, "")
+    : null;
+  if (WANTED_BY_KEY.has(characterKey)) return WANTED_BY_KEY.get(characterKey);
+  return WANTED_POOL.find((person) => (
+    String(quest.id || "").endsWith(`-${person.key}`) || quest.target === person.name
+  )) || null;
+}
+
+function backfillActiveBountyTargets(world) {
+  const characters = world.codex?.characters;
+  if (!characters || !Array.isArray(world.quests)) return;
+  for (const quest of world.quests) {
+    const person = wantedPersonForActiveBounty(quest);
+    if (!person) continue;
+    const targetCharacterId = `wanted-${person.key}`;
+    if (!quest.targetKey) quest.targetKey = person.key;
+    if (!quest.targetCharacterId) quest.targetCharacterId = targetCharacterId;
+    const existing = characters[targetCharacterId];
+    if (!existing) {
+      characters[targetCharacterId] = wantedCodexEntry(person);
+      continue;
+    }
+    if (!existing.kind) existing.kind = "wanted";
+    if (typeof existing.portraitKey !== "string" || !existing.portraitKey.trim()) {
+      existing.portraitKey = `wanted:${person.key}`;
+    }
+  }
+}
+
 // Merge any codex entries that exist in the fresh initial state but are
 // missing from a loaded campaign — races, professions, named NPCs, etc.
 // added to initial-state.js after the campaign was created. The player's
@@ -1085,6 +1121,7 @@ export function migrateCodex(state) {
       if (!ownCodex[sub][k]) ownCodex[sub][k] = v;
     }
   }
+  backfillActiveBountyTargets(next.world);
   // One-time cleanup for saves made before the creation dedup fix: a self-fact
   // could be filed twice. Collapse every character's knowledge to unique facts.
   for (const ch of Object.values(ownCodex.characters || {})) {

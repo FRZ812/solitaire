@@ -105,6 +105,7 @@ export function bondedCodexEntry(captive) {
   const entry = {
     id: `bonded-${captive.key}`, // overwritten by beat.js with the day-stamped id
     kind: "bonded",
+    portraitKey: `bonded:${captive.key}`,
     name: captive.name,
     race,
     subrace: captive.subrace || null,

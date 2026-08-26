@@ -467,6 +467,15 @@ function compileEffects(sourceId, sourceEffects, rankCount) {
     if (effect[0] === "SkillCharger") return sourceCharger(effect, rankCount);
     throw new TypeError(`unknown-source-effect:${effect[0]}`);
   });
+  // The captured Interception row starts at zero and would spend an action for no outcome.
+  // Its recorded 25-point promotion increment is the first useful Solitaire rank, so preserve
+  // that progression without exposing an inert Common command.
+  if (sourceId === 1031206) {
+    return Object.freeze(compiled.map((effect) => freezeEffect({
+      ...effect,
+      countByRank: rankTable(25, 25, rankCount),
+    })));
+  }
   return mergeSourceEffects(compiled);
 }
 
@@ -494,6 +503,12 @@ function factorLabel(effect) {
   return "source value";
 }
 
+function decayProtectionClause(effect) {
+  return effect.stackDownDelay > 0
+    ? "; persists through its first turn end before normal decay"
+    : "";
+}
+
 export function describeCharacterAbilityEffect(effect, rank = 1) {
   const value = characterAbilityEffectMagnitude(effect, rank);
   const target = effect.target === "self" ? "yourself" : effect.target === "all" ? "all combatants" : "the enemy";
@@ -509,10 +524,10 @@ export function describeCharacterAbilityEffect(effect, rank = 1) {
   if (effect.type === "heal") return `Restore ${value}% ${factorLabel(effect)} health`;
   if (effect.type === "heal-flat") return `Restore ${value} health`;
   if (effect.type === "heal-lost-fraction") return `Restore ${value}% of lost health`;
-  if (effect.type === "status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${value} ${statusLabel(effect.status)}${effect.target === "all" ? " on all combatants" : ""}`;
+  if (effect.type === "status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${value} ${statusLabel(effect.status)}${effect.target === "all" ? " on all combatants" : ""}${decayProtectionClause(effect)}`;
   if (effect.type === "modify-status") return `Lose ${Math.abs(value)} ${statusLabel(effect.status)}`;
-  if (effect.type === "scaled-status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${statusLabel(effect.status)} equal to ${value}% ${factorLabel(effect)}`;
-  if (effect.type === "status-from-status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${statusLabel(effect.status)} equal to ${value}× ${factorLabel(effect)}`;
+  if (effect.type === "scaled-status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${statusLabel(effect.status)} equal to ${value}% ${factorLabel(effect)}${decayProtectionClause(effect)}`;
+  if (effect.type === "status-from-status") return `${effect.target === "self" ? "Gain" : "Inflict"} ${statusLabel(effect.status)} equal to ${value}× ${factorLabel(effect)}${decayProtectionClause(effect)}`;
   if (effect.type === "scale-status") {
     const names = effect.statuses.map(statusLabel).join(", ");
     const verb = value === 0 ? "Remove" : value < 100 ? "Reduce" : "Amplify";
@@ -530,14 +545,18 @@ export function describeCharacterAbilityEffect(effect, rank = 1) {
   }
   if (effect.type === "consume-status") return `Spend ${value} ${statusLabel(effect.status)}`;
   if (effect.type === "scaled-status-enemy-lost-hp") {
-    return `Inflict ${statusLabel(effect.status)} equal to ${value}% of enemy lost health`;
+    return `Inflict ${statusLabel(effect.status)} equal to ${value}% of enemy lost health${decayProtectionClause(effect)}`;
   }
   if (effect.type === "delayed-damage") {
     const turns = effect.turnsByRank?.[Math.min(effect.turnsByRank.length - 1, Math.max(0, rank - 1))]
       ?? effect.turns;
     return `Deal ${value} damage after ${turns} turns`;
   }
-  if (effect.type === "temporary-max-hp") return `Gain ${value} maximum health for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
+  if (effect.type === "temporary-max-hp") {
+    return effect.fatal
+      ? `Gain ${value} maximum health for ${effect.turns} turns, then fall to 0 health when it expires`
+      : `Gain ${value} maximum health for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
+  }
   if (effect.type === "restore-skill-uses") return `Restore ${value} Resolve`;
   return effect.type.replace(/-/g, " ");
 }
@@ -565,6 +584,12 @@ function compileAbility(row) {
     : null;
   const description = `${effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`;
   const archetypeId = canonicalTowArchetypeId(characterId);
+  const sourceTranslation = sourceId === 1031206
+    ? {
+      fidelity: "adapted",
+      detail: "The shipped zero-value source row is skipped so every offered Interception rank has a mechanical outcome; its captured +25 progression is preserved.",
+    }
+    : { fidelity: "direct", detail: description };
   return Object.freeze({
     id,
     name: GENERALIZED_ABILITY_NAMES[id] || name.trim(),
@@ -588,8 +613,7 @@ function compileAbility(row) {
       characterId,
       archetypeId,
       sourceName,
-      fidelity: "direct",
-      detail: description,
+      ...sourceTranslation,
     }),
     note: null,
     rankCount,

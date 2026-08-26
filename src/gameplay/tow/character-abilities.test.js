@@ -82,6 +82,21 @@ function withStatus(type, count, stack = createStatusStack()) {
   return applyStatus(stack, type, count);
 }
 
+function prerequisiteStatusesFor(ability) {
+  const ids = new Set();
+  for (const effect of ability.effects) {
+    if (effect.factorStatus) ids.add(effect.factorStatus);
+    for (const status of effect.statuses || []) ids.add(status);
+    if (["modify-status", "reduce-statuses"].includes(effect.type) && effect.status) {
+      ids.add(effect.status);
+    }
+  }
+  return [...ids].reduce(
+    (statuses, type) => applyStatus(statuses, type, 10),
+    createStatusStack(),
+  );
+}
+
 describe("source-calibrated archetype ability catalogue", () => {
   it("maps all 276 shipped records one-to-one across the 12 reusable archetype kits", () => {
     expect(TOW_CHARACTER_ABILITY_SOURCE_ROWS).toHaveLength(276);
@@ -103,15 +118,27 @@ describe("source-calibrated archetype ability catalogue", () => {
     }
   });
 
-  it("marks every archetype ability as direct build data and removes remake notes", () => {
+  it("classifies every source translation and removes remake notes", () => {
+    const adapted = [];
     for (const ability of Object.values(CHARACTER_ABILITIES)) {
-      expect(ability.source).toMatchObject({ build: TOW_SOURCE_BUILD, fidelity: "direct" });
+      const expectedFidelity = ability.id === "automaton-interception" ? "adapted" : "direct";
+      expect(ability.source).toMatchObject({ build: TOW_SOURCE_BUILD, fidelity: expectedFidelity });
+      if (ability.source.fidelity === "adapted") adapted.push(ability.id);
       expect(ability.source.sourceName).toBeTruthy();
       expect(ability.source.sourceId).toBeGreaterThanOrEqual(1030101);
       expect(ability.note).toBeNull();
       expect(ability.description.length).toBeGreaterThan(10);
       expect(ability.description).not.toMatch(/source-guided|remake|normalized/i);
     }
+    expect(adapted).toEqual(["automaton-interception"]);
+  });
+
+  it("labels Interception's skipped inert source row as an adaptation", () => {
+    expect(getCharacterAbility("automaton-interception").source).toMatchObject({
+      sourceId: 1031206,
+      fidelity: "adapted",
+      detail: expect.stringContaining("zero-value source row"),
+    });
   });
 
   it("uses the shipped rules chassis for every playable archetype", () => {
@@ -147,7 +174,22 @@ describe("source-calibrated archetype ability catalogue", () => {
     for (const ability of Object.values(CHARACTER_ABILITIES)) {
       for (const rank of new Set([1, ability.rankCount])) {
         try {
-          const result = useSkill(encounterFor(ability.id, { rank }), ability.id, "foe");
+          const statuses = prerequisiteStatusesFor(ability);
+          let state = encounterFor(ability.id, {
+            rank,
+            playerStatuses: statuses,
+            enemyStatuses: statuses,
+          });
+          if (ability.id === "automaton-infinite-power") {
+            state = {
+              ...state,
+              actors: {
+                ...state.actors,
+                wanderer: { ...state.actors.wanderer, resolve: 5, resolveMax: 8 },
+              },
+            };
+          }
+          const result = useSkill(state, ability.id, "foe");
           if (!result.ok) failures.push(`${ability.id}@${rank}:${result.reason}`);
         } catch (error) {
           failures.push(`${ability.id}@${rank}:${error.message}`);

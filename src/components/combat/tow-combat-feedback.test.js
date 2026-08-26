@@ -186,6 +186,203 @@ describe("combat feedback receipts", () => {
     expect(cues.map((cue) => cue.hpChange)).toEqual([-2, -3, -4, -5, -6]);
   });
 
+  it("names every special and delayed boundary-damage source", () => {
+    const event = {
+      sequence: 13,
+      type: "tick-damage",
+      actorId: "foe",
+      voidMonster: 2,
+      hellfireSpirit: 3,
+      fatalBlade: 4,
+      delayedDamage: 5,
+      delayedSkillIds: ["witch-limited-life-sentence"],
+      total: 14,
+      applied: 14,
+    };
+
+    expect(combatEventReceipt(encounter(), event).text).toBe(
+      "Duellist loses 14 health to 2 Void Monster + 3 Hellfire Spirit + 4 Fatal Blade + 5 Delayed Damage; this bypasses defence and ward.",
+    );
+    const cues = combatCuesForEvent(encounter(), event);
+    expect(cues.map((cue) => cue.kicker)).toEqual([
+      "Void Monster", "Hellfire Spirit", "Fatal Blade", "Delayed Damage",
+    ]);
+    expect(cues.map((cue) => cue.hpChange)).toEqual([-2, -3, -4, -5]);
+  });
+
+  it("presents only the canonical HP delta when requested boundary damage overkills", () => {
+    const event = {
+      sequence: 14,
+      type: "tick-damage",
+      actorId: "hero",
+      delayedDamage: 9999,
+      delayedSkillIds: ["automaton-emergency-fuel"],
+      delayedStatuses: ["foul-ceremony"],
+      total: 9999,
+      applied: 100,
+    };
+
+    const cues = combatCuesForEvent(encounter(), event);
+    expect(cues).toHaveLength(1);
+    expect(cues[0]).toMatchObject({
+      label: "-100",
+      kicker: "Delayed Damage",
+      targetId: "hero",
+      hpChange: -100,
+    });
+  });
+
+  it("presents exact status modifications from their authoritative event", () => {
+    const event = {
+      sequence: 14,
+      type: "skill-status-modified",
+      actorId: "hero",
+      targetId: "hero",
+      skillId: "blade-inversion",
+      status: "initiative",
+      requestedDelta: -10,
+      delta: -10,
+      before: 20,
+      after: 10,
+    };
+
+    const receipt = combatEventReceipt(encounter(), event);
+    expect(receipt).toMatchObject({ kind: "status" });
+    expect(receipt.text).toContain("Initiative 20→10");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "afflict",
+      label: "-10",
+      kicker: "Initiative",
+      targetId: "hero",
+    });
+  });
+
+  it("presents temporary maximum-health gains and their fatal timer", () => {
+    const event = {
+      sequence: 15,
+      type: "skill-max-hp",
+      actorId: "hero",
+      targetId: "hero",
+      skillId: "witch-forbidden-ritual",
+      amount: 50,
+      turns: 4,
+      fatal: true,
+    };
+
+    const receipt = combatEventReceipt(encounter(), event);
+    expect(receipt).toMatchObject({ kind: "status" });
+    expect(receipt.text).toContain("50 maximum health for 4 turns");
+    expect(receipt.text).toContain("falls to 0 health when the timer expires");
+    expect(receipt.text).not.toContain("dies when");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "empower",
+      label: "+50",
+      kicker: "Maximum health · 4 turns",
+      targetId: "hero",
+    });
+  });
+
+  it("presents Initiative conversion as the Priority it actually grants", () => {
+    const event = {
+      sequence: 16,
+      type: "initiative-converted",
+      actorId: "hero",
+      skillId: "blade-quick-swordsmanship",
+      initiativeSpent: 100,
+      priorityGained: 1,
+      remainder: 20,
+    };
+
+    const receipt = combatEventReceipt(encounter(), event);
+    expect(receipt).toMatchObject({ kind: "tempo" });
+    expect(receipt.text).toContain("converts 100 Initiative into 1 Priority");
+    expect(receipt.text).toContain("20 Initiative remains");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "empower",
+      label: "+1",
+      kicker: "Priority · 20 Initiative remains",
+      targetId: "hero",
+    });
+  });
+
+  it("presents legacy ability-use restoration without calling it Resolve", () => {
+    const event = {
+      sequence: 17,
+      type: "skill-uses-restored",
+      actorId: "hero",
+      targetId: "hero",
+      skillId: "automaton-infinite-power",
+      amount: 2,
+      restored: 2,
+    };
+
+    const receipt = combatEventReceipt(encounter(), event);
+    expect(receipt).toMatchObject({ kind: "resource" });
+    expect(receipt.text).toContain("restores 2 legacy ability uses");
+    expect(receipt.text).not.toContain("Resolve");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "empower",
+      label: "+2",
+      kicker: "Ability uses",
+      targetId: "hero",
+    });
+  });
+
+  it("presents the active scaled-status event with its real before and after values", () => {
+    const event = {
+      sequence: 13,
+      type: "skill-status-scaled",
+      actorId: "hero",
+      targetId: "foe",
+      skillId: "priestess-doom",
+      statuses: ["burn", "poison", "bleed"],
+      percent: 200,
+      changed: 30,
+      changes: [
+        { status: "burn", before: 10, after: 20 },
+        { status: "poison", before: 10, after: 20 },
+        { status: "bleed", before: 10, after: 20 },
+      ],
+    };
+
+    const receipt = combatEventReceipt(encounter(), event);
+    expect(receipt).toMatchObject({ kind: "status" });
+    expect(receipt.text).toContain("Burn 10→20");
+    expect(receipt.text).toContain("Poison 10→20");
+    expect(receipt.text).toContain("Bleed 10→20");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "afflict",
+      label: "Amplified",
+      kicker: "30 stacks",
+      targetId: "foe",
+    });
+  });
+
+  it("presents beneficial status amplification as empowerment with direct grammar", () => {
+    const event = {
+      sequence: 14,
+      type: "skill-status-scaled",
+      actorId: "hero",
+      targetId: "hero",
+      skillId: "witch-proliferation",
+      statuses: ["skeleton"],
+      percent: 150,
+      changed: 5,
+      changes: [{ status: "skeleton", before: 10, after: 15 }],
+    };
+
+    const receipt = combatEventReceipt(encounter(), event);
+    expect(receipt.text).toContain("amplifies your statuses: Skeleton 10→15");
+    expect(receipt.text).not.toContain("You's");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "empower",
+      label: "Amplified",
+      kicker: "5 stacks",
+      targetId: "hero",
+      targetSide: "player",
+    });
+  });
+
   it("emits every resolved hit as its own staggered floating outcome", () => {
     const cues = combatCuesForEvent(encounter(), {
       sequence: 18,

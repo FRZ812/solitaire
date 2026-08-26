@@ -16,7 +16,7 @@ describe("formation battlefield layout", () => {
     expect(cssBlock(".tow-formation-cell__overlays .tow-combat__intent-sigil"))
       .toContain("border-radius: 50%");
     expect(cssBlock(".tow-formation-statuses"))
-      .toMatch(/bottom:\s*1\.34rem;[\s\S]*min-height:\s*0\.96rem;/);
+      .toMatch(/bottom:\s*1\.34rem;[\s\S]*min-height:\s*1\.18rem;/);
     expect(cssBlock(".tow-formation-unit__vitals"))
       .toContain("grid-template-columns: minmax(0, 1fr)");
     expect(formationCss).not.toContain(".tow-formation-unit__name {");
