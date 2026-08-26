@@ -259,14 +259,16 @@ describe("formation practice combat gauntlet", () => {
     expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
     expect(mounted.querySelectorAll(".tow-formation-cell.is-affected"))
       .toHaveLength(0);
-    expect(onUseSkill).toHaveBeenCalledTimes(1);
-    await act(async () => vi.runAllTimersAsync());
+    // The full-field attack commits instantly; only its cosmetic recovery plays.
+    expect(onUseSkill).toHaveBeenCalledTimes(2);
     expect(onUseSkill).toHaveBeenLastCalledWith(
       areaSkillId,
       areaPreview.primaryTargetId,
       encounter.playerId,
       areaAnchor[0],
     );
+    await act(async () => vi.runAllTimersAsync());
+    expect(onUseSkill).toHaveBeenCalledTimes(2);
   });
 
   it("survives repeated party and enemy exchanges without desync, then restores the same fight on retry", async () => {

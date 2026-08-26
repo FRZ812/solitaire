@@ -98,6 +98,10 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
       const rawEntry = existing
         ? {
             ...existing,
+            kind: "companion",
+            portraitKey: typeof existing.portraitKey === "string" && existing.portraitKey.trim()
+              ? existing.portraitKey
+              : `companion:${tmpl.id}`,
             abilities: existing.abilities?.length ? [...existing.abilities] : [...(tmpl.abilities || [])],
             skills: existing.skills?.length ? existing.skills.map((skill) => ({ ...skill })) : (tmpl.skills || []).map((skill) => ({ ...skill })),
           }

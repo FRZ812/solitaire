@@ -9,16 +9,20 @@
 // resource. A skill can also *replace* the basic attack or defence rather than taking a slot,
 // which is what makes Strike and Block slots rather than cards.
 //
-// Rank values are quoted verbatim from the wiki rather than interpolated. Archetype
-// abilities list every promoted value outright; a General ability whose capture contains
-// one fixed value keeps that value as its rarity rises instead of inventing new scaling.
+// Rank values are quoted verbatim from pinned evidence rather than interpolated. General
+// abilities compile from the reviewed 69-row source fixture; no promotion is cosmetic.
 
 import {
   FLEXIBLE_CHARACTER_ABILITY_TYPES,
   characterAbilityIds,
+  describeCharacterAbilityEffect,
   getCharacterAbility,
 } from "./character-abilities.js";
 import { canonicalTowArchetypeId } from "./archetype-identities.js";
+import {
+  TOW_GENERAL_ABILITY_SOURCE_ROWS,
+  TOW_GENERAL_SOURCE_CAPTURE,
+} from "./general-ability-source-data.js";
 
 export const SKILL_SLOTS = 5;
 export const SKILL_RARITY_PROGRESSION = Object.freeze([
@@ -29,27 +33,11 @@ export const SKILL_RARITY_PROGRESSION = Object.freeze([
   "legendary",
   "mythical",
 ]);
-export const GENERAL_ACTIVE_SOURCE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91#s-11.1";
-export const GENERAL_ABILITY_IDS = Object.freeze([
-  "penetration",
-  "rapid-cooling",
-  "urgent-guard",
-  "stone-skin-elixir",
-  "protection-scroll",
-  "elixir-of-wrath",
-  "first-aid",
-  "emergency-evasion",
-  "sudden-blow",
-  "unbendable-will",
-  "killing-instinct",
-  "sleep-grenade",
-  "blade-of-curse",
-  "beastification",
-  "judge-of-fate",
-  "super-speed",
-  "transcendence",
-  "peace-declaration",
-]);
+export const GENERAL_ACTIVE_SOURCE = TOW_GENERAL_SOURCE_CAPTURE.url;
+export const GENERAL_ABILITY_IDS = Object.freeze(
+  TOW_GENERAL_ABILITY_SOURCE_ROWS.map((row) => row.id),
+);
+const GENERAL_ABILITY_ID_SET = new Set(GENERAL_ABILITY_IDS);
 export const RARITIES = Object.freeze([
   "common",
   "uncommon",
@@ -119,6 +107,39 @@ function scaledStatus(statusType, target, scale, percentByRank) {
   });
 }
 
+function compileGeneralEffect(effect) {
+  if (effect.type === "damage") return damage(effect.scale, effect.values);
+  if (effect.type === "shield") return shield(effect.scale, effect.values);
+  if (effect.type === "status") return status(effect.status, effect.target, effect.values);
+  if (effect.type === "scaled-status") {
+    return scaledStatus(effect.status, effect.target, effect.scale, effect.values);
+  }
+  if (effect.type === "heal-lost-fraction") {
+    return Object.freeze({
+      type: effect.type,
+      target: effect.target,
+      percentByRank: Object.freeze(effect.values),
+    });
+  }
+  if (effect.type === "reduce-statuses") {
+    return Object.freeze({
+      type: effect.type,
+      target: effect.target,
+      statuses: Object.freeze(effect.statuses),
+      toPercent: effect.toPercent,
+    });
+  }
+  if (effect.type === "scaled-status-enemy-lost-hp") {
+    return Object.freeze({
+      type: effect.type,
+      target: effect.target,
+      status: effect.status,
+      percentByRank: Object.freeze(effect.values),
+    });
+  }
+  throw new TypeError(`unknown-general-source-effect:${effect.type}`);
+}
+
 function skill(id, name, {
   rarity,
   effects,
@@ -127,6 +148,7 @@ function skill(id, name, {
   cooldown = 0,
   usesPerAct = UNLIMITED_USES,
   usesPerActByRank = null,
+  resolveCostByRank = null,
   exclusiveTo = null,
   abilityType = null,
   description = null,
@@ -154,6 +176,7 @@ function skill(id, name, {
     cooldown,
     usesPerAct,
     usesPerActByRank: usesPerActByRank ? Object.freeze(usesPerActByRank) : null,
+    resolveCostByRank: resolveCostByRank ? Object.freeze(resolveCostByRank) : null,
     exclusiveTo,
     archetypeId: canonicalTowArchetypeId(exclusiveTo),
     abilityType,
@@ -161,6 +184,34 @@ function skill(id, name, {
     source: source ? Object.freeze(source) : null,
     note,
     rankCount,
+  });
+}
+
+function compileGeneralAbility(row) {
+  const effects = row.effects.map(compileGeneralEffect);
+  const description = `${effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`;
+  return skill(row.id, row.name, {
+    rarity: row.rarity,
+    effects,
+    consumesTurn: row.consumesTurn,
+    cooldown: row.cooldown,
+    usesPerAct: row.usesByRank[0],
+    usesPerActByRank: row.usesByRank,
+    resolveCostByRank: row.resolveCostByRank,
+    abilityType: "general",
+    description,
+    source: {
+      page: TOW_GENERAL_SOURCE_CAPTURE.url,
+      artifact: TOW_GENERAL_SOURCE_CAPTURE.artifact,
+      sourceName: row.name,
+      sourceOriginalName: row.sourceName,
+      sourceLine: row.sourceLine,
+      rawRowsSha256: TOW_GENERAL_SOURCE_CAPTURE.rawRowsSha256,
+      fidelity: "adapted",
+      adaptations: Object.freeze(["per-act-uses-to-resolve"]),
+      detail: "Source effect, rarity, recipient, action lane, cooldown, and per-rarity values are preserved; source per-Act uses are translated to the reviewed Resolve table.",
+    },
+    note: null,
   });
 }
 
@@ -198,7 +249,7 @@ function passive(id, name, rarity, bonuses) {
   });
 }
 
-const SKILLS = Object.freeze(Object.fromEntries([
+const HAND_AUTHORED_SKILLS = Object.freeze([
   // --- Knight compatibility basics -----------------------------------------
   skill("strike", "Strike", {
     rarity: "common",
@@ -290,7 +341,10 @@ const SKILLS = Object.freeze(Object.fromEntries([
     rarity: "legendary",
     usesPerAct: 8,
     exclusiveTo: "arctic-knight",
-    effects: [shield("defense", [160, 240])],
+    effects: [
+      shield("defense", [160, 240]),
+      scaledStatus("counter-attack", "self", "defense", [160, 240]),
+    ],
     note: "counterattack",
   }),
   skill("incineration", "Burning Reprisal", {
@@ -494,6 +548,12 @@ const SKILLS = Object.freeze(Object.fromEntries([
       detail: "The source describes wide-area magic that removes the will to fight; control and Lethargy recreate that effect.",
     }),
   }),
+]);
+
+const GENERAL_SKILLS = Object.freeze(TOW_GENERAL_ABILITY_SOURCE_ROWS.map(compileGeneralAbility));
+const SKILLS = Object.freeze(Object.fromEntries([
+  ...HAND_AUTHORED_SKILLS.filter((entry) => !GENERAL_ABILITY_ID_SET.has(entry.id)),
+  ...GENERAL_SKILLS,
 ].map((entry) => [entry.id, entry])));
 
 const PASSIVES = Object.freeze(Object.fromEntries([
@@ -639,7 +699,8 @@ export function usesPerAct(skillId, rank = 1) {
 export function resolveCost(skillId, rank = 1) {
   const definition = getSkill(skillId);
   if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
-  rankIndex(definition, rank);
+  const index = rankIndex(definition, rank);
+  if (definition.resolveCostByRank) return definition.resolveCostByRank[index];
   const restoreIndex = definition.effects.findIndex((effect) => effect.type === "restore-skill-uses");
   if (restoreIndex >= 0) {
     return Math.max(1, Math.min(6, effectMagnitude(skillId, restoreIndex, rank) - 1));
@@ -661,6 +722,7 @@ export function effectMagnitude(skillId, effectIndex, rank = 1) {
   if (!effect) throw new TypeError("unknown-skill-effect");
   const index = rankIndex(definition, rank);
   const table = effect.percentByRank || effect.countByRank || effect.factorByRank;
+  if (!Array.isArray(table) || table.length === 0) return null;
   // A short table means the value does not scale past its last listed rank.
   return table[Math.min(index, table.length - 1)];
 }

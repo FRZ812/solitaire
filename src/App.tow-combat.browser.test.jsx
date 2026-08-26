@@ -14,7 +14,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY, readResumeSnapshot } from "./engine/campaign-resume.js";
 import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
-import { createTowSession } from "./gameplay/tow/session.js";
+import { sealTowTerminalReceipt } from "./gameplay/tow/outcomes.js";
+import { createTowSession, markTowSessionSettled } from "./gameplay/tow/session.js";
 import { startingBuild } from "./gameplay/tow/build.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import { verifyTowSession } from "./gameplay/tow/replay.js";
@@ -575,6 +576,75 @@ describe("the telegraph reaches a screen reader too", { timeout: APP_INTEGRATION
 });
 
 describe("an unreadable saved fight", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
+  it("explains an old-rules fight and applies nothing when it is discarded", async () => {
+    const legacy = campaignInAFight();
+    legacy.mechanics.tow.activeCombat.rulesetId = "solitaire-tow-v1";
+    harness.serverState = legacy;
+
+    const mounted = await mountCampaign();
+    const alert = await waitFor(() => mounted.querySelector(".tow-combat-recovery"));
+    expect(alert.textContent).toContain("Fight update required");
+    expect(alert.textContent).toContain("older combat rules");
+    expect(alert.textContent).toContain("no outcome, wound, or spoil");
+    expect(mounted.querySelector(".tow-combat")).toBe(null);
+    expect(harness.serverState.combatSettlementReceipts).toHaveLength(0);
+
+    const discard = [...alert.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Discard old fight"));
+    await click(discard);
+    await waitFor(() => savedSession() === null);
+    expect(harness.serverState.combatSettlementReceipts).toHaveLength(0);
+    expect(harness.serverState.beats.at(-1).content).toContain("older combat rules");
+    expect(harness.serverState.beats.at(-1).content).toContain("no outcome, wound, or spoil");
+  });
+
+  it("does not claim an old settled outcome was unapplied", async () => {
+    const legacy = campaignInAFight();
+    legacy.mechanics.tow.activeCombat.rulesetId = "solitaire-tow-v1";
+    legacy.mechanics.tow.activeCombat.status = "settled";
+    harness.serverState = legacy;
+
+    const mounted = await mountCampaign();
+    const alert = await waitFor(() => mounted.querySelector(".tow-combat-recovery"));
+    expect(alert.textContent).toContain("Old fight record");
+    expect(alert.textContent).toContain("record is marked settled");
+    expect(alert.textContent).toContain("does not apply or undo any outcome, wound, or spoil");
+    expect(mounted.querySelector(".tow-combat")).toBe(null);
+
+    const discard = [...alert.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Discard old record"));
+    await click(discard);
+    await waitFor(() => savedSession() === null);
+    expect(harness.serverState.beats.at(-1).content).toContain("record marked settled");
+    expect(harness.serverState.beats.at(-1).content)
+      .toContain("no campaign result was applied or undone");
+  });
+
+  it("does not claim a corrupted current settled record was never applied", async () => {
+    const state = terminalCampaignWithoutReceipt();
+    const sealed = sealTowTerminalReceipt(state.mechanics.tow.activeCombat);
+    expect(sealed.ok).toBe(true);
+    const settled = markTowSessionSettled(sealed.session, sealed.session.sessionId);
+    expect(settled.ok).toBe(true);
+    expect(settled.session.status).toBe("settled");
+    settled.session.checksum = "integrity-v1:0000000000000000";
+    state.mechanics.tow.activeCombat = settled.session;
+    harness.serverState = state;
+
+    const mounted = await mountCampaign();
+    const alert = await waitFor(() => mounted.querySelector(".tow-combat-recovery"));
+    expect(alert.textContent).toContain("Unreadable saved fight");
+    expect(alert.textContent).toContain("Discarding it applies or undoes no campaign result");
+    expect(alert.textContent).not.toContain("Nothing has been applied");
+    expect(mounted.querySelector(".tow-combat")).toBe(null);
+
+    await click([...alert.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Discard unreadable fight")));
+    await waitFor(() => savedSession() === null);
+    expect(harness.serverState.beats.at(-1).content)
+      .toContain("no campaign result was applied or undone");
+  });
+
   it("says so and applies nothing until the player discards it", async () => {
     const corrupt = campaignInAFight();
     corrupt.mechanics.tow.activeCombat.checksum = "integrity-v1:0000000000000000";

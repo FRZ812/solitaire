@@ -953,6 +953,44 @@ describe("Priority and Haste", () => {
     expect(after.actors.gatekeeper.hp).toBe(190 - 36);
   });
 
+  it("makes Haste granted mid-window spendable before it decays", () => {
+    const state = start({
+      player: { ...knight(), resolve: 8, resolveMax: 8 },
+      build: { skills: ["strike", "super-speed"] },
+    });
+
+    const used = useSkill(state, "super-speed");
+
+    expect(used.ok).toBe(true);
+    expect(statusCount(used.state.actors[used.state.playerId].statuses, "haste")).toBe(2);
+    expect(used.state.turn.actionsRemaining).toBe(3);
+
+    let sequence = used.state;
+    for (let action = 0; action < 3; action += 1) sequence = useSkill(sequence, "strike").state;
+    expect(sequence.turn.actionsRemaining).toBe(0);
+
+    const nextRound = endTurn(sequence).state;
+    expect(statusCount(nextRound.actors[nextRound.playerId].statuses, "haste")).toBe(1);
+    expect(nextRound.turn.actionsRemaining).toBe(2);
+  });
+
+  it("defers turn-consuming Haste instead of refunding its own action", () => {
+    const state = start({
+      player: { ...knight(), stats: { attack: 1, defense: 13, critRate: 0, dodgeRate: 0 } },
+      build: { skills: ["sleepless-spinning-strike"] },
+    });
+
+    const used = useSkill(state, "sleepless-spinning-strike", "gatekeeper");
+
+    expect(used.ok).toBe(true);
+    expect(used.state.turn.actionsRemaining).toBe(0);
+    expect(statusCount(used.state.actors[used.state.playerId].statuses, "haste")).toBe(1);
+
+    const nextRound = endTurn(used.state).state;
+    expect(statusCount(nextRound.actors[nextRound.playerId].statuses, "haste")).toBe(1);
+    expect(nextRound.turn.actionsRemaining).toBe(2);
+  });
+
   it("lets Priority act before the enemy", () => {
     const state = start({ player: { ...knight(), statuses: [{ type: "priority", count: 3 }] } });
     expect(state.turn.actionsRemaining).toBe(4);
@@ -995,6 +1033,71 @@ describe("Priority and Haste", () => {
     expect(attacks).toHaveLength(5);
     expect(statusCount(after.actors.gatekeeper.statuses, "priority")).toBe(0);
     expect(after.actors[after.playerId].hp).toBe(1000 - 10);
+  });
+
+  it("lets an enemy spend Haste granted inside its command window", () => {
+    const state = createTowEncounter({
+      seed: "enemy-mid-window-haste",
+      player: knight({ maxHp: 1000 }),
+      enemies: [foe({
+        maxHp: 900,
+        resolve: 8,
+        resolveMax: 8,
+        build: { traits: {}, skills: ["super-speed", "strike"], runes: [] },
+      })],
+      build: { traits: {}, skills: ["strike"], runes: [] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "speed-then-strikes",
+          steps: [
+            { id: "accelerate", attackIds: ["super-speed"] },
+            { id: "strike", attackIds: ["strike"] },
+          ],
+        },
+      },
+    });
+
+    const after = endTurn(state).state;
+    const strikes = after.events.filter((event) => (
+      event.type === "skill-damage"
+      && event.actorId === "gatekeeper"
+      && event.skillId === "strike"
+    ));
+
+    expect(strikes).toHaveLength(3);
+    expect(statusCount(after.actors.gatekeeper.statuses, "haste")).toBe(1);
+  });
+
+  it("does not let turn-consuming enemy Haste refund its own action", () => {
+    const state = createTowEncounter({
+      seed: "enemy-deferred-haste",
+      player: knight({ maxHp: 1000 }),
+      enemies: [foe({
+        maxHp: 900,
+        resolve: 8,
+        resolveMax: 8,
+        stats: { attack: 1, defense: 0, critRate: 0, dodgeRate: 0 },
+        build: { traits: {}, skills: ["sleepless-spinning-strike"], runes: [] },
+      })],
+      build: { traits: {}, skills: ["strike"], runes: [] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "spinning-strike-only",
+          steps: [{ id: "strike", attackIds: ["sleepless-spinning-strike"] }],
+        },
+      },
+    });
+
+    const after = endTurn(state).state;
+    const commits = after.events.filter((event) => (
+      event.type === "skill-committed"
+      && event.actorId === "gatekeeper"
+      && event.skillId === "sleepless-spinning-strike"
+    ));
+
+    expect(commits).toHaveLength(1);
+    expect(after.events.some((event) => event.reason === "command-window-safety-limit")).toBe(false);
+    expect(statusCount(after.actors.gatekeeper.statuses, "haste")).toBe(1);
   });
 
   it("cancels Priority against the enemy's own", () => {
@@ -1420,6 +1523,23 @@ describe("allies under player command", () => {
     expect(acted.turn.allies.kestrel).toBe(0);
     // Spending the ally's action leaves the player's untouched.
     expect(acted.turn.actionsRemaining).toBe(1);
+  });
+
+  it("makes Haste granted to an ally mid-window spendable by that ally", () => {
+    const state = party({
+      allies: [ally({
+        resolve: 8,
+        resolveMax: 8,
+        build: { traits: {}, skills: ["strike", "super-speed"] },
+      })],
+    });
+
+    const used = useSkill(state, "super-speed", null, "kestrel");
+
+    expect(used.ok).toBe(true);
+    expect(statusCount(used.state.actors.kestrel.statuses, "haste")).toBe(2);
+    expect(used.state.turn.allies.kestrel).toBe(3);
+    expect(used.state.turn.actionsRemaining).toBe(1);
   });
 
   it("fires an ally's own traits, not the player's", () => {

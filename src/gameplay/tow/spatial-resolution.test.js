@@ -130,12 +130,12 @@ describe("authoritative spatial skill resolution", () => {
       })]);
   });
 
-  it("heals and cleanses the selected ally without redirecting either effect to the caster", () => {
+  it("keeps First Aid's heal and cleanse on its source-authored caster", () => {
     const allyId = "field-medic";
     const state = createTowEncounter({
       seed: "spatial-resolution:first-aid",
       player: player({
-        hp: 120,
+        hp: 60,
         statuses: [{ type: "poison", count: 10 }],
       }),
       allies: [{
@@ -161,25 +161,18 @@ describe("authoritative spatial skill resolution", () => {
         enemy: [null, null, null, null, "enemy-0", null, null, null, null],
       },
     });
-    const playerBefore = state.actors[PLAYER_ID];
-    const used = useSkill(
-      state,
-      "first-aid",
-      null,
-      PLAYER_ID,
-      { side: "player", index: 4 },
-    );
+    const used = useSkill(state, "first-aid", PLAYER_ID);
 
     expect(used.ok).toBe(true);
-    expect(used.state.actors[allyId].hp).toBe(54);
-    expect(statusCount(used.state.actors[allyId].statuses, "bleed")).toBe(6);
-    expect(statusCount(used.state.actors[allyId].statuses, "burn")).toBe(3);
-    expect(statusCount(used.state.actors[allyId].statuses, "poison")).toBe(12);
-    expect(used.state.actors[PLAYER_ID].hp).toBe(playerBefore.hp);
-    expect(statusCount(used.state.actors[PLAYER_ID].statuses, "poison")).toBe(10);
+    expect(used.state.actors[PLAYER_ID].hp).toBe(103);
+    expect(statusCount(used.state.actors[PLAYER_ID].statuses, "poison")).toBe(6);
+    expect(used.state.actors[allyId].hp).toBe(40);
+    expect(statusCount(used.state.actors[allyId].statuses, "bleed")).toBe(10);
+    expect(statusCount(used.state.actors[allyId].statuses, "burn")).toBe(5);
+    expect(statusCount(used.state.actors[allyId].statuses, "poison")).toBe(20);
     expect(skillEvents(used.state, "first-aid", "skill-heal"))
-      .toEqual([expect.objectContaining({ targetId: allyId, amount: 14 })]);
+      .toEqual([expect.objectContaining({ targetId: PLAYER_ID, amount: 43 })]);
     expect(skillEvents(used.state, "first-aid", "skill-cleanse"))
-      .toEqual([expect.objectContaining({ targetId: allyId, removed: 14 })]);
+      .toEqual([expect.objectContaining({ targetId: PLAYER_ID, removed: 4 })]);
   });
 });

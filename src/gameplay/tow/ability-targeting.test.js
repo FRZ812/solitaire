@@ -76,7 +76,7 @@ describe("spatial ability targeting metadata", () => {
 
   it("allows curated heals and boons to select allies, including the caster", () => {
     expect(new Set(ALLY_TARGET_ABILITY_IDS).size).toBe(ALLY_TARGET_ABILITY_IDS.length);
-    expect(ALLY_TARGET_ABILITY_IDS).toHaveLength(71);
+    expect(ALLY_TARGET_ABILITY_IDS).toHaveLength(63);
     for (const id of ALLY_TARGET_ABILITY_IDS) {
       const definition = getSkill(id);
       expect(definition, id).toBeTruthy();
@@ -96,10 +96,11 @@ describe("spatial ability targeting metadata", () => {
     expect(effectRecipient(heal, heal.effects[0], 0)).toBe("anchor");
 
     const firstAid = getSkill("first-aid");
-    expect(abilityTargeting(firstAid).anchorSide).toBe("ally");
+    expect(ALLY_TARGET_ABILITY_IDS).not.toContain("first-aid");
+    expect(abilityTargeting(firstAid).anchorSide).toBe("self");
     expect(firstAid.effects.map((effect, index) => (
       effectRecipient(firstAid, effect, index)
-    ))).toEqual(["anchor", "anchor"]);
+    ))).toEqual(["caster", "caster"]);
   });
 
   it("keeps fixed, intrinsic, resource, and fatal self actions on the caster", () => {

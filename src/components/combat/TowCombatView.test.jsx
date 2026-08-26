@@ -4,14 +4,21 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { openLabSession } from "./CombatLab.jsx";
-import { TowCombatView } from "./TowCombatView.jsx";
+import {
+  eventTouchesStatus,
+  TowCombatView,
+  towSkillDetail,
+} from "./TowCombatView.jsx";
 import { combatCueTimeline } from "./tow-combat-feedback.js";
 import { resolveTowAbilityArt } from "./tow-combat-ability-art.js";
 import {
   createSkillState,
   getSkill,
   maxRankOf,
+  skillIds,
 } from "../../gameplay/tow/skills.js";
+import { abilityTargeting } from "../../gameplay/tow/ability-targeting.js";
+import { useSkill } from "../../gameplay/tow/encounter.js";
 import {
   encounterFormations,
   formationCellForActor,
@@ -90,6 +97,182 @@ function replaceSkill(encounter, replacedId, skillId, rank = 1) {
 }
 
 describe("compact combat HUD", () => {
+  it("discloses the effective Resolve-era direct-damage ceiling", () => {
+    const detail = towSkillDetail(
+      getSkill("mortal-blow"),
+      createSkillState("mortal-blow", 1),
+    );
+
+    expect(detail).toContain("Deal 210% ATK damage");
+    expect(detail).toContain("Resolve combat: total base damage before criticals is capped at 45% of the target's maximum health");
+  });
+
+  it("discloses the effective Resolve-era damaging-status ceiling", () => {
+    const detail = towSkillDetail(
+      getSkill("blade-one-flash"),
+      createSkillState("blade-one-flash", 1),
+    );
+
+    expect(detail).toContain("Doom equal to 1000% ATK");
+    expect(detail).toContain("Resolve combat: damaging statuses are capped at 30% of the target's maximum health");
+  });
+
+  it("discloses the damaging-status ceiling for status multipliers", () => {
+    const detail = towSkillDetail(
+      getSkill("priestess-doom"),
+      createSkillState("priestess-doom", 1),
+    );
+
+    expect(detail).toContain("to 200%");
+    expect(detail).toContain("damaging statuses are capped at 30%");
+  });
+
+  it("discloses the effective Resolve-era delayed-damage ceiling", () => {
+    const detail = towSkillDetail(
+      getSkill("witch-limited-life-sentence"),
+      createSkillState("witch-limited-life-sentence", 1),
+    );
+
+    expect(detail).toContain("Deal 666 damage after 13 turns");
+    expect(detail).toContain("Resolve combat: delayed damage is capped at 65% of the target's maximum health");
+  });
+
+  it("does not claim the hostile delayed-damage ceiling for self-damage bargains", () => {
+    const detail = towSkillDetail(
+      getSkill("blade-latent-power"),
+      createSkillState("blade-latent-power", 1),
+    );
+
+    expect(detail).toContain("Deal 9999 damage after 4 turns");
+    expect(detail).not.toContain("delayed damage is capped");
+  });
+
+  it("discloses the effective Resolve-era temporary-health ceiling", () => {
+    const detail = towSkillDetail(
+      getSkill("witch-forbidden-ritual"),
+      createSkillState("witch-forbidden-ritual", 1),
+    );
+
+    expect(detail).toContain("Gain 3333 maximum health for 4 turns");
+    expect(detail).toContain("Resolve combat: temporary maximum health is capped at 50% of the caster's current maximum health");
+  });
+
+  it("states one-turn decay protection on freshly granted statuses", () => {
+    const detail = towSkillDetail(
+      getSkill("arctic-gather-strength"),
+      createSkillState("arctic-gather-strength", 1),
+    );
+
+    expect(detail).toContain("persists through its first turn end before normal decay");
+  });
+
+  it("states Forbidden Ritual's fatal expiration instead of a misleading damage number", () => {
+    const detail = towSkillDetail(
+      getSkill("witch-forbidden-ritual"),
+      createSkillState("witch-forbidden-ritual", 1),
+    );
+
+    expect(detail).toContain("then fall to 0 health when it expires");
+    expect(detail).not.toContain("die when");
+    expect(detail).not.toContain("suffer 9999 damage");
+  });
+
+  it("states the source-authored self target for First Aid", () => {
+    const detail = towSkillDetail(
+      getSkill("first-aid"),
+      createSkillState("first-aid", 1),
+    );
+
+    expect(detail).toContain("Target: self");
+  });
+
+  it("states the complete battlefield footprint for area abilities", () => {
+    const detail = towSkillDetail(
+      getSkill("clocktower-chain-explosion"),
+      createSkillState("clocktower-chain-explosion", 1),
+    );
+
+    expect(detail).toContain("Target: enemy field");
+    expect(detail).toContain("Area: target row and column");
+  });
+
+  it("states the authored base cooldown even while the ability is ready", () => {
+    const detail = towSkillDetail(
+      getSkill("clocktower-chain-explosion"),
+      createSkillState("clocktower-chain-explosion", 1),
+    );
+
+    expect(detail).toContain("Cooldown: 3 rounds");
+  });
+
+  it("states Ward refresh and expiry semantics on every defensive ability", () => {
+    const detail = towSkillDetail(
+      getSkill("block"),
+      createSkillState("block", 1),
+    );
+
+    expect(detail).toContain("Ward refreshes instead of stacking");
+    expect(detail).toContain("expires after the opposing command window");
+  });
+
+  it("projects target, footprint, cooldown, and Ward rules for every live ability rank", () => {
+    for (const skillId of skillIds()) {
+      const definition = getSkill(skillId);
+      const targeting = abilityTargeting(definition);
+      for (let rank = 1; rank <= definition.rankCount; rank += 1) {
+        const detail = towSkillDetail(definition, createSkillState(skillId, rank));
+        expect(detail, `${skillId}@${rank}`).toContain("Target:");
+        expect(detail, `${skillId}@${rank}`).toContain("Cooldown:");
+        if (targeting.footprint !== "single") {
+          expect(detail, `${skillId}@${rank}`).toContain("Area:");
+        }
+        if (targeting.anchorSide === "ally") {
+          expect(detail, `${skillId}@${rank}`).toContain("Target: one ally (including you)");
+          expect(detail, `${skillId}@${rank}`).not.toContain("yourself");
+        }
+        if (definition.effects.some((effect) => effect.type === "shield")) {
+          expect(detail, `${skillId}@${rank}`).toContain("Ward refreshes instead of stacking");
+        }
+      }
+    }
+  });
+
+  it("links every authoritative status-change event back to the affected status panel", () => {
+    expect(eventTouchesStatus({
+      type: "skill-status-scaled",
+      targetId: "foe",
+      statuses: ["burn", "poison"],
+    }, "foe", "burn")).toBe(true);
+    expect(eventTouchesStatus({
+      type: "skill-status-modified",
+      targetId: "hero",
+      status: "initiative",
+    }, "hero", "initiative")).toBe(true);
+    expect(eventTouchesStatus({
+      type: "skill-cleanse",
+      targetId: "hero",
+      statuses: ["bleed", "burn"],
+    }, "hero", "bleed")).toBe(true);
+    expect(eventTouchesStatus({
+      type: "initiative-converted",
+      actorId: "hero",
+    }, "hero", "priority")).toBe(true);
+    expect(eventTouchesStatus({
+      type: "initiative-converted",
+      actorId: "hero",
+    }, "hero", "initiative")).toBe(true);
+  });
+
+  it("disables a contextual no-op before the player tries to pay for it", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const encounter = replaceSkill(base, "emergency-evasion", "priestess-instant-heal");
+    const mounted = await renderView({ encounter });
+    const heal = mounted.querySelector("[data-skill-id='priestess-instant-heal']");
+
+    expect(heal.getAttribute("aria-disabled")).toBe("true");
+    expect(heal.getAttribute("aria-label")).toContain("no useful effect");
+  });
+
   it("keeps full-art abilities clean while showing Resolve prices at the lower right", async () => {
     const mounted = await renderView();
     const actions = [...mounted.querySelectorAll(".tow-combat__action")];
@@ -103,7 +286,7 @@ describe("compact combat HUD", () => {
     expect(mounted.querySelector(".tow-combat__action-swift")).toBeNull();
     expect(strike.querySelector(".tow-combat__action-cost")).toBeNull();
     expect(block.querySelector(".tow-combat__action-cost")?.textContent).toBe("1RP");
-    expect(evasion.querySelector(".tow-combat__action-cost")?.textContent).toBe("4RP");
+    expect(evasion.querySelector(".tow-combat__action-cost")?.textContent).toBe("6RP");
     expect(block.getAttribute("aria-label")).toMatch(/1 Resolve/i);
     expect(actions.map((action) => action.textContent).join("")).not.toContain("∞");
     expect(actions.every((action) => action.querySelector(".tow-combat__sr-only")?.textContent)).toBe(true);
@@ -159,7 +342,7 @@ describe("compact combat HUD", () => {
     cooling = mounted.querySelector("[data-skill-id='rapid-cooling']");
     expect(cooling.classList.contains("is-on-cooldown")).toBe(false);
     expect(cooling.querySelector(".tow-combat__action-cooldown")).toBeNull();
-    expect(cooling.querySelector(".tow-combat__action-cost")?.textContent).toBe("3RP");
+    expect(cooling.querySelector(".tow-combat__action-cost")?.textContent).toBe("7RP");
   });
 
   it("offers the snapshotted keepsake as a one-action satchel command", async () => {
@@ -305,9 +488,11 @@ describe("compact combat HUD", () => {
     const battlefield = mounted.querySelector(".tow-formation-battlefield");
     expect(mounted.querySelector(".tow-combat").getAttribute("aria-busy")).toBe("true");
     expect(focusedAction.disabled).toBe(false);
-    expect(focusedAction.getAttribute("aria-disabled")).toBe("true");
+    // Incoming contact/movement cues are cosmetics: they dim the scene and mark the
+    // surface busy but never disarm the next command.
+    expect(focusedAction.getAttribute("aria-disabled")).toBe("false");
     await act(async () => focusedAction.click());
-    expect(onUseSkill).not.toHaveBeenCalled();
+    expect(onUseSkill).toHaveBeenCalledTimes(1);
     expect(battlefield.dataset.movementPhase).toBe("pending");
     const playerHealthLabel = `${base.actors[base.playerId].name} health`;
     expect(cellElement(mounted, playerCell).querySelector(`[aria-label='${playerHealthLabel}']`))
@@ -334,6 +519,66 @@ describe("compact combat HUD", () => {
     expect(destination.querySelector(".tow-formation-cell__move-marker")).toBeNull();
   });
 
+  it("targets the current actor position while movement presentation is pending", async () => {
+    vi.useFakeTimers();
+    const opened = openLabSession({ packageId: "rogue", scenarioId: "formation-drill" }).session.encounter;
+    const replacedId = opened.build.skills[2].id;
+    const base = replaceSkill(opened, replacedId, "demon-shoot");
+    const enemyId = base.formations.enemy[3];
+    expect(enemyId).toBeTruthy();
+    expect(base.formations.enemy[0]).toBeNull();
+    const movementEvent = {
+      sequence: base.sequence + 1,
+      type: "formation-moved",
+      round: base.round + 1,
+      phase: "round-open",
+      moves: [{ actorId: enemyId, side: "enemy", fromCell: 3, toCell: 0 }],
+    };
+    const enemyFormation = [...base.formations.enemy];
+    enemyFormation[3] = null;
+    enemyFormation[0] = enemyId;
+    const next = {
+      ...base,
+      round: base.round + 1,
+      sequence: movementEvent.sequence,
+      actors: {
+        ...base.actors,
+        ...Object.fromEntries(base.enemyIds.map((id) => [id, {
+          ...base.actors[id],
+          statuses: base.actors[id].statuses.filter((status) => status.type !== "priority"),
+        }])),
+      },
+      formations: { ...base.formations, enemy: enemyFormation },
+      events: [...base.events, movementEvent],
+    };
+    const onUseSkill = vi.fn();
+    const mounted = await renderView({ encounter: base, onUseSkill });
+
+    await act(async () => root.render(viewElement(next, { onUseSkill })));
+    expect(cellElement(mounted, { side: "enemy", index: 3 })
+      .querySelector(`[data-actor-id='${enemyId}']`)).toBeTruthy();
+
+    const action = mounted.querySelector("[data-skill-id='demon-shoot']");
+    expect(action.getAttribute("aria-label")).toContain("Tap to use");
+    await act(async () => action.click());
+
+    expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeTruthy();
+    expect(mounted.querySelector(".tow-formation-battlefield").dataset.movementPhase).toBe("idle");
+    const currentCell = cellElement(mounted, { side: "enemy", index: 0 });
+    expect(currentCell.querySelector(`[data-actor-id='${enemyId}']`)).toBeTruthy();
+    expect(cellElement(mounted, { side: "enemy", index: 3 })
+      .querySelector(`[data-actor-id='${enemyId}']`)).toBeNull();
+    expect(currentCell.classList.contains("is-valid-anchor")).toBe(true);
+
+    await act(async () => currentCell.click());
+    expect(onUseSkill).toHaveBeenCalledWith(
+      "demon-shoot",
+      enemyId,
+      next.playerId,
+      { side: "enemy", index: 0 },
+    );
+  });
+
   it("reads a defensive enemy declaration as ward on self instead of fake damage", async () => {
     const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
     const enemyId = base.enemyIds[0];
@@ -350,6 +595,43 @@ describe("compact combat HUD", () => {
     expect(intent.getAttribute("aria-label")).toMatch(/Block, ward effect, used on self/i);
     expect(intent.querySelector("strong").textContent).toBe("WARD");
     expect(intent.querySelector(".tow-combat__intent-target")).toBeNull();
+  });
+
+  it("names every target in area-intent badge copy", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "formation-drill" }).session.encounter;
+    const sourceId = base.enemyIds[0];
+    const skillId = "priestess-divine-barrier";
+    const enemyFormation = [sourceId, base.enemyIds[1], base.enemyIds[2], ...Array(6).fill(null)];
+    const next = {
+      ...base,
+      formations: { ...base.formations, enemy: enemyFormation },
+      enemyBuilds: {
+        ...base.enemyBuilds,
+        [sourceId]: { ...base.enemyBuilds[sourceId], skills: [createSkillState(skillId)] },
+      },
+      enemyAttacks: {
+        ...base.enemyAttacks,
+        [sourceId]: [{
+          id: skillId,
+          skillId,
+          name: getSkill(skillId).name,
+          hits: 1,
+          damage: 0,
+          kind: "ward",
+          target: "self",
+        }],
+      },
+      intents: {
+        ...base.intents,
+        [sourceId]: { ...base.intents[sourceId], attackId: skillId, targetId: sourceId },
+      },
+    };
+    const mounted = await renderView({ encounter: next });
+    const names = base.enemyIds.map((id) => base.actors[id].name).join(", ");
+    const intent = mounted.querySelector(`[data-testid='tow-enemy-intent'][data-enemy-id='${sourceId}']`);
+
+    expect(intent.getAttribute("aria-label")).toContain(`targeting ${names}`);
+    expect(intent.getAttribute("title")).toContain(names);
   });
 
   it("renders two logical 3x3 formations with compact HP and Resolve on occupied cells", async () => {
@@ -394,6 +676,18 @@ describe("compact combat HUD", () => {
       "is-selected-anchor",
       "is-intent-target",
     ].every((state) => !cell.classList.contains(state)))).toBe(true);
+  });
+
+  it("names the current commander directly on the battlefield", async () => {
+    const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const mounted = await renderView({ encounter });
+    const active = mounted.querySelector(".tow-formation-unit.is-active");
+
+    expect(active).toBeTruthy();
+    expect(active.querySelector(".tow-formation-unit__active-label")?.textContent)
+      .toContain(encounter.actors[encounter.playerId].name);
+    expect(active.querySelector(".tow-formation-unit__active-label")?.textContent)
+      .toContain("Acting");
   });
 
   it("uses board combatants for selection and opens a complete stat-and-ability dossier", async () => {
@@ -496,7 +790,10 @@ describe("compact combat HUD", () => {
           enemyId,
           {
             ...opening.actors[enemyId],
-            statuses: opening.actors[enemyId].statuses.filter(({ type }) => type !== "priority"),
+            statuses: [
+              ...opening.actors[enemyId].statuses.filter(({ type }) => type !== "priority"),
+              { type: "doom", count: 10 },
+            ],
           },
         ])),
       },
@@ -567,7 +864,15 @@ describe("compact combat HUD", () => {
 
       await act(async () => mounted.querySelector(`[data-skill-id='${skillId}']`).click());
 
-      expect(onUseSkill).not.toHaveBeenCalled();
+      // Full-field abilities have no anchor decision to make: they commit instantly
+      // while the cosmetic windup plays.
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
+      expect(onUseSkill).toHaveBeenCalledWith(
+        skillId,
+        preview.primaryTargetId,
+        encounter.playerId,
+        anchors[0],
+      );
       expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
       expect(mounted.querySelectorAll(
         ".tow-formation-cell.is-valid-anchor, .tow-formation-cell.is-affected, .tow-formation-cell.is-selected-anchor",
@@ -575,12 +880,7 @@ describe("compact combat HUD", () => {
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
 
       await act(async () => vi.runAllTimersAsync());
-      expect(onUseSkill).toHaveBeenCalledWith(
-        skillId,
-        preview.primaryTargetId,
-        encounter.playerId,
-        anchors[0],
-      );
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -628,15 +928,70 @@ describe("compact combat HUD", () => {
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
       expect(cellElement(mounted, chosenAnchor).classList.contains("is-selected-anchor")).toBe(true);
       expect(cellElement(mounted, chosenAnchor).classList.contains("is-affected")).toBe(true);
-      expect(onUseSkill).not.toHaveBeenCalled();
-
-      await act(async () => vi.runAllTimersAsync());
+      // The anchor choice commits immediately; only the cosmetic recovery remains.
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
       expect(onUseSkill).toHaveBeenCalledWith(
         skillId,
         preview.primaryTargetId,
         encounter.playerId,
         chosenAnchor,
       );
+
+      await act(async () => vi.runAllTimersAsync());
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("accepts the next legal target while the previous action is still resolving visually", async () => {
+    vi.useFakeTimers();
+    try {
+      const opening = openLabSession({
+        packageId: "rogue",
+        scenarioId: "roadside-ambush",
+      }).session.encounter;
+      const encounter = {
+        ...opening,
+        turn: { ...opening.turn, actionsRemaining: 2 },
+        actors: {
+          ...opening.actors,
+          ...Object.fromEntries(opening.enemyIds.map((enemyId) => [
+            enemyId,
+            {
+              ...opening.actors[enemyId],
+              statuses: opening.actors[enemyId].statuses.filter(({ type }) => type !== "priority"),
+            },
+          ])),
+        },
+      };
+      const firstAnchor = legalSkillAnchors(encounter, "strike", encounter.playerId).at(-1);
+      const firstPreview = resolveSkillTargets(encounter, "strike", encounter.playerId, {
+        anchorCell: firstAnchor,
+      });
+      const onUseSkill = vi.fn();
+      const mounted = await renderView({ encounter, onUseSkill });
+
+      await act(async () => mounted.querySelector("[data-skill-id='strike']").click());
+      await act(async () => cellElement(mounted, firstAnchor).click());
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
+
+      const resolved = useSkill(
+        encounter,
+        "strike",
+        firstPreview.primaryTargetId,
+        encounter.playerId,
+        firstAnchor,
+      );
+      expect(resolved.ok).toBe(true);
+      await act(async () => root.render(viewElement(resolved.state, { onUseSkill })));
+      expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("resolve");
+
+      const nextAnchor = legalSkillAnchors(resolved.state, "strike", encounter.playerId)[0];
+      await act(async () => mounted.querySelector("[data-skill-id='strike']").click());
+      await act(async () => cellElement(mounted, nextAnchor).click());
+
+      expect(onUseSkill).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -777,23 +1132,25 @@ describe("compact combat HUD", () => {
       const combat = mounted.querySelector(".tow-combat");
       const enemyCell = cellElement(mounted, formationCellForActor(base, enemyId));
       const enemyUnit = enemyCell.querySelector(".tow-formation-unit");
+      // The outcome is canonical on arrival; the reveal hold only lets the final contact
+      // cues land before the tally replaces the field.
       expect(combat.dataset.presentationPhase).toBe("resolution-hold");
       expect(combat.getAttribute("aria-busy")).toBe("true");
       expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
       expect(mounted.querySelector(".tow-combat__command")).toBeTruthy();
       expect(mounted.querySelectorAll(".tow-combat__effect")).toHaveLength(2);
       expect(enemyUnit.classList.contains("is-down")).toBe(false);
-      expect([...mounted.querySelectorAll(".tow-combat__action")].every((button) => (
-        button.disabled === false && button.getAttribute("aria-disabled") === "true"
-      ))).toBe(true);
 
-      await act(async () => vi.advanceTimersByTime(1659));
+      await act(async () => vi.advanceTimersByTime(829));
       expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
       expect(enemyUnit.classList.contains("is-down")).toBe(true);
+      expect(enemyUnit.querySelector(".tow-formation-unit__down-label")?.textContent)
+        .toBe("Defeated");
 
       await act(async () => vi.advanceTimersByTime(1));
       expect(mounted.querySelector(".tow-combat__outcome")).toBeTruthy();
       expect(enemyUnit.classList.contains("is-down")).toBe(true);
+      expect(mounted.querySelector(".tow-formation-unit.is-active")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -840,47 +1197,49 @@ describe("compact combat HUD", () => {
     await act(async () => strike.click());
 
     expect(commandArt).toMatch(/\.(?:png|webp)$/);
-    expect(onUseSkill).not.toHaveBeenCalled();
+    // A lone legal target commits instantly; the windup is cosmetic.
+    expect(onUseSkill).toHaveBeenCalledTimes(1);
     expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
     expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
-    expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeNull();
     await act(async () => vi.advanceTimersByTime(5000));
     expect(onUseSkill).toHaveBeenCalledTimes(1);
   });
 
-  it("shows control in the rail and automatically forfeits the locked command", async () => {
-    vi.useFakeTimers();
-    try {
-      const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
-      const controlled = {
-        ...base,
-        actors: {
-          ...base.actors,
-          [base.playerId]: {
-            ...base.actors[base.playerId],
-            statuses: [...base.actors[base.playerId].statuses, { type: "paralyze", count: 1 }],
+  it.each(["paralyze", "stun", "sleep", "confuse"])(
+    "shows %s control in the rail and forfeits the locked command immediately",
+    async (controlType) => {
+      vi.useFakeTimers();
+      try {
+        const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+        const controlled = {
+          ...base,
+          actors: {
+            ...base.actors,
+            [base.playerId]: {
+              ...base.actors[base.playerId],
+              statuses: [...base.actors[base.playerId].statuses, { type: controlType, count: 1 }],
+            },
           },
-        },
-      };
-      const onStandDown = vi.fn();
-      const mounted = await renderView({ encounter: controlled, onStandDown });
-      expect(mounted.querySelector(".tow-combat__command").classList.contains("is-forced")).toBe(true);
-      expect(mounted.querySelector(".tow-combat__command-heading")).toBeNull();
-      expect(mounted.querySelector(".tow-combat__action-hint")).toBeNull();
-      expect(mounted.querySelector(".tow-combat__command .tow-combat__sr-only").textContent)
-        .toContain("Paralyze. No player input.");
-      expect(onStandDown).not.toHaveBeenCalled();
-      await act(async () => vi.advanceTimersByTime(899));
-      expect(onStandDown).not.toHaveBeenCalled();
-      await act(async () => vi.advanceTimersByTime(1));
-      expect(onStandDown).toHaveBeenCalledTimes(1);
-      expect(onStandDown).toHaveBeenCalledWith(base.playerId);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+        };
+        const onStandDown = vi.fn();
+        const mounted = await renderView({ encounter: controlled, onStandDown });
+        expect(mounted.querySelector(".tow-combat__command").classList.contains("is-forced")).toBe(true);
+        expect(mounted.querySelector(".tow-combat__command-heading")).toBeNull();
+        expect(mounted.querySelector(".tow-combat__action-hint")).toBeNull();
+        expect(mounted.querySelector(".tow-combat__command .tow-combat__sr-only").textContent)
+          .toContain(`${controlType.replace(/\b\w/g, (letter) => letter.toUpperCase())}. No player input.`);
+        // No read hold: a window the player could never use is handed straight back.
+        expect(onStandDown).toHaveBeenCalledTimes(1);
+        expect(onStandDown).toHaveBeenCalledWith(base.playerId);
+        await act(async () => vi.runAllTimersAsync());
+        expect(onStandDown).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
-  it("cancels a stale forced-window timer and dispatches once under Strict Mode", async () => {
+  it("forfeits a forced window once per revision under Strict Mode", async () => {
     vi.useFakeTimers();
     try {
       const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
@@ -905,7 +1264,8 @@ describe("compact combat HUD", () => {
         </React.StrictMode>,
       ));
 
-      await act(async () => vi.advanceTimersByTime(450));
+      // Strict Mode's double effect run must not double-forfeit the window.
+      expect(onStandDown).toHaveBeenCalledTimes(1);
       const revised = { ...forced, sequence: forced.sequence + 1 };
       await act(async () => root.render(
         <React.StrictMode>
@@ -913,15 +1273,12 @@ describe("compact combat HUD", () => {
         </React.StrictMode>,
       ));
 
-      // The first encounter's timer would have fired here if the revision change had left
-      // it behind. The current revision receives one fresh read hold instead.
-      await act(async () => vi.advanceTimersByTime(451));
-      expect(onStandDown).not.toHaveBeenCalled();
-      await act(async () => vi.advanceTimersByTime(449));
-      expect(onStandDown).toHaveBeenCalledTimes(1);
-      expect(onStandDown).toHaveBeenCalledWith(base.playerId);
+      // A new command revision is one fresh forfeit; rerenders of the same one are not.
+      await act(async () => vi.advanceTimersByTime(1000));
+      expect(onStandDown).toHaveBeenCalledTimes(2);
+      expect(onStandDown).toHaveBeenNthCalledWith(1, base.playerId);
       await act(async () => vi.runAllTimersAsync());
-      expect(onStandDown).toHaveBeenCalledTimes(1);
+      expect(onStandDown).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -939,7 +1296,14 @@ describe("compact combat HUD", () => {
 
       await act(async () => strike.click());
 
-      expect(onUseSkill).not.toHaveBeenCalled();
+      // A lone legal target commits instantly; the windup is cosmetic.
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
+      expect(onUseSkill).toHaveBeenCalledWith(
+        "strike",
+        preview.primaryTargetId,
+        encounter.playerId,
+        anchorCell,
+      );
       expect(mounted.querySelector("[data-testid='tow-target-confirmation']")).toBeNull();
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
       expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeNull();
@@ -949,12 +1313,6 @@ describe("compact combat HUD", () => {
 
       await act(async () => vi.advanceTimersByTime(5000));
       expect(onUseSkill).toHaveBeenCalledTimes(1);
-      expect(onUseSkill).toHaveBeenCalledWith(
-        "strike",
-        preview.primaryTargetId,
-        encounter.playerId,
-        anchorCell,
-      );
     } finally {
       vi.useRealTimers();
     }
@@ -986,22 +1344,13 @@ describe("compact combat HUD", () => {
 
       await act(async () => mounted.querySelector("[data-skill-id='penetration']").click());
 
+      // The mythical cut-in names the ability while the command has already committed;
+      // the field answers underneath the one-bounded-beat overlay.
       const declaration = mounted.querySelector("[data-testid='tow-mythical-declaration']");
       expect(declaration).toBeTruthy();
       expect(declaration.querySelector("img")?.getAttribute("src")).toMatch(/\.(?:png|webp)$/);
       expect(declaration.textContent).toMatch(/Mythical/i);
       expect(declaration.textContent).toContain("Penetration");
-      expect(onUseSkill).not.toHaveBeenCalled();
-
-      await act(async () => vi.advanceTimersByTime(1119));
-      expect(mounted.querySelector("[data-testid='tow-mythical-declaration']")).toBeTruthy();
-      expect(onUseSkill).not.toHaveBeenCalled();
-
-      await act(async () => vi.advanceTimersByTime(1));
-      expect(mounted.querySelector("[data-testid='tow-mythical-declaration']")).toBeNull();
-      expect(onUseSkill).not.toHaveBeenCalled();
-
-      await act(async () => vi.advanceTimersByTime(5000));
       expect(onUseSkill).toHaveBeenCalledTimes(1);
       expect(onUseSkill).toHaveBeenCalledWith(
         "penetration",
@@ -1009,6 +1358,15 @@ describe("compact combat HUD", () => {
         encounter.playerId,
         anchorCell,
       );
+
+      await act(async () => vi.advanceTimersByTime(1119));
+      expect(mounted.querySelector("[data-testid='tow-mythical-declaration']")).toBeTruthy();
+
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(mounted.querySelector("[data-testid='tow-mythical-declaration']")).toBeNull();
+
+      await act(async () => vi.advanceTimersByTime(5000));
+      expect(onUseSkill).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

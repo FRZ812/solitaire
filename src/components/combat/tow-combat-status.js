@@ -44,6 +44,7 @@ const STATUS_COPY = Object.freeze({
   "void-monster": "Deals special damage equal to its Count at every turn boundary, bypassing defence and ward.",
   "hellfire-spirit": "Deals special damage equal to its Count at every turn boundary, bypassing defence and ward.",
   "limited-life-sentence": "Counts down to a fixed burst of special damage recorded by the casting skill.",
+  "foul-ceremony": "Counts down to the scheduled self-damage recorded by the casting ability.",
   "forbidden-ritual": "Temporarily marks increased maximum health; the caster dies when this countdown expires.",
   limp: "Limp records impaired movement as a Count.",
   berserk: "Raises attack damage and is spent by striking or being struck.",

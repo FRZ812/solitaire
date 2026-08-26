@@ -20,7 +20,13 @@ import { MAGIC_SCHOOLS, abilityTaxonomy } from "../data/ability-taxonomy.js";
 import { RACES } from "../data/races.js";
 import { PROFESSIONS } from "../data/professions.js";
 import { descriptorFor } from "../data/attractiveness.js";
-import { resolveCharacterPortrait } from "./character-portrait-assets.js";
+import {
+  createPortraitVariantToken,
+  isPortraitVariantToken,
+  portraitVariantsFor,
+  resolveCharacterPortrait,
+  selectedPortraitVariantNumber,
+} from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
@@ -133,10 +139,30 @@ function CharacterPortrait({ entry, portraitOverride, detail = false }) {
   );
 }
 
-function CharacterPortraitEditor({ entry, portraitOverride, onPortraitChange }) {
+export function CharacterPortraitEditor({ entry, portraitOverride, onPortraitChange }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const variants = portraitVariantsFor(entry);
+  const selectedVariant = selectedPortraitVariantNumber(entry, portraitOverride);
+  const customPortrait = typeof portraitOverride === "string"
+    && portraitOverride.trim()
+    && !isPortraitVariantToken(portraitOverride);
+
+  async function chooseBuiltInPortrait(variantNumber) {
+    if (!onPortraitChange) return;
+    const token = createPortraitVariantToken(entry, variantNumber);
+    if (!token) return;
+    setError("");
+    setBusy(true);
+    try {
+      await onPortraitChange(entry.id, token);
+    } catch (reason) {
+      setError(reason?.message || "That portrait choice could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function choosePortrait(event) {
     const file = event.target.files?.[0];
@@ -171,11 +197,57 @@ function CharacterPortraitEditor({ entry, portraitOverride, onPortraitChange }) 
   return (
     <div className="codex-entry__portrait-editor">
       <div>
-        <small>Save portrait</small>
-        <span>Replace this image everywhere in this campaign.</span>
+        <small>Portrait</small>
       </div>
+      {variants.length > 1 && (
+        <div
+          role="group"
+          aria-label={`Portrait choice for ${entry.name}`}
+          style={{ minWidth: "auto", flex: "0 0 auto", display: "flex", gridAutoFlow: "column", gap: 5 }}
+        >
+          {variants.map((src, index) => {
+            const variantNumber = index + 1;
+            const selected = selectedVariant === variantNumber;
+            return (
+              <button
+                type="button"
+                key={variantNumber}
+                aria-label={`${entry.name} portrait ${variantNumber}`}
+                aria-pressed={selected}
+                title={`Portrait ${variantNumber}`}
+                data-portrait-choice={variantNumber}
+                data-portrait-variant-token={createPortraitVariantToken(entry, variantNumber)}
+                onClick={() => chooseBuiltInPortrait(variantNumber)}
+                disabled={busy}
+                style={{
+                  width: 42,
+                  height: 54,
+                  minHeight: 54,
+                  padding: 2,
+                  display: "grid",
+                  placeItems: "center",
+                  overflow: "hidden",
+                  borderColor: selected ? "rgba(240, 207, 141, .86)" : "rgba(231, 185, 94, .24)",
+                  background: selected ? "rgba(231, 185, 94, .18)" : "rgba(4, 11, 20, .55)",
+                  boxShadow: selected ? "inset 0 0 0 1px rgba(240, 207, 141, .22)" : "none",
+                  letterSpacing: 0,
+                }}
+              >
+                <img
+                  src={src}
+                  alt=""
+                  draggable="false"
+                  loading="lazy"
+                  decoding="async"
+                  style={{ width: 36, height: 48, display: "block", objectFit: "contain", objectPosition: "50% 50%" }}
+                />
+              </button>
+            );
+          })}
+        </div>
+      )}
       <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}>
-        {busy ? "Preparing…" : portraitOverride ? "Change portrait" : "Upload portrait"}
+        {busy ? "Preparing…" : customPortrait ? "Change upload" : "Upload portrait"}
       </button>
       {portraitOverride && <button type="button" className="is-reset" onClick={resetPortrait} disabled={busy}>Use original</button>}
       <input ref={inputRef} type="file" accept={PORTRAIT_ACCEPT} onChange={choosePortrait} tabIndex={-1} aria-hidden="true" />

@@ -147,6 +147,22 @@ class PortraitNormalizationTests(unittest.TestCase):
         )
         self.assertAlmostEqual(normalized_ratio, source_ratio, delta=0.01)
 
+    def test_tall_narrow_portrait_can_use_authorized_bottom_crop(self) -> None:
+        source = Image.new("RGBA", (500, 900), (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((105, 35, 394, 899), fill=(45, 52, 66, 255))
+
+        normalized = portrait.finish_lower_crop(
+            portrait.normalize_geometry(source, allow_bottom_crop_for_width=True)
+        )
+        report = portrait.metrics(normalized, checker_period=None)
+
+        portrait.validate_contract(report)
+        self.assertGreaterEqual(report["bboxRatios"]["width"], 0.68)
+        self.assertEqual(
+            report["edgeAlphaPixels"],
+            {"top": 0, "right": 0, "bottom": 0, "left": 0},
+        )
+
     def test_premultiplied_resize_zeros_hidden_rgb(self) -> None:
         source = Image.new("RGBA", (8, 8), (250, 250, 250, 0))
         source.putpixel((3, 3), (12, 34, 56, 255))

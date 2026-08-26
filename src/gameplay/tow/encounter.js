@@ -33,6 +33,10 @@ import {
 import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
 import { getCombatItem, normalizeCombatItems } from "./combat-items.js";
+import {
+  TOW_COMBAT_BALANCE_POLICY,
+  TOW_DAMAGING_STATUS_TYPES,
+} from "./combat-policy.js";
 import { effectRecipient } from "./ability-targeting.js";
 import {
   MOVING_FORMATION_RULES_VERSION,
@@ -41,7 +45,7 @@ import {
   normalizeFormation,
 } from "./formation.js";
 import { reflowTowFormations } from "./movement.js";
-import { resolveSkillTargets } from "./targeting.js";
+import { legalSkillAnchors, resolveSkillTargets } from "./targeting.js";
 import {
   createSkillState,
   effectMagnitude,
@@ -74,31 +78,22 @@ export const RETREAT_CHANCE_MIN = 10;
 export const RETREAT_CHANCE_MAX = 90;
 export const RETREAT_BASE_CHANCE = 50;
 
-export const TOW_COMBAT_BALANCE_POLICY = Object.freeze({
-  // A committed technique may create a lethal next decision, but a full-health peer must
-  // not disappear to one ordinary roll. Critical hits can still exceed this base budget.
-  directSkillDamageFraction: 0.45,
-  maxHpSkillDamageFraction: 0.35,
-  damagingStatusFraction: 0.30,
-  // A thirteen-round sentence remains a severe clock, but it no longer carries a flat 666
-  // from a 5,000-HP source boss into a guaranteed kill against a peer-scale character.
-  delayedSkillDamageFraction: 0.65,
-  temporaryMaxHpFraction: 0.50,
-});
+export { TOW_COMBAT_BALANCE_POLICY } from "./combat-policy.js";
 
-const DAMAGING_STATUS_TYPES = new Set([
-  "bleed",
-  "burn",
-  "doom",
-  "fatal-blade",
-  "hellfire-spirit",
-  "misfortune",
-  "poison",
-  "void-monster",
-]);
+const DAMAGING_STATUS_TYPES = new Set(TOW_DAMAGING_STATUS_TYPES);
 
 const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep", "confuse"]);
 const MAX_ENEMY_COMMANDS_PER_WINDOW = 96;
+
+function convertInitiativeToPriority(statuses) {
+  const initiative = statusCount(statuses, "initiative");
+  const gained = Math.floor(initiative / 100);
+  if (gained <= 0) return statuses;
+  let converted = removeStatus(statuses, "initiative");
+  const remainder = initiative % 100;
+  if (remainder > 0) converted = applyStatus(converted, "initiative", remainder);
+  return applyStatus(converted, "priority", gained);
+}
 
 function actorWithStatuses(actor, statuses) {
   // The source catalogue expected bosses with thousands of HP. Current Solitaire actors
@@ -115,13 +110,14 @@ function actorWithStatuses(actor, statuses) {
       }
       : entry)
     : statuses;
-  const growDelta = statusCount(balancedStatuses, "grow") - statusCount(actor.statuses, "grow");
+  const convertedStatuses = convertInitiativeToPriority(balancedStatuses);
+  const growDelta = statusCount(convertedStatuses, "grow") - statusCount(actor.statuses, "grow");
   const maxHp = Math.max(1, actor.maxHp + growDelta);
   return {
     ...actor,
     maxHp,
     hp: Math.min(actor.hp, maxHp),
-    statuses: balancedStatuses,
+    statuses: convertedStatuses,
   };
 }
 
@@ -602,6 +598,40 @@ function applyImmediatePriorityBudget(state, actorId, priorityBefore) {
   };
 }
 
+/**
+ * Turn-free Haste gained during an open player-side command window belongs to that window.
+ * The normal budget snapshot reads Haste only when the round opens, and Haste decays before
+ * the next snapshot; without this adjustment a swift Haste setup can expire without granting
+ * any action. Turn-consuming Haste is deliberately deferred to the next window so it cannot
+ * refund itself forever. Add only the stacks actually stored so caps and repeated effects
+ * cannot create phantom budget.
+ */
+function applyImmediateHasteBudget(state, actorId, hasteBefore) {
+  const actor = state.actors[actorId];
+  if (state.phase !== "player" || actor?.side !== "player") return state;
+  const gainedActions = Math.max(0, statusCount(actor.statuses, "haste") - hasteBefore);
+  if (gainedActions <= 0) return state;
+  if (actorId === state.playerId) {
+    return {
+      ...state,
+      turn: {
+        ...state.turn,
+        actionsRemaining: state.turn.actionsRemaining + gainedActions,
+      },
+    };
+  }
+  return {
+    ...state,
+    turn: {
+      ...state.turn,
+      allies: {
+        ...state.turn.allies,
+        [actorId]: (state.turn.allies?.[actorId] ?? 0) + gainedActions,
+      },
+    },
+  };
+}
+
 function skillActionKind(definition) {
   const effects = definition.effects || [];
   if (effects.some((effect) => effect.type.startsWith("damage"))) return "damage";
@@ -638,6 +668,52 @@ function skillActionEntry(actor, skillState) {
     damage,
     kind: skillActionKind(definition),
     target: targetsEnemy ? "enemy" : "self",
+  };
+}
+
+function projectedSkillDamage(state, actorId, skillId, targetId) {
+  const definition = getSkill(skillId);
+  const actor = state.actors[actorId];
+  const target = state.actors[targetId];
+  const rank = buildFor(state, actorId)?.skills.find((entry) => entry.id === skillId)?.rank ?? 1;
+  if (!definition || !actor || !target) return { damage: 0, hits: 1 };
+  let budget = Number.isFinite(actor.resolve)
+    ? Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.directSkillDamageFraction))
+    : Number.POSITIVE_INFINITY;
+  const packets = [];
+  definition.effects.forEach((effect, index) => {
+    const magnitude = effectMagnitude(skillId, index, rank);
+    if (effect.type === "damage") {
+      const hits = effect.hits ?? 1;
+      const authored = sourcedMagnitudeAmount(actor, target, effect, magnitude);
+      const amount = Math.min(authored, Number.isFinite(budget) ? Math.floor(budget / hits) : authored);
+      if (amount > 0) {
+        packets.push({ amount, hits });
+        budget = Math.max(0, budget - amount * hits);
+      }
+    } else if (effect.type === "damage-enemy-lost-hp" || effect.type === "damage-self-lost-hp") {
+      const source = effect.type === "damage-self-lost-hp" ? actor : target;
+      const authored = Math.floor((Math.max(0, source.maxHp - source.hp) * magnitude) / 100);
+      const amount = Math.min(authored, budget);
+      if (amount > 0) {
+        packets.push({ amount, hits: 1 });
+        budget = Math.max(0, budget - amount);
+      }
+    } else if (effect.type === "damage-enemy-max-hp") {
+      const authored = Math.floor((target.maxHp * magnitude) / 100);
+      const amount = Number.isFinite(actor.resolve)
+        ? Math.min(
+          authored,
+          Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.maxHpSkillDamageFraction)),
+        )
+        : authored;
+      if (amount > 0) packets.push({ amount, hits: 1 });
+    }
+  });
+  if (packets.length === 1) return { damage: packets[0].amount, hits: packets[0].hits };
+  return {
+    damage: packets.reduce((total, packet) => total + packet.amount * packet.hits, 0),
+    hits: 1,
   };
 }
 
@@ -1066,17 +1142,24 @@ export function declaredIntents(state) {
         : attack.target === "self"
           ? enemyId
           : standing.includes(declaredTarget) ? declaredTarget : standing[0] ?? null;
+      const targetIds = spatial?.ok ? spatial.targetIds : targetId ? [targetId] : [];
+      const projected = attack.skillId && targetId
+        ? projectedSkillDamage(state, enemyId, attack.skillId, targetId)
+        : { damage: attack.damage, hits: attack.hits };
       return {
         enemyId,
         attackId: attack.id,
         skillId: attack.skillId || null,
         name: attack.name,
-        hits: attack.hits,
-        damage: attack.damage,
+        hits: projected.hits,
+        damage: projected.damage,
         kind: attack.kind || "damage",
-        target: attack.target || "enemy",
+        target: targetIds.length > 1 ? "area" : targetId === enemyId ? "self" : "enemy",
         targetId,
-        targetName: targetId ? state.actors[targetId].name : null,
+        targetIds,
+        targetName: targetIds.length > 1
+          ? targetIds.map((id) => state.actors[id].name).join(", ")
+          : targetId ? state.actors[targetId].name : null,
       };
     })
     .filter(Boolean);
@@ -1424,13 +1507,14 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
 
     if (effect.type === "heal") {
       const subject = next.actors[subjectId];
-      const amount = sourcedMagnitudeAmount(player, null, effect, magnitude());
-      if (!subject || amount <= 0 || subject.hp >= subject.maxHp) return;
+      const requested = sourcedMagnitudeAmount(player, null, effect, magnitude());
+      if (!subject || subject.hp <= 0 || requested <= 0 || subject.hp >= subject.maxHp) return;
+      const amount = Math.min(requested, subject.maxHp - subject.hp);
       next = {
         ...next,
         actors: {
           ...next.actors,
-          [subjectId]: { ...subject, hp: Math.min(subject.maxHp, subject.hp + amount) },
+          [subjectId]: { ...subject, hp: subject.hp + amount },
         },
       };
       next = push(next, "skill-heal", { actorId: playerId, skillId, targetId: subjectId, amount });
@@ -1440,7 +1524,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
     if (effect.type === "heal-flat") {
       const subject = next.actors[subjectId];
       const amount = magnitude();
-      if (!subject || amount <= 0 || subject.hp >= subject.maxHp) return;
+      if (!subject || subject.hp <= 0 || amount <= 0 || subject.hp >= subject.maxHp) return;
       const healed = Math.min(amount, subject.maxHp - subject.hp);
       next = {
         ...next,
@@ -1547,7 +1631,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
     // someone badly hurt and nearly nothing to someone barely scratched.
     if (effect.type === "heal-lost-fraction") {
       const subject = next.actors[subjectId];
-      if (!subject) return;
+      if (!subject || subject.hp <= 0) return;
       const lost = Math.max(0, subject.maxHp - subject.hp);
       const amount = Math.floor((lost * magnitude()) / 100);
       if (amount <= 0) return;
@@ -1622,20 +1706,27 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
-        const delta = magnitude();
-        const statuses = delta < 0
-          ? consumeStatusCount(subject.statuses, effect.status, Math.abs(delta))
-          : applyStatus(subject.statuses, effect.status, delta);
+        const requestedDelta = magnitude();
+        const before = statusCount(subject.statuses, effect.status);
+        const statuses = requestedDelta < 0
+          ? consumeStatusCount(subject.statuses, effect.status, Math.abs(requestedDelta))
+          : applyStatus(subject.statuses, effect.status, requestedDelta);
+        const updated = actorWithStatuses(subject, statuses);
+        const after = statusCount(updated.statuses, effect.status);
+        const delta = after - before;
         next = {
           ...next,
-          actors: { ...next.actors, [subjectId]: actorWithStatuses(subject, statuses) },
+          actors: { ...next.actors, [subjectId]: updated },
         };
         next = push(next, "skill-status-modified", {
           actorId: playerId,
           skillId,
           targetId: subjectId,
           status: effect.status,
+          requestedDelta,
           delta,
+          before,
+          after,
         });
       }
       return;
@@ -1644,20 +1735,24 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
     if (effect.type === "status-from-status") {
       const source = effect.factorOwner === "enemy" ? next.actors[targetId] : next.actors[playerId];
       if (!source) return;
-      const count = Math.min(
+      const requestedCount = Math.min(
         MAX_STATUS_COUNT,
         Math.floor(statusCount(source.statuses, effect.factorStatus) * magnitude()),
       );
-      if (count <= 0) return;
+      if (requestedCount <= 0) return;
       const subjectIds = effectSubjectIds(next, recipientTarget, playerId, targetId);
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
+        const before = statusCount(subject.statuses, effect.status);
+        const updated = actorWithAppliedStatus(subject, effect.status, requestedCount);
+        const count = Math.max(0, statusCount(updated.statuses, effect.status) - before);
+        if (count <= 0) continue;
         next = {
           ...next,
           actors: {
             ...next.actors,
-            [subjectId]: actorWithAppliedStatus(subject, effect.status, count),
+            [subjectId]: updated,
           },
         };
         next = protectStatusDecay(next, subjectId, effect.status, count, effect.stackDownDelay);
@@ -1668,6 +1763,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
           target: effect.target,
           targetId: subjectId,
           count,
+          ...(requestedCount !== count ? { requestedCount } : {}),
           factorStatus: effect.factorStatus,
         });
       }
@@ -1680,18 +1776,29 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
         const before = subject.statuses;
-        const scaled = effect.statuses.reduce(
+        const requested = effect.statuses.reduce(
           (statuses, status) => scaleStatus(statuses, status, magnitude()),
           before,
         );
-        const changed = effect.statuses.reduce(
-          (total, status) => total + Math.abs(statusCount(scaled, status) - statusCount(before, status)),
+        const requestedChanges = effect.statuses.flatMap((status) => {
+          const previous = statusCount(before, status);
+          const after = statusCount(requested, status);
+          return previous === after ? [] : [{ status, before: previous, after }];
+        });
+        const updated = actorWithStatuses(subject, requested);
+        const changes = effect.statuses.flatMap((status) => {
+          const previous = statusCount(before, status);
+          const after = statusCount(updated.statuses, status);
+          return previous === after ? [] : [{ status, before: previous, after }];
+        });
+        const changed = changes.reduce(
+          (total, change) => total + Math.abs(change.after - change.before),
           0,
         );
         if (changed <= 0) continue;
         next = {
           ...next,
-          actors: { ...next.actors, [subjectId]: actorWithStatuses(subject, scaled) },
+          actors: { ...next.actors, [subjectId]: updated },
         };
         next = push(next, "skill-status-scaled", {
           actorId: playerId,
@@ -1700,6 +1807,10 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
           statuses: [...effect.statuses],
           percent: magnitude(),
           changed,
+          changes,
+          ...(JSON.stringify(requestedChanges) !== JSON.stringify(changes)
+            ? { requestedChanges }
+            : {}),
         });
       }
       return;
@@ -1847,7 +1958,15 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
         scheduledEffects: effect.fatal
           ? [
             ...(next.scheduledEffects || []),
-            { type: "fatal", skillId, sourceId: playerId, targetId: playerId, turnsRemaining: turns, amount: 0 },
+            {
+              type: "fatal",
+              skillId,
+              sourceId: playerId,
+              targetId: playerId,
+              turnsRemaining: turns,
+              amount: 0,
+              maxHpGain: amount,
+            },
           ]
           : (next.scheduledEffects || []),
         actors: {
@@ -1861,6 +1980,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
       };
       next = push(next, "skill-max-hp", {
         actorId: playerId,
+        targetId: playerId,
         skillId,
         amount,
         turns,
@@ -1883,13 +2003,17 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
       const target = next.actors[targetId];
       if (!target || target.hp <= 0) return;
       const lost = Math.max(0, target.maxHp - target.hp);
-      const count = Math.floor((lost * magnitude()) / 100);
+      const requestedCount = Math.floor((lost * magnitude()) / 100);
+      if (requestedCount <= 0) return;
+      const before = statusCount(target.statuses, effect.status);
+      const updated = actorWithAppliedStatus(target, effect.status, requestedCount);
+      const count = Math.max(0, statusCount(updated.statuses, effect.status) - before);
       if (count <= 0) return;
       next = {
         ...next,
         actors: {
           ...next.actors,
-          [targetId]: actorWithAppliedStatus(target, effect.status, count),
+          [targetId]: updated,
         },
       };
       next = push(next, "skill-status", {
@@ -1899,32 +2023,51 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
         target: effect.target,
         targetId,
         count,
+        ...(requestedCount !== count ? { requestedCount } : {}),
       });
       return;
     }
 
     if (effect.type === "status" || effect.type === "scaled-status") {
-      const count = Math.min(MAX_STATUS_COUNT, effect.type === "status"
+      const requestedCount = Math.min(MAX_STATUS_COUNT, effect.type === "status"
         ? magnitude()
         : sourcedMagnitudeAmount(player, next.actors[targetId], effect, magnitude()));
-      if (count <= 0) return;
+      if (requestedCount <= 0) return;
       const subjectIds = effectSubjectIds(next, recipientTarget, playerId, targetId);
       for (const subjectId of subjectIds) {
         const subject = next.actors[subjectId];
         if (!subject || subject.hp <= 0) continue;
-        const priorityBefore = effect.status === "priority"
-          ? statusCount(subject.statuses, "priority")
-          : 0;
+        const before = statusCount(subject.statuses, effect.status);
+        const hasteBefore = statusCount(subject.statuses, "haste");
+        const priorityBefore = statusCount(subject.statuses, "priority");
+        const updated = actorWithAppliedStatus(subject, effect.status, requestedCount);
+        const priorityGained = Math.max(
+          0,
+          statusCount(updated.statuses, "priority") - priorityBefore,
+        );
+        const count = effect.status === "initiative"
+          ? requestedCount
+          : Math.max(0, statusCount(updated.statuses, effect.status) - before);
+        if (count <= 0 && priorityGained <= 0) continue;
         next = {
           ...next,
           actors: {
             ...next.actors,
-            [subjectId]: actorWithAppliedStatus(subject, effect.status, count),
+            [subjectId]: updated,
           },
         };
-        next = protectStatusDecay(next, subjectId, effect.status, count, effect.stackDownDelay);
-        if (effect.status === "priority") {
+        if (effect.status !== "initiative") {
+          next = protectStatusDecay(next, subjectId, effect.status, count, effect.stackDownDelay);
+        }
+        if (priorityGained > 0 || effect.status === "priority") {
           next = applyImmediatePriorityBudget(next, subjectId, priorityBefore);
+        }
+        if (effect.status === "haste") {
+          if (definition.consumesTurn) {
+            next = protectStatusDecay(next, subjectId, effect.status, count, 1);
+          } else {
+            next = applyImmediateHasteBudget(next, subjectId, hasteBefore);
+          }
         }
         next = push(next, "skill-status", {
           actorId: playerId,
@@ -1933,7 +2076,17 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
           target: effect.target,
           targetId: subjectId,
           count,
+          ...(requestedCount !== count ? { requestedCount } : {}),
         });
+        if (priorityGained > 0 && effect.status === "initiative") {
+          next = push(next, "initiative-converted", {
+            actorId: subjectId,
+            skillId,
+            initiativeSpent: priorityGained * 100,
+            priorityGained,
+            remainder: statusCount(updated.statuses, "initiative"),
+          });
+        }
       }
       return;
     }
@@ -1993,6 +2146,247 @@ function applyResolvedSkillEffects(state, definition, rank, actorId, resolvedTar
   return next;
 }
 
+function contextualEffectSubjectIds(state, definition, effect, effectIndex, actorId, resolvedTargets) {
+  const recipient = effectRecipient(definition, effect, effectIndex);
+  if (recipient === "anchor") return resolvedTargets.targetIds;
+  if (recipient === "caster") return [actorId];
+  return effectSubjectIds(
+    state,
+    "all",
+    actorId,
+    resolvedTargets.primaryTargetId,
+  );
+}
+
+function hasContextualSkillOutcome(state, definition, rank, actorId, resolvedTargets) {
+  const actor = state.actors[actorId];
+  return definition.effects.some((effect, effectIndex) => {
+    if (effect.type === "reduce-statuses") {
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        if (effect.clearShield && subject.shield > 0) return true;
+        return effect.toPercent < 100
+          && effect.statuses.some((status) => statusCount(subject.statuses, status) > 0);
+      });
+    }
+    const magnitude = effectMagnitude(definition.id, effectIndex, rank);
+    if (effect.type === "modify-status") {
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const requestedDelta = magnitude;
+        const statuses = requestedDelta < 0
+          ? consumeStatusCount(subject.statuses, effect.status, Math.abs(requestedDelta))
+          : applyStatus(subject.statuses, effect.status, requestedDelta);
+        const updated = actorWithStatuses(subject, statuses);
+        return JSON.stringify(updated.statuses) !== JSON.stringify(subject.statuses);
+      });
+    }
+    if (effect.type === "damage") {
+      const weaponAttack = definition.id === "strike"
+        ? weaponAttackAtRank(buildFor(state, actorId)?.basicAttack, rank)
+        : null;
+      return resolvedTargets.targetIds.some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const authored = weaponAttack
+          ? Math.floor((statOf(actor, effect.scale) * weaponAttack.damagePercent) / 100)
+          : sourcedMagnitudeAmount(actor, subject, effect, magnitude);
+        return authored > 0;
+      });
+    }
+    if (effect.type === "restore-skill-uses") {
+      if (Number.isFinite(actor.resolve)) {
+        const cost = resolveCost(definition.id, rank);
+        const afterCost = actor.resolve - cost;
+        const finalResolve = Math.min(actor.resolveMax, afterCost + magnitude);
+        return finalResolve > actor.resolve;
+      }
+      return buildFor(state, actorId)?.skills.some((entry) => {
+        if (entry.id === definition.id || entry.usesRemaining === UNLIMITED_USES) return false;
+        return restoreUses(entry, magnitude).usesRemaining > entry.usesRemaining;
+      }) || false;
+    }
+    if (effect.type === "status" || effect.type === "scaled-status") {
+      const recipient = effectRecipient(definition, effect, effectIndex);
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const scaleTargetId = recipient === "anchor"
+          ? subjectId
+          : resolvedTargets.primaryTargetId;
+        const requestedCount = Math.min(
+          MAX_STATUS_COUNT,
+          effect.type === "status"
+            ? magnitude
+            : sourcedMagnitudeAmount(actor, state.actors[scaleTargetId], effect, magnitude),
+        );
+        if (requestedCount <= 0) return false;
+        const updated = actorWithAppliedStatus(subject, effect.status, requestedCount);
+        return JSON.stringify(updated.statuses) !== JSON.stringify(subject.statuses);
+      });
+    }
+    if (effect.type === "shield") {
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const ward = definition.effects.reduce((total, candidate, candidateIndex) => {
+          if (candidate.type !== "shield") return total;
+          const candidateSubjects = contextualEffectSubjectIds(
+            state,
+            definition,
+            candidate,
+            candidateIndex,
+            actorId,
+            resolvedTargets,
+          );
+          if (!candidateSubjects.includes(subjectId)) return total;
+          return total + Math.floor(
+            (statOf(actor, candidate.scale)
+              * effectMagnitude(definition.id, candidateIndex, rank)) / 100,
+          );
+        }, 0);
+        return ward > subject.shield;
+      });
+    }
+    if (effect.type === "scale-status") {
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const scaled = effect.statuses.reduce(
+          (statuses, status) => scaleStatus(statuses, status, magnitude),
+          subject.statuses,
+        );
+        const applied = actorWithStatuses(subject, scaled).statuses;
+        return effect.statuses.some((status) => (
+          statusCount(applied, status) !== statusCount(subject.statuses, status)
+        ));
+      });
+    }
+    if (effect.type === "scaled-status-enemy-lost-hp") {
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const lost = Math.max(0, subject.maxHp - subject.hp);
+        const requestedCount = Math.floor((lost * magnitude) / 100);
+        if (requestedCount <= 0) return false;
+        const updated = actorWithAppliedStatus(subject, effect.status, requestedCount);
+        return JSON.stringify(updated.statuses) !== JSON.stringify(subject.statuses);
+      });
+    }
+    if (effect.type === "status-from-status") {
+      const recipient = effectRecipient(definition, effect, effectIndex);
+      return contextualEffectSubjectIds(
+        state,
+        definition,
+        effect,
+        effectIndex,
+        actorId,
+        resolvedTargets,
+      ).some((subjectId) => {
+        const subject = state.actors[subjectId];
+        if (!subject || subject.hp <= 0) return false;
+        const sourceId = effect.factorOwner === "enemy"
+          ? (recipient === "anchor" ? subjectId : resolvedTargets.primaryTargetId)
+          : actorId;
+        const requestedCount = Math.min(
+          MAX_STATUS_COUNT,
+          Math.floor(statusCount(state.actors[sourceId]?.statuses, effect.factorStatus) * magnitude),
+        );
+        if (requestedCount <= 0) return false;
+        const updated = actorWithAppliedStatus(subject, effect.status, requestedCount);
+        return JSON.stringify(updated.statuses) !== JSON.stringify(subject.statuses);
+      });
+    }
+    if (!["heal", "heal-flat", "heal-lost-fraction"].includes(effect.type)) return true;
+    return contextualEffectSubjectIds(
+      state,
+      definition,
+      effect,
+      effectIndex,
+      actorId,
+      resolvedTargets,
+    ).some((subjectId) => {
+      const subject = state.actors[subjectId];
+      if (!subject || subject.hp <= 0 || subject.hp >= subject.maxHp) return false;
+      if (effect.type === "heal") {
+        return sourcedMagnitudeAmount(actor, null, effect, magnitude) > 0;
+      }
+      if (effect.type === "heal-flat") return magnitude > 0;
+      return Math.floor(((subject.maxHp - subject.hp) * magnitude) / 100) > 0;
+    });
+  });
+}
+
+export function combatSkillLegality(state, skillId, actorId = state.playerId) {
+  if (state.phase !== "player") return { ok: false, reason: "encounter-over" };
+  const actor = state.actors[actorId];
+  if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor" };
+  if (actor.hp <= 0) return { ok: false, reason: "actor-down" };
+  if (isControlled(actor)) return { ok: false, reason: "action-nullified" };
+  const build = buildFor(state, actorId);
+  if (!build) return { ok: false, reason: "unknown-actor" };
+  const skillState = build.skills.find((entry) => entry.id === skillId);
+  if (!skillState) return { ok: false, reason: "skill-not-held" };
+  const legality = skillLegality(skillState, {
+    turnAvailable: actionsLeftFor(state, actorId) > 0,
+    resolveAvailable: actor.resolve,
+  });
+  if (!legality.ok) return legality;
+  const definition = getSkill(skillId);
+  const useful = legalSkillAnchors(state, definition, actorId).some((anchorCell) => {
+    const resolved = resolveSkillTargets(state, definition, actorId, { anchorCell });
+    return resolved.ok
+      && hasContextualSkillOutcome(state, definition, skillState.rank, actorId, resolved);
+  });
+  return useful
+    ? { ok: true, reason: null }
+    : { ok: false, reason: "no-effective-outcome" };
+}
+
 /**
  * Use one of the player's skills. Turn-free skills leave the primary action open.
  */
@@ -2026,6 +2420,9 @@ export function useSkill(
     targetId,
   });
   if (!resolvedTargets.ok) return { ok: false, reason: resolvedTargets.reason, state };
+  if (!hasContextualSkillOutcome(state, definition, skillState.rank, actorId, resolvedTargets)) {
+    return { ok: false, reason: "no-effective-outcome", state };
+  }
 
   const spent = spendSkill(skillState);
   if (!spent.ok) return { ok: false, reason: spent.reason, state };
@@ -2255,6 +2652,31 @@ export function skipTurn(state, actorId) {
 // Ending the turn
 // ---------------------------------------------------------------------------
 
+function scheduledMaxHpGain(state, actor, entry) {
+  if (Number.isFinite(entry.maxHpGain)) return entry.maxHpGain;
+  if (entry.type !== "fatal") return 0;
+  const definition = getSkill(entry.skillId);
+  const effectIndex = definition?.effects.findIndex((effect) => (
+    effect.type === "temporary-max-hp" && effect.fatal
+  )) ?? -1;
+  if (effectIndex < 0) return 0;
+  const rank = buildFor(state, entry.sourceId)?.skills
+    .find((skill) => skill.id === entry.skillId)?.rank ?? 1;
+  const authored = effectMagnitude(entry.skillId, effectIndex, rank);
+  if (!Number.isFinite(actor.resolve)) return Math.min(authored, Math.max(0, actor.maxHp - 1));
+
+  const fraction = TOW_COMBAT_BALANCE_POLICY.temporaryMaxHpFraction;
+  const approximate = Math.max(1, Math.floor((actor.maxHp * fraction) / (1 + fraction)));
+  for (let offset = -2; offset <= 2; offset += 1) {
+    const gain = approximate + offset;
+    const baseMaxHp = actor.maxHp - gain;
+    if (gain < 1 || baseMaxHp < 1) continue;
+    const applied = Math.min(authored, Math.max(1, Math.floor(baseMaxHp * fraction)));
+    if (applied === gain) return gain;
+  }
+  return 0;
+}
+
 function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeMisfortune = true } = {}) {
   const actor = state.actors[actorId];
   const burn = onlyMisfortune ? 0 : statusCount(actor.statuses, "burn");
@@ -2279,9 +2701,15 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
     .filter((entry) => entry.type === "damage" && entry.status)
     .map((entry) => entry.status);
   const forbiddenRitual = due.some((entry) => entry.type === "fatal");
-  const fatalDamage = forbiddenRitual ? actor.hp : 0;
-  const total = burn + doom + poison + bleed + misfortune
-    + voidMonster + hellfireSpirit + fatalBlade + delayedDamage + fatalDamage;
+  const maxHpExpired = due.reduce(
+    (sum, entry) => sum + scheduledMaxHpGain(state, actor, entry),
+    0,
+  );
+  const maxHpAfter = Math.max(1, actor.maxHp - maxHpExpired);
+  const nonFatalTotal = burn + doom + poison + bleed + misfortune
+    + voidMonster + hellfireSpirit + fatalBlade + delayedDamage;
+  const fatalDamage = forbiddenRitual ? Math.max(0, actor.hp - nonFatalTotal) : 0;
+  const total = nonFatalTotal + fatalDamage;
   const scheduledEffects = onlyMisfortune
     ? scheduled
     : scheduled.flatMap((entry) => {
@@ -2291,7 +2719,11 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
     });
   if (total <= 0) return scheduledEffects === scheduled ? state : { ...state, scheduledEffects };
   // Boundary damage bypasses defences and Ward outright.
-  const damaged = { ...actor, hp: Math.max(0, actor.hp - total) };
+  const damaged = {
+    ...actor,
+    maxHp: maxHpAfter,
+    hp: Math.min(maxHpAfter, Math.max(0, actor.hp - total)),
+  };
   return push(
     {
       ...state,
@@ -2313,6 +2745,12 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
       delayedSkillIds,
       delayedStatuses,
       forbiddenRitual,
+      fatalDamage,
+      maxHpExpired,
+      maxHpBefore: actor.maxHp,
+      maxHpAfter,
+      total,
+      applied: Math.min(actor.hp, total),
     },
   );
 }
@@ -2527,17 +2965,22 @@ export function endTurn(state) {
           ? enemyId
           : standing.includes(declaredTarget) ? declaredTarget : standing[0];
         if (!targetId) break;
+        const definition = getSkill(declared.skillId);
+        const hasteBefore = statusCount(next.actors[enemyId].statuses, "haste");
         const priorityBefore = priorityAdvantageFor(next, enemyId);
         const used = useEnemySkill(next, enemyId, declared.skillId, targetId);
         if (!used.ok) return { ok: false, reason: "intent-desync", state };
+        const hasteAfter = statusCount(used.state.actors[enemyId].statuses, "haste");
         const priorityAfter = priorityAdvantageFor(used.state, enemyId);
+        if (!definition.consumesTurn) {
+          regularRemaining += Math.max(0, hasteAfter - hasteBefore);
+        }
         priorityRemaining += Math.max(0, priorityAfter - priorityBefore);
 
         // Advance from the declaration that was actually honoured. Availability is
         // evaluated after spending it, so a cooling-down Chi Liberation cannot be selected
         // repeatedly inside the newly-created Priority sequence.
         next = advanceEnemyIntent(used.state, enemyId);
-        const definition = getSkill(declared.skillId);
         if (definition.consumesTurn) {
           if (spendingPriority) {
             next = consumeActorPriority(next, enemyId);

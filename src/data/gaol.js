@@ -22,7 +22,7 @@
 // Rolled deterministically per (tile + refresh window) — see engine/gaol.js.
 // Coin is COPPER. Each entry needs a stable `key`.
 
-import { resolvePoolForMind } from "../engine/attributes.js";
+import { carryCapacityFor, resolvePoolForMind } from "../engine/attributes.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 import { normalizeCharacterProgression } from "../engine/progression.js";
 
@@ -46,6 +46,66 @@ export const PRISONER_POOL = [
 
 export const GAOL_REFRESH_DAYS = 5;
 
+// A taken contract makes its named target a known person, even before the
+// player finds them. File that identity in the Codex with the stable wanted
+// key used by portrait selection; later capture/death resolution can enrich
+// the same record instead of inventing a second person.
+export function wantedCodexEntry(person) {
+  const attrs = person.attributes || { body: 2, reflex: 2, vigor: 2, mind: 2, wit: 2, presence: 2 };
+  const race = person.race || "human";
+  const entry = {
+    id: `wanted-${person.key}`,
+    kind: "wanted",
+    portraitKey: `wanted:${person.key}`,
+    name: person.name,
+    race,
+    subrace: person.subrace || null,
+    gender: person.gender,
+    profession: person.profession || "outlaw",
+    archetype: person.profession || "outlaw",
+    origin: person.crime || "",
+    age: person.age,
+    agingMode: person.agingMode || "mortal",
+    lifespanMultiplier: person.lifespanMultiplier ?? 1.0,
+    attractiveness: person.attractiveness ?? 5,
+    appearance: person.appearance || {},
+    base_appearance: person.base_appearance || person.desc || "",
+    description: person.desc || "",
+    attributes: attrs,
+    worn: Array.isArray(person.worn) ? [...person.worn] : [],
+    knows: [],
+    needs: { hunger: 70, thirst: 70, sleep: 70 },
+    resolve: resolvePoolForMind(attrs.mind || 0),
+    resolveMax: resolvePoolForMind(attrs.mind || 0),
+    abilities: Array.isArray(person.abilities) ? [...person.abilities] : [],
+    skills: Array.isArray(person.skills)
+      ? person.skills.map((skill) => (typeof skill === "string" ? { name: skill, rating: 1 } : { ...skill }))
+      : [],
+    bodyWeight: bodyWeightForRace(race),
+    ridingOn: null,
+    riders: [],
+    inventory: { carried: [], coins: null },
+    carryCapacityMax: carryCapacityFor({ attributes: attrs }),
+    overburdened: false,
+    carryBonus: 0,
+    relationship: 0,
+    memories: [],
+    wanted: {
+      crime: person.crime || "",
+      rewardCp: person.rewardAliveCp || 0,
+      rewardDeadCp: person.rewardDeadCp || 0,
+      lastSeen: person.target || null,
+      lastSeenName: person.targetName || null,
+      status: "at-large",
+    },
+  };
+  return normalizeCharacterProgression(entry, {
+    convertLegacyAttributes: true,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: true,
+  });
+}
+
 // The full codex-character entry for a prisoner whose rights the player has
 // just bought from the warden — sister to bondedCodexEntry and
 // companionCodexEntry. Tagged kind "bonded" (the engine treats the two custody
@@ -61,6 +121,7 @@ export function prisonerCodexEntry(prisoner) {
   const entry = {
     id: `bonded-${prisoner.key}`, // overwritten by beat.js with the day-stamped id
     kind: "bonded",
+    portraitKey: `bonded:${prisoner.key}`,
     name: prisoner.name,
     race,
     subrace: prisoner.subrace || null,

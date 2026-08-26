@@ -233,7 +233,7 @@ describe("opening a practice fight", () => {
     const practice = createPracticeSession(receiptFor("fighter"));
     expect(practice.ok).toBe(true);
     expect(practice.session.mode).toBe("practice");
-    expect(practice.session.rulesetId).toBe("solitaire-tow-v1");
+    expect(practice.session.rulesetId).toBe("solitaire-tow-v1.2");
     // The real reducer means the real telegraph, so practice teaches the actual fight.
     expect(practice.session.encounter.intents).not.toEqual({});
   });
@@ -487,7 +487,7 @@ describe("the result screen has everything needed to reproduce it", () => {
     expect(result.scenarioVersion).toBe(4);
     expect(result.allyGroupId).toBe("solo");
     expect(result.allyGroupVersion).toBe(2);
-    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@4::solo@2");
+    expect(result.seed).toContain("practice::solitaire-tow-v1.2::fighter@1::training-yard@4::solo@2");
     expect(result.genesisChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.terminalChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.replayVerified).toBe(true);

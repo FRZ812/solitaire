@@ -11,8 +11,12 @@ import { condNames } from "../data/conditions.js";
 import { ATTR_LABELS } from "../config.js";
 import { abilityTaxonomy } from "../data/ability-taxonomy.js";
 import { progressionNarrativeProjection } from "../engine/progression-abilities.js";
-import { CHARACTER_ABILITY_TYPE_LABELS } from "../gameplay/tow/character-abilities.js";
-import { getSkill } from "../gameplay/tow/skills.js";
+import {
+  CHARACTER_ABILITY_TYPE_LABELS,
+  describeCharacterAbilityEffect,
+} from "../gameplay/tow/character-abilities.js";
+import { getSkill, resolveCost, skillRarityAtRank } from "../gameplay/tow/skills.js";
+import { combatPolicyClausesForSkill } from "../gameplay/tow/combat-policy.js";
 import { resolveTowAbilityArt } from "./combat/tow-combat-ability-art.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
@@ -98,9 +102,36 @@ function AbilityCard({ ability, definition, variant = "technique" }) {
   );
 }
 
-function TowRosterAbilityCard({ definition }) {
+export function towArsenalAbilityRows(entries = []) {
+  return entries.flatMap((entry) => {
+    const id = typeof entry === "string" ? entry : entry?.id;
+    const rank = Number.isSafeInteger(entry?.rank) && entry.rank > 0 ? entry.rank : 1;
+    const definition = getSkill(id);
+    if (!definition?.abilityType) return [];
+    const details = definition.effects.map((effect) => (
+      describeCharacterAbilityEffect(effect, rank)
+    ));
+    details.push(...combatPolicyClausesForSkill(definition));
+    return [{
+      definition,
+      description: details.join(" · "),
+      rank,
+      rarity: skillRarityAtRank(definition, rank),
+      resolveCost: resolveCost(definition.id, rank),
+      action: definition.consumesTurn ? "main" : "swift",
+      cooldown: definition.cooldown,
+    }];
+  });
+}
+
+function TowRosterAbilityCard({ ability }) {
   const [open, setOpen] = useState(false);
+  const {
+    definition, description, rank, rarity, resolveCost: cost, action, cooldown,
+  } = ability;
   const label = CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || "Combat ability";
+  const timing = `${action === "main" ? "Main" : "Swift"} action`;
+  const cooldownCopy = cooldown > 0 ? ` · ${cooldown}-turn cooldown` : "";
   return (
     <button
       type="button"
@@ -111,9 +142,9 @@ function TowRosterAbilityCard({ definition }) {
     >
       <img src={resolveTowAbilityArt(definition)} alt="" />
       <span>
-        <small>{label} · {definition.rarity}</small>
+        <small>{label} · {rarity} · Rank {rank} · {cost} Resolve · {timing}{cooldownCopy}</small>
         <strong>{definition.name}</strong>
-        {open ? <p>{definition.description}</p> : null}
+        {open ? <p>{description}</p> : null}
       </span>
       <em aria-hidden="true">{open ? "−" : "+"}</em>
     </button>
@@ -163,9 +194,7 @@ export function ArsenalView({ state, onCastBuff }) {
   const [abilityFilter, setAbilityFilter] = useState("all");
   const progressionProjection = progressionNarrativeProjection(character);
   const towRosterAbilities = usesTowProgression
-    ? (state.mechanics?.build?.skills || [])
-      .map((entry) => getSkill(typeof entry === "string" ? entry : entry?.id))
-      .filter((definition) => definition?.abilityType)
+    ? towArsenalAbilityRows(state.mechanics?.build?.skills || [])
     : [];
   const projectedCharacter = {
     ...character,
@@ -230,8 +259,8 @@ export function ArsenalView({ state, onCastBuff }) {
         <section className="tow-arsenal" aria-label="Tower combat kit">
           <SectionHeader>Tower combat kit · {towRosterAbilities.length}</SectionHeader>
           <div className="tow-arsenal__list">
-            {towRosterAbilities.map((definition) => (
-              <TowRosterAbilityCard key={definition.id} definition={definition} />
+            {towRosterAbilities.map((ability) => (
+              <TowRosterAbilityCard key={ability.definition.id} ability={ability} />
             ))}
           </div>
         </section>

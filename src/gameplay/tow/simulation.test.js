@@ -263,4 +263,22 @@ describe("the informed policy actually reads the declarations", () => {
     expect(firstTurnSpendingDecision(exposed))
       .toMatchObject({ type: "use-skill", skillId: "mortal-blow" });
   });
+
+  it("does not call capped self-Paralyzing damage a finisher against a full-health peer", () => {
+    const wolf = STANDARD_FIXTURES.find((fixture) => fixture.id === "wolf-pack").enemies[0];
+    const opened = createTowEncounter({
+      seed: "mortal-cap-restraint",
+      player: standardPlayer(),
+      enemies: [{ ...wolf }],
+      build: towBuildForCharacter({ profession: "barbarian" }),
+    });
+    const primed = useSkill(opened, "elixir-of-wrath", wolf.id);
+    expect(primed.ok).toBe(true);
+
+    // Mortal Blow's authored coefficient exceeds the wolf's remaining health, but the
+    // peer-scale direct-damage cap means the applied hit cannot finish a full-health wolf.
+    // The informed policy must preserve its next command window and use Strike instead.
+    expect(firstTurnSpendingDecision(primed.state))
+      .toMatchObject({ type: "use-skill", skillId: "strike" });
+  });
 });

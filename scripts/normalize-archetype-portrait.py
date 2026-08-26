@@ -695,7 +695,11 @@ def resize_premultiplied(image: Image.Image, size: tuple[int, int]) -> Image.Ima
     return Image.fromarray(result, "RGBA")
 
 
-def normalize_geometry(image: Image.Image) -> Image.Image:
+def normalize_geometry(
+    image: Image.Image,
+    *,
+    allow_bottom_crop_for_width: bool = False,
+) -> Image.Image:
     bbox = alpha_bbox(image)
     subject = image.crop(bbox)
     source_width, source_height = subject.size
@@ -712,11 +716,12 @@ def normalize_geometry(image: Image.Image) -> Image.Image:
     if target_width < minimum_width:
         minimum_scale = minimum_width / source_width
         minimum_height = round(source_height * minimum_scale)
-        if minimum_height <= maximum_height:
+        if minimum_height <= maximum_height or allow_bottom_crop_for_width:
             # Scale uniformly: narrow authored silhouettes become readable
             # without the horizontal widening that distorted earlier assets.
-            # The extra height may cross only the authorized bottom crop; the
-            # fixed top placement and width cap preserve top/side clearance.
+            # With the explicit crop option, excess height may cross only the
+            # authorized bottom edge; the fixed top placement and width cap
+            # preserve the face, upper silhouette, and top/side clearances.
             scale = minimum_scale
             target_width = minimum_width
             target_height = minimum_height
@@ -849,6 +854,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="recover alpha from a uniform high-chroma matte before normalization",
     )
+    parser.add_argument(
+        "--allow-bottom-crop-for-width",
+        action="store_true",
+        help=(
+            "uniformly scale an unusually tall, narrow subject to the minimum "
+            "readable width and allow only excess lower clothing to cross the "
+            "bottom crop"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -869,11 +883,17 @@ def main() -> None:
             "opaque source requires --recover-chroma-matte or --recover-light-checker"
         )
 
-    normalized = normalize_geometry(source)
+    normalized = normalize_geometry(
+        source,
+        allow_bottom_crop_for_width=args.allow_bottom_crop_for_width,
+    )
     if not args.recover_chroma_matte:
         for _ in range(PAPER_WHITE_CLEANUP_PASSES):
             normalized = remove_paper_white_cutoff(normalized)
-        normalized = normalize_geometry(normalized)
+        normalized = normalize_geometry(
+            normalized,
+            allow_bottom_crop_for_width=args.allow_bottom_crop_for_width,
+        )
     normalized = finish_lower_crop(normalized)
     if matte_color is not None:
         normalized = decontaminate_chroma_fringe(

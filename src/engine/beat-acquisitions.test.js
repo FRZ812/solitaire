@@ -4,9 +4,11 @@ import { applyAcquisitions } from "./beat-acquisitions.js";
 import { AUTHORED_MOUNT_LEVELS, PROGRESSION_VERSION, progressionLevel } from "./progression.js";
 import { maxResolveFor } from "./attributes.js";
 import { MOUNTS } from "../data/mounts.js";
+import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 
-function acquire(beat) {
+function acquire(beat, configureState = null) {
   const state = makeInitialState();
+  configureState?.(state);
   const newBeats = [];
   const result = applyAcquisitions({
     state,
@@ -47,8 +49,24 @@ describe("party acquisition progression", () => {
 
     expect(party).toContain("senna");
     expectProgression(senna);
-    expect(senna).toMatchObject({ profession: "ranger" });
+    expect(senna).toMatchObject({ profession: "ranger", portraitKey: "companion:senna" });
     expect(progressionLevel(senna)).toBe(22);
+  });
+
+  it("restores a fixed companion's portrait identity on an existing legacy record", () => {
+    const { world } = acquire({ recruit_companion: { id: "senna" } }, (state) => {
+      const legacy = companionCodexEntry(COMPANIONS.senna);
+      delete legacy.portraitKey;
+      legacy.memories = [{ text: "Met in the reed beds before recruitment." }];
+      state.world.codex.characters.senna = legacy;
+    });
+
+    expect(world.codex.characters.senna).toMatchObject({
+      id: "senna",
+      kind: "companion",
+      portraitKey: "companion:senna",
+      memories: [{ text: "Met in the reed beds before recruitment." }],
+    });
   });
 
   it("folds a captive's exact vocation into profession and archetype", () => {
@@ -57,7 +75,11 @@ describe("party acquisition progression", () => {
     const harl = world.codex.characters[id];
 
     expectProgression(harl);
-    expect(harl).toMatchObject({ profession: "fighter", archetype: "marsh-spearman" });
+    expect(harl).toMatchObject({
+      profession: "fighter",
+      archetype: "marsh-spearman",
+      portraitKey: "bonded:harl",
+    });
     expect(progressionLevel(harl)).toBe(12);
   });
 
@@ -67,7 +89,11 @@ describe("party acquisition progression", () => {
     const loff = world.codex.characters[id];
 
     expectProgression(loff);
-    expect(loff).toMatchObject({ profession: "artisan", archetype: "baker" });
+    expect(loff).toMatchObject({
+      profession: "artisan",
+      archetype: "baker",
+      portraitKey: "bonded:loff",
+    });
     expect(progressionLevel(loff)).toBe(8);
   });
 
@@ -81,6 +107,7 @@ describe("party acquisition progression", () => {
       kind: "mount",
       profession: "sorcerer",
       archetype: "dragon-mount",
+      portraitKey: "mount:dragon",
     });
     expect(progressionLevel(dragon)).toBe(100);
     expect(dragon).not.toHaveProperty("level");
@@ -92,7 +119,12 @@ describe("party acquisition progression", () => {
 
     expect(party).toContain("horse");
     expectProgression(horse);
-    expect(horse).toMatchObject({ kind: "mount", profession: "wanderer", archetype: "horse-mount" });
+    expect(horse).toMatchObject({
+      kind: "mount",
+      profession: "wanderer",
+      archetype: "horse-mount",
+      portraitKey: "mount:horse",
+    });
     expect(progressionLevel(horse)).toBe(9);
   });
 });

@@ -97,6 +97,7 @@ export const COMPANION_LIST = Object.values(COMPANIONS);
 export function companionCodexEntry(tmpl) {
   const entry = {
     id: tmpl.id, kind: "companion",
+    portraitKey: `companion:${tmpl.id}`,
     name: tmpl.name, race: tmpl.race, gender: tmpl.gender, profession: tmpl.profession, origin: tmpl.origin,
     age: tmpl.age, agingMode: tmpl.agingMode || "mortal", lifespanMultiplier: tmpl.lifespanMultiplier ?? 1.0, attractiveness: tmpl.attractiveness,
     appearance: tmpl.appearance, base_appearance: tmpl.base_appearance,

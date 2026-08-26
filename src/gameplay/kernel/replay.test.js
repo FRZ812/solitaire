@@ -164,6 +164,43 @@ describe("reference encounter replay", () => {
     expect(() => gameplayChecksum({ unsupported: undefined })).toThrow("invalid-json-data");
   });
 
+  it("preserves clone-order semantics for stateful JSON-compatible proxies", () => {
+    let inspection = 0;
+    const stateful = () => new Proxy({ v: 0 }, {
+      getOwnPropertyDescriptor(target, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        return key === "v" ? { ...descriptor, value: ++inspection } : descriptor;
+      },
+    });
+    const value = { b: stateful(), a: stateful() };
+
+    expect(gameplayChecksum(value)).toBe("faffa7982f1f5c29");
+  });
+
+  it("rejects an earlier accessor before inspecting a later Proxy", () => {
+    let trapCalls = 0;
+    const later = new Proxy({ x: 1 }, {
+      getPrototypeOf(target) {
+        trapCalls += 1;
+        return Reflect.getPrototypeOf(target);
+      },
+      ownKeys(target) {
+        trapCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        trapCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const value = {};
+    Object.defineProperty(value, "z", { enumerable: true, get: () => 1 });
+    value.a = later;
+
+    expect(() => gameplayChecksum(value)).toThrow("invalid-json-data");
+    expect(trapCalls).toBe(0);
+  });
+
   it("does not collapse a known 32-bit checksum collision", () => {
     expect(gameplayChecksum({ probe: "1c5jp4sbuwlrp" })).not.toBe(
       gameplayChecksum({ probe: "1j7i0hq1qbocxp" }),

@@ -4,12 +4,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { decodeTowSession, encodeTowSession } from "./persistence.js";
-import { replayTowCombatSession, verifyTowSession } from "./replay.js";
 import {
   decodeTowRuntimeSession,
   encodeTowRuntimeSession,
-  replayTowRuntimeSession,
-  verifyTowRuntimeSession,
 } from "./runtime.js";
 import {
   encounterFromGenesis,
@@ -75,14 +72,30 @@ describe("raw Tower v1 replay goldens", () => {
     ]);
   });
 
-  it.each(golden.cases)("accepts, checksums, and exactly replays $id", ({ expected, session }) => {
+  it.each(golden.cases)("preserves $id but rejects its retired runtime identity", ({ expected, session }) => {
     const decoded = decodeTowSession(session);
     const encoded = encodeTowSession(session);
-    expect(isTowSession(session)).toBe(true);
-    expect(decoded).toEqual({ ok: true, reason: null, session });
-    expect(encoded).toEqual({ ok: true, reason: null, payload: session });
-    expect(decodeTowRuntimeSession(session)).toEqual(decoded);
-    expect(encodeTowRuntimeSession(session)).toEqual(encoded);
+    expect(isTowSession(session)).toBe(false);
+    expect(decoded).toEqual({
+      ok: false,
+      reason: "unsupported-tow-ruleset",
+      session: null,
+    });
+    expect(encoded).toEqual({
+      ok: false,
+      reason: "unsupported-tow-ruleset",
+      payload: null,
+    });
+    expect(decodeTowRuntimeSession(session)).toEqual({
+      ok: false,
+      reason: "unsupported-legacy-tow-runtime",
+      session: null,
+    });
+    expect(encodeTowRuntimeSession(session)).toEqual({
+      ok: false,
+      reason: "unsupported-legacy-tow-runtime",
+      payload: null,
+    });
 
     expect(gameplayChecksum(session.genesis)).toBe(expected.genesisChecksum);
     expect(gameplayChecksum(session.encounter)).toBe(expected.encounterChecksum);
@@ -93,19 +106,6 @@ describe("raw Tower v1 replay goldens", () => {
     expect(session.commands.map(({ stateChecksum }) => stateChecksum))
       .toEqual(expected.stateChecksums);
     expect(session.commands.at(-1).eventsTo).toBe(session.encounter.sequence);
-
-    const replayed = replayTowCombatSession(session.genesis, session.commands);
-    expect(replayed).toMatchObject({
-      ok: true,
-      reason: null,
-      divergence: null,
-      replayedCommands: session.commands.length,
-    });
-    expect(JSON.stringify(replayed.encounter)).toBe(JSON.stringify(session.encounter));
-    expect(gameplayChecksum(replayed.encounter)).toBe(expected.encounterChecksum);
-    expect(verifyTowSession(session)).toEqual({ ok: true, reason: null, divergence: null });
-    expect(replayTowRuntimeSession(session)).toEqual(replayed);
-    expect(verifyTowRuntimeSession(session)).toEqual(verifyTowSession(session));
   });
 
   it("preserves the formationless genesis and legacy command record", () => {

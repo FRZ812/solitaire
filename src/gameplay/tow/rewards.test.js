@@ -189,7 +189,7 @@ describe("claiming", () => {
     expect(claimed.provenance).toMatchObject({
       offerId: offer.id,
       sourceReceiptId: "combat-1",
-      rulesetId: "solitaire-tow-v1",
+      rulesetId: "solitaire-tow-v1.2",
       id: choice.id,
     });
     if (choice.kind === "skill") expect(claimed.build.skills).toContain(choice.id);

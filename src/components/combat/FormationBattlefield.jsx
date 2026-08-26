@@ -310,12 +310,22 @@ function FormationUnit({
     <span
       className={`tow-formation-unit${active ? " is-active" : ""}${down ? " is-down" : ""}${reacting ? " is-reacting" : ""}${movement ? " is-arriving" : ""}${lunge ? " is-lunging" : ""}`}
       style={Object.keys(presentationStyle).length > 0 ? presentationStyle : undefined}
+      data-actor-id={actor.id}
       data-lunge-id={lunge?.id || undefined}
     >
       {overlay ? (
         <span className="tow-formation-cell__overlays">
           {overlay}
         </span>
+      ) : null}
+      {active && !down ? (
+        <span className="tow-formation-unit__active-label" aria-hidden="true">
+          <strong>Acting</strong>
+          <em>{actor.name}</em>
+        </span>
+      ) : null}
+      {down ? (
+        <span className="tow-formation-unit__down-label" aria-hidden="true">Defeated</span>
       ) : null}
       <span className="tow-formation-unit__figure" aria-hidden="true">
         {art ? (

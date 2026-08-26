@@ -1,9 +1,9 @@
 // Opt-in spatial ability contract for the next Tower ruleset.
 //
-// The shipped combat reducer and replay path remain pinned to solitaire-tow-v1. This module
+// The shipped combat reducer and replay path remain pinned to solitaire-tow-v1.2. This module
 // deliberately has no adapter from the captured v1 catalogue: a v2 action exists only when
-// it is authored against this exact ruleset id and validated here. That keeps old receipts
-// byte-for-byte interpretable while the new party rules can be built alongside them.
+// it is authored against this exact ruleset id and validated here. Current v1.2 receipts and
+// future v2 receipts remain distinct, while retired v1 fights fail at the runtime boundary.
 
 export const TOW_ABILITY_RULESET_V2_ID = "solitaire-tow-v2";
 export const TOW_ABILITY_RULES_V2_VERSION = 2;
@@ -720,8 +720,9 @@ export function isZoneRulesV2(value) {
 }
 
 // Stacking is resolved per owner + zone id + cell. `replace` overwrites potency and
-// duration. `refresh-duration` retains the greater potency and remaining duration.
-// `stack-potency` adds potency up to `cap` applications and retains the greater duration.
+// duration. `refresh-duration` uses the newest cast's resolved potency and authored
+// duration. `stack-potency` adds potency up to `cap` applications and retains the greater
+// duration.
 export function defineZoneRulesV2(value) {
   const result = validateZoneRulesV2(value);
   if (!result.ok) throw new TypeError(result.reason);

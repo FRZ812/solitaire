@@ -105,7 +105,8 @@ describe("PanelDeck", () => {
     expect(codexHtml).toContain("known characters · people · places · lore");
     expect(codexHtml).toContain("codex-entry__portrait");
     expect(codexHtml).toContain("portrait placeholder");
-    expect(codexHtml).toContain('data-portrait-atlas="important"');
+    expect(codexHtml).toContain('data-portrait-source="character"');
+    expect(codexHtml).toContain("codex-individual/demon-king.webp");
     expect(codexHtml).toContain('data-icon-key="codex:characters"');
     expect(codexHtml).toContain('data-icon-key="codex:professions"');
     expect(codexHtml.match(/id="codex-tab-/g)).toHaveLength(8);
@@ -140,8 +141,10 @@ describe("PanelDeck", () => {
 
     expect(html).toContain("codex-entry--dossier is-open");
     expect(html).toContain("Back to roster");
-    expect(html).toContain('data-portrait-source="detail"');
+    expect(html).toContain('data-portrait-source="character"');
     expect(html).toContain("codex-individual/demon-king.webp");
+    expect(html).toContain('data-portrait-variant-token="builtin:codex:demon-king:v2"');
+    expect(html).toContain("variants/demon-king-portrait-v2.png");
     expect(html).toContain("Identity and progression");
     expect(html).toContain("Visible details");
     expect(html).toContain("Known story");

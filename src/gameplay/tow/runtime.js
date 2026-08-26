@@ -17,7 +17,11 @@ import {
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./outcomes.js";
 import { decodeTowSession, encodeTowSession } from "./persistence.js";
 import { replayTowCombatSession, verifyTowSession } from "./replay.js";
-import { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
+import {
+  TOW_RETIRED_RUNTIME_IDENTITIES,
+  TOW_RULESET_ID,
+  TOW_SESSION_VERSION,
+} from "./ruleset.js";
 import {
   TOW_SESSION_STREAMS,
   createTowSession,
@@ -29,6 +33,7 @@ import { settleTowEncounter } from "./settlement.js";
 
 export const TOW_RUNTIME_REASONS = Object.freeze({
   invalidIdentity: "invalid-tow-runtime-identity",
+  legacyRuntime: "unsupported-legacy-tow-runtime",
   unsupportedRuntime: "unsupported-tow-runtime",
 });
 
@@ -39,12 +44,26 @@ export const TOW_V1_RUNTIME_IDENTITY = Object.freeze({
 });
 
 function identityFields(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (!Object.hasOwn(value, "version") || !Object.hasOwn(value, "rulesetId")) return null;
-  const { version, rulesetId } = value;
-  if (!Number.isSafeInteger(version) || version < 1) return null;
-  if (typeof rulesetId !== "string" || rulesetId.length === 0) return null;
-  return { version, rulesetId };
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const versionDescriptor = Object.getOwnPropertyDescriptor(value, "version");
+    const rulesetDescriptor = Object.getOwnPropertyDescriptor(value, "rulesetId");
+    if (!versionDescriptor || !Object.hasOwn(versionDescriptor, "value")) return null;
+    if (!rulesetDescriptor || !Object.hasOwn(rulesetDescriptor, "value")) return null;
+    const version = versionDescriptor.value;
+    const rulesetId = rulesetDescriptor.value;
+    if (!Number.isSafeInteger(version) || version < 1) return null;
+    if (typeof rulesetId !== "string" || rulesetId.length === 0) return null;
+    return { version, rulesetId };
+  } catch {
+    return null;
+  }
+}
+
+function isRetiredIdentity(identity) {
+  return TOW_RETIRED_RUNTIME_IDENTITIES.some((retired) => (
+    identity.version === retired.version && identity.rulesetId === retired.rulesetId
+  ));
 }
 
 /**
@@ -114,6 +133,14 @@ function route(value) {
     };
   }
   const runtime = RUNTIMES.get(towRuntimeRegistrationKey(identity)) || null;
+  if (!runtime && isRetiredIdentity(identity)) {
+    return {
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.legacyRuntime,
+      identity: Object.freeze(identity),
+      runtime: null,
+    };
+  }
   return runtime
     ? { ok: true, reason: null, identity: runtime.identity, runtime }
     : {
@@ -144,7 +171,12 @@ export function createTowRuntimeSession(identity, input = {}) {
 export function decodeTowRuntimeSession(value) {
   const routed = route(value);
   if (!routed.ok) return { ok: false, reason: routed.reason, session: null };
-  return routed.runtime.decode(value);
+  const decoded = routed.runtime.decode(value);
+  if (!decoded.ok) return decoded;
+  const verified = routed.runtime.verify(decoded.session);
+  return verified.ok
+    ? decoded
+    : { ok: false, reason: verified.reason, session: null };
 }
 
 export function encodeTowRuntimeSession(session) {
