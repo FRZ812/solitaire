@@ -56,6 +56,7 @@ export function recomputeVitalityMax(character) {
 // 2.7x the old pool instead of letting the quadratic run away.
 export const BASE_RESOLVE = 6;
 export const RESOLVE_PER_MIND = 1;
+export const BASE_RESOLVE_REGEN = 1;
 
 // The pool for a raw Mind score — the single source of truth, shared by the
 // player (via effective attributes), companions, and enemies (bestiary).
@@ -65,6 +66,12 @@ export function resolvePoolForMind(mind) {
     + Math.round(Math.max(0, score * score - 16) * 0.05);
   if (m <= LEGACY_ATTRIBUTE_CAP) return Math.round(legacyPool(m));
   return Math.round(legacyPool(LEGACY_ATTRIBUTE_CAP) + (m - LEGACY_ATTRIBUTE_CAP) * 2.2);
+}
+
+/** Per-round Tower recovery: a universal baseline plus authored Presence milestones. */
+export function resolveRegenForAttributes(attrs = {}) {
+  const threshold = attributeThresholdMods(attrs).triggers.resolveRegen || 0;
+  return BASE_RESOLVE_REGEN + Math.max(0, Math.round(threshold));
 }
 
 export function maxResolveFor(character) {

@@ -157,7 +157,20 @@ describe("Tower runtime registration", () => {
     const retiredIdentity = { version: 1, rulesetId: "solitaire-tow-v1.1" };
     const retiredSession = { ...openSession(), ...retiredIdentity };
 
-    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.2");
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.3");
+    expect(supportsTowRuntime(retiredIdentity)).toBe(false);
+    expect(decodeTowRuntimeSession(retiredSession)).toEqual({
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.legacyRuntime,
+      session: null,
+    });
+  });
+
+  it("retires v1.2 before source-authored uncapped mechanics become current", () => {
+    const retiredIdentity = { version: 1, rulesetId: "solitaire-tow-v1.2" };
+    const retiredSession = { ...openSession(), ...retiredIdentity };
+
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.3");
     expect(supportsTowRuntime(retiredIdentity)).toBe(false);
     expect(decodeTowRuntimeSession(retiredSession)).toEqual({
       ok: false,

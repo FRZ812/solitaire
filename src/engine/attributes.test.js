@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   BASE_VITALITY, HP_PER_VIGOR, vigorHealthBonus, maxVitalityFor,
-  recomputeVitalityMax, BASE_RESOLVE, resolvePoolForMind, recomputeResolveMax,
+  recomputeVitalityMax, BASE_RESOLVE, BASE_RESOLVE_REGEN, resolvePoolForMind,
+  resolveRegenForAttributes, recomputeResolveMax,
   BASE_CARRY, carryCapacityFor, recomputeCarryCapacity, applyAttributeChanges,
 } from "./attributes.js";
 
@@ -60,6 +61,13 @@ describe("mind → resolve & body → carry formulas", () => {
     expect(resolvePoolForMind(0)).toBe(6);                 // 6 + 0 + 0
     expect(resolvePoolForMind(4)).toBe(10);                // 6 + 4 + round(0)
     expect(resolvePoolForMind(30)).toBe(6 + 30 + 44);      // curve round(884*.05)=44 → 80
+  });
+
+  it("gives everyone baseline combat recovery and adds Presence milestones", () => {
+    expect(BASE_RESOLVE_REGEN).toBe(1);
+    expect(resolveRegenForAttributes(ATTRS({ presence: 4 }))).toBe(1);
+    expect(resolveRegenForAttributes(ATTRS({ presence: 5 }))).toBe(2);
+    expect(resolveRegenForAttributes(ATTRS({ presence: 15 }))).toBe(3);
   });
 
   it("carryCapacityFor applies carryBonus additively", () => {

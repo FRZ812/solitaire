@@ -16,7 +16,6 @@ import {
   describeCharacterAbilityEffect,
 } from "../gameplay/tow/character-abilities.js";
 import { getSkill, resolveCost, skillRarityAtRank } from "../gameplay/tow/skills.js";
-import { combatPolicyClausesForSkill } from "../gameplay/tow/combat-policy.js";
 import { resolveTowAbilityArt } from "./combat/tow-combat-ability-art.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
@@ -111,7 +110,6 @@ export function towArsenalAbilityRows(entries = []) {
     const details = definition.effects.map((effect) => (
       describeCharacterAbilityEffect(effect, rank)
     ));
-    details.push(...combatPolicyClausesForSkill(definition));
     return [{
       definition,
       description: details.join(" · "),

@@ -16,16 +16,17 @@
 // available: every one of those is a registry lookup and an engine rule, because a model
 // that can name its own rewards is a model that can hand out anything it can spell.
 
-import { cloneJsonData } from "../kernel/json-data.js";
+import { cloneJsonData, equalJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng, nextInt } from "../kernel/rng.js";
-import { acquireRune, acquireTrait } from "./build.js";
+import { acquireRune, acquireTrait, createTowBuild, isTowBuild } from "./build.js";
 import { TOW_RULESET_ID } from "./session.js";
 import {
   SKILL_SLOTS,
   abilityReplacementFamily,
   getSkill,
   loadoutCharacterId,
+  maxRankOf,
   replacementSkillIds,
   skillIds,
 } from "./skills.js";
@@ -40,6 +41,7 @@ export const REWARD_KINDS = Object.freeze(["trait", "skill"]);
 
 const OFFER_KEYS = Object.freeze([
   "candidates",
+  "checksum",
   "claimedId",
   "id",
   "ineligible",
@@ -59,6 +61,17 @@ function exactKeys(value, keys) {
 
 function identifier(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 256;
+}
+
+function rewardOfferChecksum(value) {
+  const { checksum: _checksum, ...payload } = value;
+  return gameplayChecksum(payload);
+}
+
+function sealRewardOffer(value) {
+  const offer = { ...value, checksum: null };
+  offer.checksum = rewardOfferChecksum(offer);
+  return offer;
 }
 
 /**
@@ -88,7 +101,9 @@ function ineligibility(build, candidate) {
   if (skill.exclusiveTo && skill.exclusiveTo !== characterId) {
     return "skill-exclusive-to-another-character";
   }
-  if (build.skills.includes(candidate.id)) return "skill-already-held";
+  const held = build.skills.find((entry) => entry.id === candidate.id);
+  if (held?.rank >= maxRankOf(candidate.id)) return "skill-at-rank-cap";
+  if (held) return null;
   if (build.skills.length >= SKILL_SLOTS) {
     if (replacementSkillIds(build.skills, skill).length === 0) {
       return "no-compatible-ability-slot";
@@ -122,7 +137,8 @@ function describe(candidate, build) {
     };
   }
   const skill = getSkill(candidate.id);
-  const requiresReplacement = build.skills.length >= SKILL_SLOTS;
+  const held = build.skills.find((entry) => entry.id === candidate.id);
+  const requiresReplacement = !held && build.skills.length >= SKILL_SLOTS;
   const family = skill.abilityType === "basic-attack"
     ? "Basic Attack"
     : skill.abilityType === "defensive"
@@ -136,6 +152,7 @@ function describe(candidate, build) {
       skill.consumesTurn ? "" : ", keeps action"
     }${requiresReplacement ? ` · replaces the ${family} slot` : ""}`,
     requiresReplacement,
+    ...(held ? { currentRank: held.rank, nextRank: held.rank + 1 } : {}),
   };
 }
 
@@ -189,7 +206,7 @@ export function compileRewardOffer(build, { sourceReceiptId, seed, rerolls = 0 }
   }
 
   const { chosen } = drawChoices(pool, createRng(seed), REWARD_CHOICE_COUNT);
-  const offer = {
+  const offer = sealRewardOffer({
     version: TOW_REWARD_VERSION,
     id: `reward-${gameplayChecksum({ sourceReceiptId, seed })}`,
     rulesetId: TOW_RULESET_ID,
@@ -203,7 +220,7 @@ export function compileRewardOffer(build, { sourceReceiptId, seed, rerolls = 0 }
     rerollsRemaining: rerolls,
     rerolled: false,
     claimedId: null,
-  };
+  });
   return { ok: true, reason: null, offer };
 }
 
@@ -211,6 +228,7 @@ export function isRewardOffer(value) {
   if (!exactKeys(value, OFFER_KEYS)) return false;
   return value.version === TOW_REWARD_VERSION
     && identifier(value.id)
+    && identifier(value.checksum)
     && value.rulesetId === TOW_RULESET_ID
     && identifier(value.sourceReceiptId)
     && identifier(value.seed)
@@ -223,7 +241,28 @@ export function isRewardOffer(value) {
     && Number.isSafeInteger(value.rerollsRemaining)
     && value.rerollsRemaining >= 0
     && typeof value.rerolled === "boolean"
-    && (value.claimedId === null || identifier(value.claimedId));
+    && (value.claimedId === null || identifier(value.claimedId))
+    && value.checksum === rewardOfferChecksum(value);
+}
+
+function matchesDeterministicOffer(build, offer) {
+  const compiled = compileRewardOffer(build, {
+    sourceReceiptId: offer.sourceReceiptId,
+    seed: offer.seed,
+    rerolls: offer.rerollsRemaining,
+  });
+  if (!compiled.ok) return false;
+  if (!offer.rerolled && offer.id !== compiled.offer.id) return false;
+  try {
+    return equalJsonData(offer.candidates, compiled.offer.candidates)
+      && equalJsonData(offer.ineligible, compiled.offer.ineligible);
+  } catch {
+    return false;
+  }
+}
+
+export function isDeterministicRewardOffer(build, offer) {
+  return isTowBuild(build) && isRewardOffer(offer) && matchesDeterministicOffer(build, offer);
 }
 
 /**
@@ -236,6 +275,9 @@ export function isRewardOffer(value) {
 export function rerollRewardOffer(build, offer) {
   if (!isRewardOffer(offer)) return { ok: false, reason: "invalid-reward-offer", offer: null };
   if (offer.claimedId) return { ok: false, reason: "reward-already-claimed", offer };
+  if (!matchesDeterministicOffer(build, offer)) {
+    return { ok: false, reason: "invalid-reward-offer", offer: null };
+  }
   if (offer.rerollsRemaining <= 0) return { ok: false, reason: "no-rerolls-remaining", offer };
 
   const rerolled = compileRewardOffer(build, {
@@ -249,7 +291,7 @@ export function rerollRewardOffer(build, offer) {
     reason: null,
     // The id follows the original, so a claim against the reward for this fight is still a
     // claim against one offer rather than two.
-    offer: { ...rerolled.offer, id: offer.id, rerolled: true },
+    offer: sealRewardOffer({ ...rerolled.offer, id: offer.id, rerolled: true }),
   };
 }
 
@@ -274,7 +316,13 @@ export function claimReward(build, offer, candidateId, { replacingId = null } = 
   // two, and a reward that was legal an hour ago must not write an illegal build now.
   const blocked = ineligibility(build, candidate);
   if (blocked) return { ok: false, reason: blocked, build: null, offer };
+  if (!matchesDeterministicOffer(build, offer)) {
+    return { ok: false, reason: "invalid-reward-offer", build: null, offer };
+  }
 
+  const heldSkill = candidate.kind === "skill"
+    ? build.skills.find((entry) => entry.id === candidate.id)
+    : null;
   const applied = candidate.kind === "trait"
     ? acquireTrait(build, candidate.id)
     : acquireSkillReward(build, candidate.id, { replacingId });
@@ -284,7 +332,7 @@ export function claimReward(build, offer, candidateId, { replacingId = null } = 
     ok: true,
     reason: null,
     build: applied.build,
-    offer: { ...offer, claimedId: candidateId },
+    offer: sealRewardOffer({ ...offer, claimedId: candidateId }),
     duplicate: false,
     // Provenance: which offer, which fight, which rules. A build that grew without a record
     // of where it grew from cannot be audited when someone reports an impossible character.
@@ -294,7 +342,10 @@ export function claimReward(build, offer, candidateId, { replacingId = null } = 
       rulesetId: offer.rulesetId,
       kind: candidate.kind,
       id: candidate.id,
-      replacedId: candidate.kind === "skill" ? replacingId : null,
+      rank: candidate.kind === "skill"
+        ? applied.build.skills.find((entry) => entry.id === candidate.id).rank
+        : applied.build.traits[candidate.id],
+      replacedId: candidate.kind === "skill" && !heldSkill ? applied.replacedId : null,
     },
   };
 }
@@ -302,31 +353,62 @@ export function claimReward(build, offer, candidateId, { replacingId = null } = 
 function acquireSkillReward(build, skillId, { replacingId = null } = {}) {
   const definition = getSkill(skillId);
   if (!definition) return { ok: false, reason: "unknown-skill", build: null };
-  if (build.skills.includes(skillId)) return { ok: false, reason: "skill-already-held", build: null };
+  const held = build.skills.find((entry) => entry.id === skillId);
+  if (held) {
+    if (held.rank >= maxRankOf(skillId)) {
+      return { ok: false, reason: "skill-at-rank-cap", build: null };
+    }
+    return {
+      ok: true,
+      reason: null,
+      build: createTowBuild({
+        ...build,
+        skills: build.skills.map((entry) => (
+          entry.id === skillId ? { ...entry, rank: entry.rank + 1 } : entry
+        )),
+      }),
+      replacedId: null,
+    };
+  }
   let skills;
-  if (build.skills.length >= SKILL_SLOTS) {
+  let replacedId = null;
+  const family = abilityReplacementFamily(definition);
+  const compatible = replacementSkillIds(build.skills, definition);
+  if ((family === "basic-attack" || family === "defensive") && compatible.length > 0) {
+    const replacement = replacingId || compatible[0];
+    if (!compatible.includes(replacement)) {
+      return { ok: false, reason: "incompatible-ability-slot", build: null };
+    }
+    replacedId = replacement;
+    skills = build.skills.map((entry) => (
+      entry.id === replacement ? { id: skillId, rank: 1 } : entry
+    ));
+  } else if (build.skills.length >= SKILL_SLOTS) {
     if (replacingId === null) return { ok: false, reason: "replacement-required", build: null };
-    const replaceAt = build.skills.indexOf(replacingId);
+    const replaceAt = build.skills.findIndex((entry) => entry.id === replacingId);
     if (replaceAt < 0) return { ok: false, reason: "unknown-replacement", build: null };
     if (!replacementSkillIds(build.skills, definition).includes(replacingId)) {
-      const incomingFamily = abilityReplacementFamily(definition);
+      const incomingFamily = family;
       const replacedFamily = abilityReplacementFamily(getSkill(replacingId));
       const reason = incomingFamily === "flexible" && replacedFamily !== "flexible"
         ? "protected-ability-slot"
         : "incompatible-ability-slot";
       return { ok: false, reason, build: null };
     }
-    skills = build.skills.map((id, index) => (index === replaceAt ? skillId : id));
+    replacedId = replacingId;
+    skills = build.skills.map((entry, index) => (
+      index === replaceAt ? { id: skillId, rank: 1 } : entry
+    ));
   } else {
-    skills = [...build.skills, skillId];
+    skills = [...build.skills, { id: skillId, rank: 1 }];
   }
   let next;
   try {
-    next = cloneJsonData({ ...build, skills }, "invalid-build");
+    next = createTowBuild(cloneJsonData({ ...build, skills }, "invalid-build"));
   } catch {
     return { ok: false, reason: "invalid-build", build: null };
   }
-  return { ok: true, reason: null, build: next };
+  return { ok: true, reason: null, build: next, replacedId };
 }
 
 /** A rune grant, for the open-world channel. Same build, same provenance shape. */

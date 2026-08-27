@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import { generateEnemyGroup } from "../../data/bestiary.js";
 import { deriveCombatStats } from "../../engine/combat-stats.js";
+import { BASE_RESOLVE_REGEN } from "../../engine/attributes.js";
 import { isTowActor } from "../kernel/tow-actor.js";
 import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
@@ -26,6 +27,9 @@ describe("characters cross the bridge", () => {
     expect(actor.name).toBe(character.name || "Wanderer");
     expect(actor.hp).toBeGreaterThan(0);
     expect(actor.hp).toBeLessThanOrEqual(actor.maxHp);
+    const stats = deriveCombatStats(character, codex);
+    expect(actor.resolveRegen)
+      .toBe(BASE_RESOLVE_REGEN + (stats.triggers?.resolveRegen || 0));
   });
 
   it("keeps every rate inside the kernel's range", () => {
@@ -94,6 +98,23 @@ describe("characters cross the bridge", () => {
     expect(actor.hp).toBe(actor.maxHp);
     expect(actor.maxHp).toBe(170);
     expect(actor.stats).toEqual({ attack: 12, defense: 13, critRate: 9, dodgeRate: 4 });
+  });
+
+  it("preserves an archetype's explicitly authored Resolve regeneration", () => {
+    const { character, codex } = world();
+    const vampire = getStartingArchetype("vampire");
+    const sourceCharacter = {
+      ...character,
+      name: vampire.name,
+      attributes: vampire.attributes,
+      progressionModel: "tow-archetype",
+      towBaseStats: vampire.baseStats,
+      vitality: character.vitalityMax,
+    };
+
+    const actor = towPlayerFromCharacter(sourceCharacter, codex);
+
+    expect(actor.resolveRegen).toBe(2);
   });
 
   it("applies the permanent profile keepsake without requiring an equipment slot", () => {

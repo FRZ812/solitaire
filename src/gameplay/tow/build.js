@@ -10,17 +10,46 @@
 // rejected at the boundary rather than crashing a fight three rounds in.
 
 import { cloneJsonData } from "../kernel/json-data.js";
-import { getSkill, SKILL_SLOTS } from "./skills.js";
+import { getSkill, maxRankOf, SKILL_SLOTS } from "./skills.js";
 import { getCombatTrait, getFusion, getTrait, TRAIT_CAPACITY, TRAIT_RANK_CAP } from "./traits.js";
 import { startingPackage } from "./starting-packages.js";
 import { traitRankForLevel } from "./professions.js";
 
-export const TOW_BUILD_VERSION = 1;
+export const TOW_BUILD_VERSION = 2;
 const MAX_RUNES = 32;
 const BUILD_KEYS = Object.freeze(["professionId", "runes", "skills", "traits", "version"]);
 
 function validId(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+
+export function isLegacyTowBuild(value) {
+  return Boolean(value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value).sort().join(",") === BUILD_KEYS.join(",")
+    && value.version === 1
+    && validId(value.professionId)
+    && value.traits
+    && typeof value.traits === "object"
+    && !Array.isArray(value.traits)
+    && Array.isArray(value.skills)
+    && value.skills.every(validId)
+    && Array.isArray(value.runes));
+}
+
+export function migrateLegacyTowBuild(value) {
+  if (!isLegacyTowBuild(value)) return null;
+  try {
+    return createTowBuild({
+      professionId: value.professionId,
+      traits: value.traits,
+      skills: value.skills.map((id) => ({ id, rank: 1 })),
+      runes: value.runes,
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** Compose the build a profession starts with, at a given level. */
@@ -51,12 +80,17 @@ export function createTowBuild({ professionId, traits = {}, skills = [], runes =
 
   if (!Array.isArray(skills)) throw new TypeError("invalid-build-skills");
   const cleanSkills = [];
-  for (const skillId of skills) {
+  for (const entry of skills) {
+    const skillId = typeof entry === "string" ? entry : entry?.id;
+    const rank = typeof entry === "string" ? 1 : entry?.rank;
     const definition = getSkill(skillId);
     if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
     if (definition.slot !== "slotted") throw new TypeError("unslotted-skill-in-loadout");
-    if (cleanSkills.includes(skillId)) throw new TypeError("duplicate-skill");
-    cleanSkills.push(skillId);
+    if (!Number.isSafeInteger(rank) || rank < 1 || rank > maxRankOf(skillId)) {
+      throw new TypeError("invalid-skill-rank");
+    }
+    if (cleanSkills.some((skill) => skill.id === skillId)) throw new TypeError("duplicate-skill");
+    cleanSkills.push({ id: skillId, rank });
   }
   if (cleanSkills.length > SKILL_SLOTS) throw new TypeError("skill-capacity-exceeded");
 
@@ -84,7 +118,7 @@ export function canonicalizeTowBuild(build) {
     version: build.version,
     professionId: build.professionId,
     traits,
-    skills: [...build.skills],
+    skills: build.skills.map((skill) => ({ id: skill.id, rank: skill.rank })),
     runes: [...build.runes].sort(),
   };
 }
@@ -105,8 +139,15 @@ export function isTowBuild(value) {
     && value.traits[id] <= TRAIT_RANK_CAP
     && (!getFusion(id) || value.traits[id] === TRAIT_RANK_CAP))) return false;
   if (!Array.isArray(value.skills) || value.skills.length > SKILL_SLOTS) return false;
-  if (new Set(value.skills).size !== value.skills.length) return false;
-  if (!value.skills.every((id) => getSkill(id)?.slot === "slotted")) return false;
+  if (!value.skills.every((skill) => skill
+    && typeof skill === "object"
+    && !Array.isArray(skill)
+    && Object.keys(skill).sort().join(",") === "id,rank"
+    && getSkill(skill.id)?.slot === "slotted"
+    && Number.isSafeInteger(skill.rank)
+    && skill.rank >= 1
+    && skill.rank <= maxRankOf(skill.id))) return false;
+  if (new Set(value.skills.map((skill) => skill.id)).size !== value.skills.length) return false;
   return Array.isArray(value.runes)
     && value.runes.length <= MAX_RUNES
     && value.runes.every(validId)
@@ -115,7 +156,11 @@ export function isTowBuild(value) {
 
 /** The shape the encounter kernel consumes. Derived, never stored twice. */
 export function encounterBuildFrom(build) {
-  return { traits: { ...build.traits }, skills: [...build.skills], runes: [...build.runes] };
+  return {
+    traits: { ...build.traits },
+    skills: build.skills.map((skill) => ({ id: skill.id, rank: skill.rank })),
+    runes: [...build.runes],
+  };
 }
 
 // ---------------------------------------------------------------------------

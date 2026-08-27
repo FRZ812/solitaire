@@ -58,12 +58,29 @@ describe("the durable build", () => {
     expect(isTowBuild(build)).toBe(true);
     expect(build.professionId).toBe("fighter");
     expect(Object.keys(build.traits).length).toBe(1);
-    expect(build.skills).toContain("strike");
+    expect(build.skills).toContainEqual({ id: "strike", rank: 1 });
   });
 
   it("survives a JSON round trip", () => {
     const build = startingBuild("rogue");
     expect(isTowBuild(JSON.parse(JSON.stringify(build)))).toBe(true);
+  });
+
+  it("persists owned skill ranks and hands them to the encounter kernel", () => {
+    const build = createTowBuild({
+      professionId: "fighter",
+      traits: { ironclad: 1 },
+      skills: [{ id: "strike", rank: 6 }, { id: "block", rank: 2 }],
+      runes: [],
+    });
+    const restored = JSON.parse(JSON.stringify(build));
+
+    expect(isTowBuild(restored)).toBe(true);
+    expect(restored.skills).toEqual([
+      { id: "strike", rank: 6 },
+      { id: "block", rank: 2 },
+    ]);
+    expect(encounterBuildFrom(restored).skills).toEqual(restored.skills);
   });
 
   it("canonicalises so the same build hashes the same", () => {
@@ -188,7 +205,10 @@ describe("one bootstrap compiler", () => {
       build: { traits: { swift: 3 }, skills: ["strike", "warcry"], runes: [] },
     });
     expect(compiled.receipt.build.traits).toEqual({ swift: 3 });
-    expect(compiled.receipt.build.skills).toEqual(["strike", "warcry"]);
+    expect(compiled.receipt.build.skills).toEqual([
+      { id: "strike", rank: 1 },
+      { id: "warcry", rank: 1 },
+    ]);
   });
 
   it("lets a validated practice build override an archetype's authored skills", () => {
@@ -206,7 +226,7 @@ describe("one bootstrap compiler", () => {
 
     expect(compiled.ok).toBe(true);
     expect(compiled.receipt.archetypeId).toBe(archetype.id);
-    expect(compiled.receipt.build.skills).toEqual(skills);
+    expect(compiled.receipt.build.skills).toEqual(skills.map((id) => ({ id, rank: 1 })));
   });
 });
 

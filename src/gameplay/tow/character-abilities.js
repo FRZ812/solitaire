@@ -12,6 +12,7 @@ import {
   TOW_STATUS_SOURCE_ROWS,
 } from "./character-ability-source-data.js";
 import { canonicalTowArchetypeId, sameTowArchetype } from "./archetype-identities.js";
+import { withFunctionalPromotions } from "./ability-progression.js";
 
 export const CHARACTER_ABILITY_TYPES = Object.freeze([
   "basic-attack",
@@ -29,6 +30,14 @@ export const CHARACTER_ABILITY_TYPE_LABELS = Object.freeze({
 
 export const FIXED_CHARACTER_ABILITY_TYPES = Object.freeze(["basic-attack", "defensive"]);
 export const FLEXIBLE_CHARACTER_ABILITY_TYPES = Object.freeze(["archetype", "general"]);
+
+export const CHARACTER_ABILITY_ADAPTATION_TYPES = Object.freeze([
+  "source-shape",
+  "encounter-scale",
+  "resolve-generation",
+  "mythical-signature",
+  "functional-promotions",
+]);
 
 // Only presentation is reflavoured. Stable ids, source effects, ranks, and legacy owner ids
 // remain untouched so historical saves and deterministic replays keep their exact rules.
@@ -322,13 +331,14 @@ function sourceState(effect, rankCount) {
     });
   }
 
-  // Terminal Sentence is a countdown whose source status deals 666 when removed.
+  // Pact Sentence must land inside a normal encounter. Preserve the source's 666 execution
+  // payload but compress its boss-scale thirteen-turn countdown to two combat rounds.
   if (statusId === 1020058) {
     return freezeEffect({
       type: "delayed-damage",
       target,
       countByRank: Object.freeze(Array(rankCount).fill(666)),
-      turnsByRank: rankTable(base, increment, rankCount),
+      turnsByRank: Object.freeze(Array(rankCount).fill(2)),
       status,
     });
   }
@@ -444,22 +454,74 @@ function mergeSourceEffects(effects) {
   return Object.freeze(merged);
 }
 
+const RESOLVE_REGEN_FLOORS_BY_SOURCE_ID = Object.freeze({
+  1030316: Object.freeze([2, 3]),
+  1030914: Object.freeze([2, 3, 4, 5]),
+  1031223: Object.freeze([4]),
+});
+
+const MYTHICAL_MAGNITUDES_BY_SOURCE_ID = Object.freeze({
+  1030122: Object.freeze([300, 300, 1]),
+  1030123: Object.freeze([150]),
+  1030222: Object.freeze([4]),
+  1030223: Object.freeze([30]),
+  1030322: Object.freeze([100]),
+  1030522: Object.freeze([400, 3]),
+  1030523: Object.freeze([100, 0]),
+  1030723: Object.freeze([100, 100]),
+});
+
+const PROMOTED_MYTHICAL_RIDERS_BY_SOURCE_ID = Object.freeze({
+  1030619: freezeEffect({
+    type: "status",
+    status: "strength",
+    target: "self",
+    countByRank: Object.freeze([20, 30]),
+  }),
+});
+
+function withMythicalSignature(sourceId, effects) {
+  const magnitudes = MYTHICAL_MAGNITUDES_BY_SOURCE_ID[sourceId];
+  if (!magnitudes) return effects;
+  const rewritten = effects.map((effect, index) => {
+    const key = ["percentByRank", "countByRank", "factorByRank"]
+      .find((candidate) => Array.isArray(effect[candidate]));
+    if (!key || magnitudes[index] === undefined) return effect;
+    return freezeEffect({ ...effect, [key]: Object.freeze([magnitudes[index]]) });
+  });
+  if (sourceId === 1030222) {
+    rewritten.push(freezeEffect({
+      type: "status",
+      status: "priority",
+      target: "self",
+      countByRank: Object.freeze([3]),
+    }));
+  }
+  return rewritten;
+}
+
+function withPromotedMythicalRider(sourceId, effects) {
+  const rider = PROMOTED_MYTHICAL_RIDERS_BY_SOURCE_ID[sourceId];
+  return rider ? Object.freeze([...effects, rider]) : effects;
+}
+
 function compileEffects(sourceId, sourceEffects, rankCount) {
-  // Forbidden Ceremony grants 3333 Max HP for four turns and then deals the source status'
-  // 9999 expiration damage. In this combat kernel that terminal pair is represented as one
-  // scheduled, fatal temporary-Max-HP effect so it cannot silently leave the Max HP behind.
+  // Forbidden Ritual is adapted to the actor's scale: Legendary grants 35% temporary max HP
+  // and Mythical grants 50%, both as immediately usable health. The fatal source expiry stays
+  // intact, represented by one scheduled effect so the temporary maximum cannot leak.
   if (sourceId === 1030820) {
     return Object.freeze([freezeEffect({
       type: "temporary-max-hp",
       target: "self",
-      countByRank: Object.freeze([3333]),
+      scale: "max-hp",
+      percentByRank: Object.freeze([35, 50]),
       turns: 4,
       fatal: true,
       expirationDamage: 9999,
     })]);
   }
 
-  const compiled = sourceEffects.map((effect) => {
+  let compiled = sourceEffects.map((effect) => {
     if (effect[0] === "Attack") return sourceDamage(effect, rankCount);
     if (effect[0] === "Heal") return sourceHeal(effect, rankCount);
     if (effect[0] === "StateEffect") return sourceState(effect, rankCount);
@@ -467,6 +529,7 @@ function compileEffects(sourceId, sourceEffects, rankCount) {
     if (effect[0] === "SkillCharger") return sourceCharger(effect, rankCount);
     throw new TypeError(`unknown-source-effect:${effect[0]}`);
   });
+  compiled = withMythicalSignature(sourceId, compiled);
   // The captured Interception row starts at zero and would spend an action for no outcome.
   // Its recorded 25-point promotion increment is the first useful Solitaire rank, so preserve
   // that progression without exposing an inert Common command.
@@ -475,6 +538,22 @@ function compileEffects(sourceId, sourceEffects, rankCount) {
       ...effect,
       countByRank: rankTable(25, 25, rankCount),
     })));
+  }
+  if (sourceId === 1031223) {
+    compiled = compiled.map((effect) => (effect.type === "restore-skill-uses"
+      ? freezeEffect({ ...effect, countByRank: Object.freeze([9]) })
+      : effect));
+  }
+  const resolveRegenFloors = RESOLVE_REGEN_FLOORS_BY_SOURCE_ID[sourceId];
+  if (resolveRegenFloors) {
+    compiled = [
+      ...compiled,
+      freezeEffect({
+        type: "resolve-regen",
+        target: "self",
+        countByRank: resolveRegenFloors,
+      }),
+    ];
   }
   return mergeSourceEffects(compiled);
 }
@@ -553,11 +632,15 @@ export function describeCharacterAbilityEffect(effect, rank = 1) {
     return `Deal ${value} damage after ${turns} turns`;
   }
   if (effect.type === "temporary-max-hp") {
+    const amount = effect.scale === "max-hp"
+      ? `${value}% of maximum health`
+      : `${value} maximum health`;
     return effect.fatal
-      ? `Gain ${value} maximum health for ${effect.turns} turns, then fall to 0 health when it expires`
-      : `Gain ${value} maximum health for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
+      ? `Gain ${amount} for ${effect.turns} turns, then fall to 0 health when it expires`
+      : `Gain ${amount} for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
   }
   if (effect.type === "restore-skill-uses") return `Restore ${value} Resolve`;
+  if (effect.type === "resolve-regen") return `Raise Resolve recovery to ${value} per round`;
   return effect.type.replace(/-/g, " ");
 }
 
@@ -577,19 +660,50 @@ function compileAbility(row) {
     sourceEffects,
   ] = row;
   const rankCount = RANKS_BY_SOURCE_GRADE[sourceGrade];
-  const effects = compileEffects(sourceId, sourceEffects, rankCount);
+  const compiledEffects = compileEffects(sourceId, sourceEffects, rankCount);
+  const effects = withPromotedMythicalRider(
+    sourceId,
+    withFunctionalPromotions(
+      compiledEffects,
+      rankCount,
+      "mythical",
+    ),
+  );
   const usesPerAct = sourceUses === 0 ? null : sourceUses;
   const usesPerActByRank = sourceUses > 0 && usesIncrement !== 0
     ? rankTable(sourceUses, usesIncrement, rankCount)
     : null;
   const description = `${effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`;
   const archetypeId = canonicalTowArchetypeId(characterId);
+  const resourceAdaptation = RESOLVE_REGEN_FLOORS_BY_SOURCE_ID[sourceId];
+  const mythicalAdaptation = MYTHICAL_MAGNITUDES_BY_SOURCE_ID[sourceId]
+    || PROMOTED_MYTHICAL_RIDERS_BY_SOURCE_ID[sourceId];
+  const timingOrScaleAdaptation = sourceId === 1030820 || sourceId === 1030823;
+  const promotionAdaptation = JSON.stringify(effects) !== JSON.stringify(compiledEffects);
+  const adaptations = Object.freeze([
+    ...(sourceId === 1031206 ? ["source-shape"] : []),
+    ...(timingOrScaleAdaptation ? ["encounter-scale"] : []),
+    ...(resourceAdaptation ? ["resolve-generation"] : []),
+    ...(mythicalAdaptation ? ["mythical-signature"] : []),
+    ...(promotionAdaptation ? ["functional-promotions"] : []),
+  ]);
   const sourceTranslation = sourceId === 1031206
     ? {
       fidelity: "adapted",
       detail: "The shipped zero-value source row is skipped so every offered Interception rank has a mechanical outcome; its captured +25 progression is preserved.",
     }
-    : { fidelity: "direct", detail: description };
+    : resourceAdaptation || mythicalAdaptation || timingOrScaleAdaptation || promotionAdaptation
+      ? {
+        fidelity: "adapted",
+        detail: timingOrScaleAdaptation
+          ? "The source identity is preserved with percentage health scaling or encounter-length timing suitable for Solitaire combat."
+          : resourceAdaptation
+          ? "The source effect is preserved and gains explicit Solitaire Resolve generation so the ability remains functional in the shared resource economy."
+          : mythicalAdaptation
+            ? "The source identity is preserved with a decisive Solitaire-scale Mythical magnitude."
+            : "The source identity is preserved while stagnant promotion edges gain authoritative mechanical progression.",
+      }
+      : { fidelity: "direct", detail: description };
   return Object.freeze({
     id,
     name: GENERALIZED_ABILITY_NAMES[id] || name.trim(),
@@ -614,6 +728,7 @@ function compileAbility(row) {
       archetypeId,
       sourceName,
       ...sourceTranslation,
+      adaptations,
     }),
     note: null,
     rankCount,

@@ -65,6 +65,7 @@ function foe(id, name, maxHp, attack, archetypeId) {
     maxHp,
     resolve: archetype.baseStats.resolveMax,
     resolveMax: archetype.baseStats.resolveMax,
+    resolveRegen: archetype.baseStats.resolveRegen,
     stats: Object.freeze({ attack, defense: attack, critRate: 4, dodgeRate: 3 }),
     archetypeId: archetype.id,
     build: Object.freeze({
@@ -84,8 +85,9 @@ function canonicalAlly(id, archetypeId) {
     id,
     name: archetype.name,
     maxHp: base.maxHp + bonus.maxHp,
-    resolve: base.resolveMax,
-    resolveMax: base.resolveMax,
+    resolve: base.resolveMax + bonus.resolveMax,
+    resolveMax: base.resolveMax + bonus.resolveMax,
+    resolveRegen: base.resolveRegen + bonus.resolveRegen,
     stats: Object.freeze({
       attack: base.attack + bonus.attack,
       defense: base.defense + bonus.defense,
@@ -218,21 +220,27 @@ function normalizedPracticeSkillRarities(receipt, skillRarities) {
   if (skillRarities == null) return null;
   if (!Array.isArray(skillRarities) || skillRarities.length !== receipt.build.skills.length) return false;
   if (!skillRarities.every((rarity, index) => {
-    const definition = getSkill(receipt.build.skills[index]);
+    const entry = receipt.build.skills[index];
+    const definition = getSkill(typeof entry === "string" ? entry : entry?.id);
     return definition && skillRarityChoices(definition).includes(rarity);
   })) return false;
   return skillRarities.some((rarity, index) => (
-    rarity !== getSkill(receipt.build.skills[index]).rarity
+    rarity !== getSkill(
+      typeof receipt.build.skills[index] === "string"
+        ? receipt.build.skills[index]
+        : receipt.build.skills[index]?.id,
+    ).rarity
   )) ? [...skillRarities] : null;
 }
 
 function withPracticeSkillRarities(build, sourceSkillIds, skillRarities) {
   if (!skillRarities) return build;
+  const ids = sourceSkillIds.map((entry) => (typeof entry === "string" ? entry : entry?.id));
   return {
     ...build,
     skills: build.skills.map((entry) => {
       const id = typeof entry === "string" ? entry : entry.id;
-      const sourceIndex = sourceSkillIds.indexOf(id);
+      const sourceIndex = ids.indexOf(id);
       if (sourceIndex < 0) return entry;
       const rank = skillRankForRarity(id, skillRarities[sourceIndex]);
       return typeof entry === "string"
@@ -313,6 +321,7 @@ export function practiceActor(receipt, keepsakeId = null) {
   const base = archetype?.baseStats || {
     maxHp: 96,
     resolveMax: 8,
+    resolveRegen: 1,
     attack: 12,
     defense: 12,
     critRate: 5,
@@ -322,8 +331,9 @@ export function practiceActor(receipt, keepsakeId = null) {
     id: "wanderer",
     name: archetype?.character?.name || "You",
     maxHp: base.maxHp + bonus.maxHp,
-    resolve: base.resolveMax,
-    resolveMax: base.resolveMax,
+    resolve: base.resolveMax + bonus.resolveMax,
+    resolveMax: base.resolveMax + bonus.resolveMax,
+    resolveRegen: base.resolveRegen + bonus.resolveRegen,
     stats: {
       attack: base.attack + bonus.attack,
       defense: base.defense + bonus.defense,

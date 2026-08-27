@@ -11,6 +11,16 @@
 // verification fails the old payload stands.
 
 import { cloneJsonData, equalJsonData } from "../gameplay/kernel/json-data.js";
+import {
+  isLegacyTowBuild,
+  isTowBuild,
+  migrateLegacyTowBuild,
+} from "../gameplay/tow/build.js";
+import {
+  compileRewardOffer,
+  isDeterministicRewardOffer,
+} from "../gameplay/tow/rewards.js";
+import { TOW_RULESET_ID } from "../gameplay/tow/ruleset.js";
 
 export const CAMPAIGN_SCHEMA_V12 = "v12";
 export const CAMPAIGN_SCHEMA_V13 = "v13";
@@ -78,6 +88,65 @@ function owns(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+function hasVictorySettlementReceipt(state, sourceReceiptId) {
+  return Array.isArray(state?.combatSettlementReceipts)
+    && state.combatSettlementReceipts.some((receipt) => (
+      isPlainRecord(receipt)
+      && receipt.sessionId === sourceReceiptId
+      && receipt.outcome === "victory"
+    ));
+}
+
+function hasValidCurrentPendingReward(state) {
+  if (!owns(state, "pendingReward") || state.pendingReward === null) return true;
+  return isTowBuild(state.mechanics?.build)
+    && isDeterministicRewardOffer(state.mechanics.build, state.pendingReward)
+    && state.pendingReward.claimedId === null
+    && hasVictorySettlementReceipt(state, state.pendingReward.sourceReceiptId);
+}
+
+function migrateRetiredPendingReward(pendingReward, build, state) {
+  if (!isPlainRecord(pendingReward)) {
+    return { ok: false, reason: "invalid-current-pending-reward", reward: null };
+  }
+  if (pendingReward.rulesetId === TOW_RULESET_ID) {
+    if (!isDeterministicRewardOffer(build, pendingReward) || pendingReward.claimedId !== null) {
+      return { ok: false, reason: "invalid-current-pending-reward", reward: null };
+    }
+    return hasVictorySettlementReceipt(state, pendingReward.sourceReceiptId)
+      ? { ok: true, reason: null, reward: pendingReward }
+      : { ok: false, reason: "unearned-pending-reward", reward: null };
+  }
+  if (pendingReward.rulesetId !== "solitaire-tow-v1.2") {
+    return { ok: false, reason: "unsupported-pending-reward-ruleset", reward: null };
+  }
+  if (!isTowBuild(build)
+    || typeof pendingReward.sourceReceiptId !== "string"
+    || typeof pendingReward.seed !== "string"
+    || !Number.isSafeInteger(pendingReward.rerollsRemaining)
+    || pendingReward.rerollsRemaining < 0
+    || pendingReward.rerollsRemaining > 4
+    || pendingReward.claimedId !== null) {
+    return { ok: false, reason: "invalid-retired-pending-reward", reward: null };
+  }
+  if (!hasVictorySettlementReceipt(state, pendingReward.sourceReceiptId)) {
+    return { ok: false, reason: "unearned-pending-reward", reward: null };
+  }
+  const compiled = compileRewardOffer(build, {
+    sourceReceiptId: pendingReward.sourceReceiptId,
+    seed: pendingReward.seed,
+    rerolls: pendingReward.rerollsRemaining,
+  });
+  if (!compiled.ok) {
+    return { ok: false, reason: "invalid-retired-pending-reward", reward: null };
+  }
+  return {
+    ok: true,
+    reason: null,
+    reward: compiled.offer,
+  };
+}
+
 function validSavedFormation(value) {
   return isPlainRecord(value)
     && value.version === 1
@@ -97,13 +166,14 @@ export function hasCurrentMechanicsState(state) {
     && owns(sidecar, "bootstrapId")
     && (sidecar.bootstrapId === null || typeof sidecar.bootstrapId === "string")
     && owns(sidecar, "build")
-    && (sidecar.build === null || isPlainRecord(sidecar.build))
+    && (sidecar.build === null || isTowBuild(sidecar.build))
     && isPlainRecord(tow)
     && owns(tow, "activeCombat")
     && (tow.activeCombat === null || isPlainRecord(tow.activeCombat))
     && isPlainRecord(tow.readiness)
     && isPlainRecord(tow.companionReadiness)
-    && validSavedFormation(tow.formation);
+    && validSavedFormation(tow.formation)
+    && hasValidCurrentPendingReward(state);
 }
 
 /**
@@ -160,6 +230,12 @@ export function migrateCampaignState(state) {
       return { ok: false, reason: "unsupported-saved-formation", state: null };
     }
 
+    if (isLegacyTowBuild(next.mechanics.build)) {
+      const migratedBuild = migrateLegacyTowBuild(next.mechanics.build);
+      if (!migratedBuild) return { ok: false, reason: "invalid-legacy-tow-build", state: null };
+      next.mechanics.build = migratedBuild;
+    }
+
     // Older v1 sidecars may predate one or more Tower fields. Backfill only
     // absent keys; every existing value and every unknown key survives exactly.
     const defaults = emptyTowMechanics();
@@ -173,6 +249,18 @@ export function migrateCampaignState(state) {
         ...existingTow,
       },
     };
+  }
+
+  if (owns(next, "pendingReward") && next.pendingReward !== null) {
+    const migratedReward = migrateRetiredPendingReward(
+      next.pendingReward,
+      next.mechanics.build,
+      next,
+    );
+    if (!migratedReward.ok) {
+      return { ok: false, reason: migratedReward.reason, state: null };
+    }
+    next.pendingReward = migratedReward.reward;
   }
 
   return { ok: true, reason: null, state: next };
@@ -192,6 +280,16 @@ export function verifyMigrationReadBack(original, migrated) {
   const strippedMigrated = { ...migrated };
   delete strippedOriginal.mechanics;
   delete strippedMigrated.mechanics;
+
+  if (owns(strippedOriginal, "pendingReward") && strippedOriginal.pendingReward !== null) {
+    const expectedReward = migrateRetiredPendingReward(
+      strippedOriginal.pendingReward,
+      migrated.mechanics?.build,
+      original,
+    );
+    if (!expectedReward.ok) return { ok: false, reason: expectedReward.reason };
+    strippedOriginal.pendingReward = expectedReward.reward;
+  }
 
   try {
     if (!equalJsonData(strippedOriginal, strippedMigrated)) {
@@ -230,8 +328,14 @@ export function verifyMigrationReadBack(original, migrated) {
     for (const key of ["bootstrapId", "build"]) {
       if (!owns(original_, key)) delete comparable[key];
     }
+    let expectedOriginal = original_;
+    if (isLegacyTowBuild(original_.build)) {
+      const migratedBuild = migrateLegacyTowBuild(original_.build);
+      if (!migratedBuild) return { ok: false, reason: "invalid-legacy-tow-build" };
+      expectedOriginal = { ...original_, build: migratedBuild };
+    }
     try {
-      if (!equalJsonData(original_, comparable)) {
+      if (!equalJsonData(expectedOriginal, comparable)) {
         return { ok: false, reason: "migration-altered-existing-mechanics" };
       }
     } catch {
@@ -256,6 +360,9 @@ export function upgradeCampaignPayload(state) {
   const verified = verifyMigrationReadBack(state, migrated.state);
   if (!verified.ok) {
     return { ok: false, reason: verified.reason, state, writable: false };
+  }
+  if (!hasCurrentMechanicsState(migrated.state)) {
+    return { ok: false, reason: "invalid-current-mechanics-state", state, writable: false };
   }
   return { ok: true, reason: null, state: migrated.state, writable: true };
 }

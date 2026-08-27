@@ -19,6 +19,7 @@ import {
   getCharacterAbility,
 } from "./character-abilities.js";
 import { canonicalTowArchetypeId } from "./archetype-identities.js";
+import { withFunctionalPromotions } from "./ability-progression.js";
 import {
   TOW_GENERAL_ABILITY_SOURCE_ROWS,
   TOW_GENERAL_SOURCE_CAPTURE,
@@ -49,40 +50,17 @@ export const RARITIES = Object.freeze([
 
 export const UNLIMITED_USES = null;
 
-// Resolve prices deliberately fit the campaign's small Mind-driven pool (8 for a typical
-// martial starter, 11 for a dedicated caster). The old use allowance expresses how freely
-// the source expected a technique to be used, so it is the authored signal used to price it:
-// common guards stay affordable while once-per-act conclusions demand most of a small pool.
-// When an ability's ranks changed only that allowance, every promotion becomes a one-point
-// Resolve discount instead. No rank is allowed to become an empty "+uses per act" upgrade,
-// and no replacement charge counter is invented.
-const RESOLVE_COST_BANDS = Object.freeze([
-  Object.freeze({ minimumUses: 20, cost: 1 }),
-  Object.freeze({ minimumUses: 10, cost: 2 }),
-  Object.freeze({ minimumUses: 5, cost: 3 }),
-  Object.freeze({ minimumUses: 3, cost: 4 }),
-  Object.freeze({ minimumUses: 2, cost: 5 }),
-  Object.freeze({ minimumUses: 1, cost: 6 }),
-]);
-
-function resolveBandCost(uses) {
-  return RESOLVE_COST_BANDS.find((band) => uses >= band.minimumUses)?.cost ?? 6;
-}
-
-function isAllowanceOnlyProgression(definition) {
-  if (!definition.usesPerActByRank || definition.rankCount <= 1) return false;
-  return definition.effects.every((effect) => [
-    effect.percentByRank,
-    effect.countByRank,
-    effect.factorByRank,
-    effect.turnsByRank,
-  ].filter(Boolean).every((table) => {
-    const first = table[0];
-    return Array.from({ length: definition.rankCount }, (_, index) => (
-      table[Math.min(index, table.length - 1)]
-    )).every((value) => value === first);
-  }));
-}
+// Current rarity is the player-facing scarcity contract. Promotion demands more Resolve
+// because the technique itself becomes more consequential; it never becomes cheaper merely
+// because the source game raised a per-Act allowance. Unlimited basic attacks remain free.
+export const RESOLVE_COST_BY_RARITY = Object.freeze({
+  common: 1,
+  uncommon: 2,
+  rare: 3,
+  epic: 4,
+  legendary: 5,
+  mythical: 6,
+});
 
 function damage(scale, percentByRank, extra = {}) {
   return Object.freeze({ type: "damage", scale, percentByRank: Object.freeze(percentByRank), target: "enemy", ...extra });
@@ -165,12 +143,14 @@ function skill(id, name, {
     ? SKILL_RARITY_PROGRESSION.length - rarityStart
     : sourcedRankCount;
   const rankCount = Math.max(sourcedRankCount, promotedRankCount);
+  const topRarity = SKILL_RARITY_PROGRESSION[rarityStart + rankCount - 1];
+  const progressedEffects = withFunctionalPromotions(effects, rankCount, topRarity);
   return Object.freeze({
     id,
     name,
     rarity,
     slot: "slotted",
-    effects: Object.freeze(effects),
+    effects: progressedEffects,
     replaces,
     consumesTurn,
     cooldown,
@@ -188,7 +168,13 @@ function skill(id, name, {
 }
 
 function compileGeneralAbility(row) {
-  const effects = row.effects.map(compileGeneralEffect);
+  const compiledEffects = row.effects.map(compileGeneralEffect);
+  const effects = row.id === "peace-declaration"
+    ? Object.freeze([
+      ...compiledEffects,
+      status("priority", "self", [1, 2]),
+    ])
+    : compiledEffects;
   const description = `${effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`;
   return skill(row.id, row.name, {
     rarity: row.rarity,
@@ -208,8 +194,13 @@ function compileGeneralAbility(row) {
       sourceLine: row.sourceLine,
       rawRowsSha256: TOW_GENERAL_SOURCE_CAPTURE.rawRowsSha256,
       fidelity: "adapted",
-      adaptations: Object.freeze(["per-act-uses-to-resolve"]),
-      detail: "Source effect, rarity, recipient, action lane, cooldown, and per-rarity values are preserved; source per-Act uses are translated to the reviewed Resolve table.",
+      adaptations: Object.freeze([
+        "per-act-uses-to-resolve",
+        ...(row.id === "peace-declaration" ? ["mythical-signature"] : []),
+      ]),
+      detail: row.id === "peace-declaration"
+        ? "The universal ceasefire remains three rounds at both tiers; caster Priority gives the promoted field an asymmetric, player-controlled payoff."
+        : "Source effect, rarity, recipient, action lane, cooldown, and per-rarity values are preserved; source per-Act uses are translated to the reviewed Resolve table.",
     },
     note: null,
   });
@@ -258,14 +249,14 @@ const HAND_AUTHORED_SKILLS = Object.freeze([
   skill("shield-bash", "Shield Bash", {
     rarity: "uncommon",
     replaces: "strike",
-    effects: [damage("defense", [105, 120, 135, 150, 165])],
+    effects: [damage("defense", [220, 260, 300, 350, 400])],
   }),
   skill("slaughter", "Bleeding Cut", {
     rarity: "uncommon",
     replaces: "strike",
     effects: [
-      damage("attack", [21, 24, 27, 30, 33]),
-      scaledStatus("bleed", "enemy", "attack", [21, 24, 27, 30, 33]),
+      damage("attack", [80, 100, 130, 170, 240]),
+      scaledStatus("bleed", "enemy", "attack", [40, 60, 80, 120, 180]),
     ],
   }),
   skill("block", "Block", {
@@ -352,9 +343,9 @@ const HAND_AUTHORED_SKILLS = Object.freeze([
     usesPerAct: 1,
     exclusiveTo: "arctic-knight",
     effects: [
-      damage("attack", [110]),
-      scaledStatus("burn", "enemy", "attack", [110]),
-      status("paralyze", "self", [2]),
+      damage("attack", [300]),
+      scaledStatus("burn", "enemy", "attack", [300]),
+      status("paralyze", "self", [1]),
     ],
   }),
 
@@ -593,6 +584,8 @@ export function isFlexibleAbility(definition) {
 
 export function abilityReplacementFamily(definition) {
   if (!definition) return null;
+  if (definition.id === "strike" || definition.replaces === "strike") return "basic-attack";
+  if (definition.id === "block" || definition.replaces === "block") return "defensive";
   if (definition.abilityType === "basic-attack") return "basic-attack";
   if (definition.abilityType === "defensive") return "defensive";
   if (isFlexibleAbility(definition)) return "flexible";
@@ -691,27 +684,16 @@ export function usesPerAct(skillId, rank = 1) {
 /**
  * Resolve spent by a current-rules encounter when this ability is committed.
  *
- * `usesPerAct` remains source/migration metadata. This is the playable scarcity contract.
- * A Resolve-restoring ability still has a price, because the current economy has no hidden
- * exception for an action that used to be limited. Its price is one below its restoration,
- * making the rare technique a one-point net recovery instead of a free three-point refill.
+ * `usesPerAct` remains source/migration metadata. Current rarity is the playable scarcity
+ * contract, including resource-restoring abilities; their authored restoration must justify
+ * the tier price rather than receiving a hidden discount.
  */
 export function resolveCost(skillId, rank = 1) {
   const definition = getSkill(skillId);
   if (!definition) throw new TypeError(`unknown-skill:${skillId}`);
-  const index = rankIndex(definition, rank);
-  if (definition.resolveCostByRank) return definition.resolveCostByRank[index];
-  const restoreIndex = definition.effects.findIndex((effect) => effect.type === "restore-skill-uses");
-  if (restoreIndex >= 0) {
-    return Math.max(1, Math.min(6, effectMagnitude(skillId, restoreIndex, rank) - 1));
-  }
   const uses = usesPerAct(skillId, rank);
   if (uses === UNLIMITED_USES) return 0;
-  if (isAllowanceOnlyProgression(definition)) {
-    const finalCost = resolveBandCost(usesPerAct(skillId, definition.rankCount));
-    return finalCost + (definition.rankCount - rank);
-  }
-  return resolveBandCost(uses);
+  return RESOLVE_COST_BY_RARITY[skillRarityAtRank(definition, rank)];
 }
 
 /** The magnitude of one of a skill's effects at a rank. */

@@ -18,6 +18,8 @@ const EMPTY_STATS = Object.freeze({
   attack: 0,
   defense: 0,
   maxHp: 0,
+  resolveMax: 0,
+  resolveRegen: 0,
   critRate: 0,
   dodgeRate: 0,
 });
@@ -106,12 +108,12 @@ const START_ITEM_GRANTS = Object.freeze(Object.fromEntries([
     passive: "Two edges hunt openings: increased critical chance and Agility.",
   }),
   grant("quarterstaff", {
-    stats: { attack: 1, defense: 2, dodgeRate: 1 },
-    passive: "Two-ended discipline: +1 ATK, +2 DEF, and +1% Dodge.",
+    stats: { attack: 1, defense: 2, dodgeRate: 1, resolveMax: 1 },
+    passive: "Two-ended discipline: +1 ATK, +2 DEF, +1% Dodge, and +1 max Resolve.",
   }),
   grant("homespun-robe", {
-    stats: { defense: 1, maxHp: 2, dodgeRate: 2 },
-    passive: "Unencumbered focus: +1 DEF, +2 max HP, and +2% Dodge.",
+    stats: { defense: 1, maxHp: 2, dodgeRate: 2, resolveMax: 2 },
+    passive: "Unencumbered focus: +1 DEF, +2 max HP, +2% Dodge, and +2 max Resolve.",
   }),
   grant("war-hammer", {
     stats: { attack: 3 },
@@ -154,9 +156,9 @@ const START_ITEM_GRANTS = Object.freeze(Object.fromEntries([
     passive: "Compact cover reinforces Aegis without slowing the hand.",
   }),
   grant("scholars-circlet", {
-    stats: { attack: 3, critRate: 5 },
+    stats: { attack: 3, critRate: 5, resolveMax: 3, resolveRegen: 1 },
     traits: { ignition: 2 },
-    passive: "A focused mind feeds Ignition and sharpens every spell.",
+    passive: "A focused mind feeds Ignition, adds +3 max Resolve, and restores +1 Resolve each round.",
   }),
   grant("oak-staff", {
     stats: { attack: 4 },

@@ -62,7 +62,7 @@ export const ALLY_TARGET_ABILITY_IDS = Object.freeze([
   "mage-regeneration",
   "mage-thorn-veil",
   "mage-overload",
-  "mage-mana-concentration",
+
   "mage-invincible",
   "mage-amplification",
   "mage-regression",
@@ -93,7 +93,7 @@ export const ALLY_TARGET_ABILITY_IDS = Object.freeze([
   "clocktower-redesign",
   "sleepless-mark-of-the-wild",
   "sleepless-water-totem",
-  "sleepless-cool-composure",
+
   "sleepless-predators-instinct",
   "sleepless-gale-totem",
   "sleepless-hardening",
@@ -204,6 +204,7 @@ const SELF_COST_EFFECT_TYPES = new Set([
   "delayed-damage",
   "temporary-max-hp",
   "restore-skill-uses",
+  "resolve-regen",
 ]);
 
 function isDefinition(value) {

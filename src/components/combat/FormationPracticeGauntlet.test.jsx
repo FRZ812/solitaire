@@ -164,9 +164,14 @@ describe("formation practice combat gauntlet", () => {
       for (const meter of meters) {
         const current = meter.getAttribute("aria-valuenow");
         const maximum = meter.getAttribute("aria-valuemax");
-        expect(meter.querySelector(".tow-formation-unit__meter-label")?.textContent).toMatch(/^(?:HP|RP)$/);
+        const label = meter.querySelector(".tow-formation-unit__meter-label")?.textContent;
+        expect(label).toMatch(/^(?:HP|RP)$/);
+        const actorId = cell.querySelector("[data-actor-id]")?.dataset.actorId;
+        const actor = practice.session.encounter.actors[actorId];
         expect(meter.querySelector(".tow-formation-unit__meter-value")?.textContent.trim())
-          .toBe(`${current}/${maximum}`);
+          .toBe(label === "RP" && actor.resolveRegen > 0
+            ? `${current}/${maximum}+${actor.resolveRegen}/r`
+            : `${current}/${maximum}`);
         expect(cell.getAttribute("aria-label")).toContain(current);
       }
     }

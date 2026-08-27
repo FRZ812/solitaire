@@ -17,6 +17,7 @@ import {
 } from "../../engine/progression.js";
 import { cloneJsonData } from "../kernel/json-data.js";
 import { settleCombatItems, spentCombatItems } from "./combat-items.js";
+import { activeTowItemIds, towItemActorBonuses } from "./start-items.js";
 
 export const MAX_TOW_SETTLEMENT_RECEIPTS = 256;
 
@@ -106,8 +107,12 @@ export function settleTowEncounter(state, encounter, context = {}) {
     ? 1
     : Math.max(0, Math.min(campaignVitalityMax, mappedVitality));
   if (Number.isFinite(player.resolve)) {
-    const campaignResolveMax = Math.max(0, Math.round(character.resolveMax ?? player.resolveMax));
-    character.resolve = Math.max(0, Math.min(campaignResolveMax, Math.round(player.resolve)));
+    const appliedMaxBonus = Math.max(0, Math.round(towItemActorBonuses(
+      activeTowItemIds(character, state.world?.codex),
+    ).resolveMax || 0));
+    character.resolveMax = Math.max(1, Math.round(player.resolveMax));
+    character.resolve = Math.max(0, Math.min(character.resolveMax, Math.round(player.resolve)));
+    character.towResolveMaxBonus = Math.min(character.resolveMax, appliedMaxBonus);
   }
   const combatItemsSpent = spentCombatItems(encounter, encounter.playerId);
   character.inventory = settleCombatItems(character.inventory, combatItemsSpent);

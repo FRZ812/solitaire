@@ -8,7 +8,11 @@
 // Every mapping choice below is a judgement, not evidence, and is marked as such.
 
 import { deriveCombatStats } from "../../engine/combat-stats.js";
-import { resolvePoolForMind } from "../../engine/attributes.js";
+import {
+  BASE_RESOLVE_REGEN,
+  resolvePoolForMind,
+  resolveRegenForAttributes,
+} from "../../engine/attributes.js";
 import { createStatusStack } from "../kernel/status-stack.js";
 import { admitTowEncounter } from "./admission.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
@@ -165,16 +169,32 @@ function nonNegativeInt(value) {
   return Number.isFinite(rounded) && rounded > 0 ? rounded : 0;
 }
 
-function resolveSnapshot(character, fallbackMind = 0) {
+function resolveSnapshot(character, fallbackMind = 0, {
+  maxBonus = 0,
+  regen = BASE_RESOLVE_REGEN,
+} = {}) {
   const authoredMax = Number(character?.resolveMax);
-  const baseMax = positiveInt(
-    Number.isFinite(authoredMax) ? authoredMax : resolvePoolForMind(fallbackMind),
+  const previousMaxBonus = Math.min(
+    nonNegativeInt(character?.towResolveMaxBonus),
+    Number.isFinite(authoredMax) ? nonNegativeInt(authoredMax) : 0,
   );
+  const authoredBaseMax = positiveInt(
+    Number.isFinite(authoredMax)
+      ? authoredMax - previousMaxBonus
+      : resolvePoolForMind(fallbackMind),
+  );
+  const appliedMaxBonus = nonNegativeInt(maxBonus);
+  const baseMax = authoredBaseMax + appliedMaxBonus;
   const authoredCurrent = Number(character?.resolve);
+  const newlyFilledCapacity = Math.max(0, appliedMaxBonus - previousMaxBonus);
   const baseCurrent = Number.isFinite(authoredCurrent)
-    ? Math.max(0, Math.min(baseMax, Math.round(authoredCurrent)))
+    ? Math.max(0, Math.min(baseMax, Math.round(authoredCurrent) + newlyFilledCapacity))
     : baseMax;
-  return { resolve: baseCurrent, resolveMax: baseMax };
+  const authoredRegen = Number(character?.resolveRegen);
+  const resolveRegen = Number.isFinite(authoredRegen)
+    ? nonNegativeInt(authoredRegen)
+    : nonNegativeInt(regen);
+  return { resolve: baseCurrent, resolveMax: baseMax, resolveRegen };
 }
 
 /**
@@ -196,7 +216,13 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
     const vitalityMax = positiveInt(character.vitalityMax, maxHp);
     const vitality = Math.max(0, Math.min(vitalityMax, Number(character.vitality ?? vitalityMax)));
     const hp = Math.max(0, Math.min(maxHp, Math.round(maxHp * (vitality / vitalityMax))));
-    const resolve = resolveSnapshot(character, character.attributes?.mind ?? 0);
+    const sourceRegen = Number.isFinite(sourceBase.resolveRegen)
+      ? nonNegativeInt(sourceBase.resolveRegen)
+      : BASE_RESOLVE_REGEN + (stats.triggers?.resolveRegen || 0);
+    const resolve = resolveSnapshot(character, character.attributes?.mind ?? 0, {
+      maxBonus: itemBonus.resolveMax,
+      regen: sourceRegen + itemBonus.resolveRegen,
+    });
     return {
       id,
       name: character.name || "Wanderer",
@@ -220,7 +246,10 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
   const baseMaxHp = positiveInt(character.vitalityMax, maxHp);
   const healthBonus = Math.max(0, maxHp - baseMaxHp);
   const hp = Math.max(0, Math.min(maxHp, Math.round(character.vitality ?? maxHp) + healthBonus));
-  const resolve = resolveSnapshot(character, stats.attrs?.mind ?? character.attributes?.mind ?? 0);
+  const resolve = resolveSnapshot(character, stats.attrs?.mind ?? character.attributes?.mind ?? 0, {
+    maxBonus: itemBonus.resolveMax,
+    regen: BASE_RESOLVE_REGEN + (stats.triggers?.resolveRegen || 0) + itemBonus.resolveRegen,
+  });
 
   // See PROVISIONAL_BRIDGE_POLICY.attackFromWeapon: the weapon's midpoint plus the frame
   // behind it, because a Tower of Winter skill scales off ATK alone.
@@ -264,7 +293,10 @@ export function towEnemyFromBestiary(enemy, { id } = {}) {
   const max = Math.max(min, nonNegativeInt(enemy.weapon?.max));
   const attack = positiveInt((min + max) / 2);
   const identity = enemyTowBuild(enemy);
-  const resolve = resolveSnapshot(enemy, enemy.attrs?.mind ?? enemy.attributes?.mind ?? 0);
+  const enemyAttributes = enemy.attrs || enemy.attributes || {};
+  const resolve = resolveSnapshot(enemy, enemyAttributes.mind ?? 0, {
+    regen: resolveRegenForAttributes(enemyAttributes),
+  });
 
   return {
     id: actorId,

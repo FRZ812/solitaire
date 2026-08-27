@@ -91,8 +91,16 @@ export const PERMANENT_STARTING_KEEPSAKES = Object.freeze([
       "Defeat the Tower's final guardian.",
     ),
   }),
-  relic("heart-of-still-winter", "mythical", "+8 ATK · +8 DEF · +20 max HP · +8% Critical · +8% Dodge", {
-    stats: { attack: 8, defense: 8, maxHp: 20, critRate: 8, dodgeRate: 8 },
+  relic("heart-of-still-winter", "mythical", "+8 ATK · +8 DEF · +20 max HP · +6 max Resolve · +2 Resolve/round · +8% Critical · +8% Dodge", {
+    stats: {
+      attack: 8,
+      defense: 8,
+      maxHp: 20,
+      resolveMax: 6,
+      resolveRegen: 2,
+      critRate: 8,
+      dodgeRate: 8,
+    },
     unlock: achievement(
       "winter-without-end",
       "Winter Without End",

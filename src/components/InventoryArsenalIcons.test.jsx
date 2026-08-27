@@ -135,7 +135,7 @@ describe("inventory and arsenal atlas integration", () => {
     expect(ability).toMatchObject({
       rank: 5,
       rarity: "mythical",
-      resolveCost: 3,
+      resolveCost: 6,
       action: "main",
       cooldown: 3,
     });
@@ -147,7 +147,7 @@ describe("inventory and arsenal atlas integration", () => {
       build: { traits: {}, skills: [{ id: "rapid-cooling", rank: 5 }], runes: [] },
     };
     const html = renderToStaticMarkup(<ArsenalView state={state} />);
-    expect(html).toContain("General ability · mythical · Rank 5 · 3 Resolve · Main action · 3-turn cooldown");
+    expect(html).toContain("General ability · mythical · Rank 5 · 6 Resolve · Main action · 3-turn cooldown");
   });
 
   it("surfaces selected Sorcerer repertoire and authored utility modes", () => {

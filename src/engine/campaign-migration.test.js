@@ -4,6 +4,9 @@ import {
   compileCharacterBootstrap,
   applyCharacterBootstrap,
 } from "../gameplay/tow/character-bootstrap.js";
+import { isTowBuild } from "../gameplay/tow/build.js";
+import { claimReward, compileRewardOffer } from "../gameplay/tow/rewards.js";
+import { TOW_RULESET_ID } from "../gameplay/tow/session.js";
 import {
   CAMPAIGN_SCHEMA_V12,
   CAMPAIGN_SCHEMA_V13,
@@ -69,6 +72,17 @@ describe("migration is pure and idempotent", () => {
     const malformedBuild = JSON.parse(JSON.stringify(current));
     malformedBuild.mechanics.build = "forged";
     expect(hasCurrentMechanicsState(malformedBuild)).toBe(false);
+
+    const emptyBuild = JSON.parse(JSON.stringify(current));
+    emptyBuild.mechanics.build = {};
+    expect(hasCurrentMechanicsState(emptyBuild)).toBe(false);
+
+    const invalidRank = JSON.parse(JSON.stringify(current));
+    invalidRank.mechanics.build = compileCharacterBootstrap({ professionId: "fighter" }).receipt.build;
+    invalidRank.mechanics.build.skills[0].rank = 999;
+    expect(hasCurrentMechanicsState(invalidRank)).toBe(false);
+    expect(upgradeCampaignPayload(invalidRank))
+      .toMatchObject({ ok: false, writable: false, state: invalidRank });
   });
 
   it("does not mutate the payload it migrates", () => {
@@ -92,6 +106,127 @@ describe("migration is pure and idempotent", () => {
     const again = migrateCampaignState(state).state;
     expect(again.mechanics.bootstrapId).toBe(receipt.id);
     expect(again.mechanics.build).toEqual(receipt.build);
+  });
+
+  it("migrates a legacy ID-only Tower build to durable rank-one entries", () => {
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics.bootstrapId = "legacy-build";
+    state.mechanics.bootstrapOrigin = "template";
+    state.mechanics.build = {
+      version: 1,
+      professionId: "fighter",
+      traits: { ironclad: 2 },
+      skills: ["strike", "block", "warcry"],
+      runes: ["rune-of-ash"],
+    };
+    const before = JSON.parse(JSON.stringify(state));
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(isTowBuild(upgraded.state.mechanics.build)).toBe(true);
+    expect(upgraded.state.mechanics.build.skills).toEqual([
+      { id: "strike", rank: 1 },
+      { id: "block", rank: 1 },
+      { id: "warcry", rank: 1 },
+    ]);
+    expect(upgraded.state.mechanics.build.runes).toEqual(["rune-of-ash"]);
+    expect(state).toEqual(before);
+  });
+
+  it("preserves and refuses a legacy-shaped build with an unknown extension", () => {
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics.build = {
+      version: 1,
+      professionId: "fighter",
+      traits: { ironclad: 2 },
+      skills: ["strike", "block", "warcry"],
+      runes: ["rune-of-ash"],
+      futureOwnedReward: { id: "must-survive" },
+    };
+    const before = JSON.parse(JSON.stringify(state));
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({ ok: false, writable: false });
+    expect(upgraded.state).toEqual(before);
+    expect(upgraded.state.mechanics.build.futureOwnedReward)
+      .toEqual({ id: "must-survive" });
+  });
+
+  it("refuses a malformed current-ruleset pending reward", () => {
+    const receipt = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics = applyCharacterBootstrap(state.mechanics, receipt).mechanics;
+    state.combatSettlementReceipts = [{
+      version: 1,
+      sessionId: "settled-current-fight",
+      outcome: "victory",
+    }];
+    const offer = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: "settled-current-fight",
+      seed: "current-reward-seed",
+    }).offer;
+    state.pendingReward = { ...offer, candidates: null };
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "invalid-current-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("refuses a retired pending reward without its recorded victory", () => {
+    const receipt = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics = applyCharacterBootstrap(state.mechanics, receipt).mechanics;
+    const oldOffer = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: "invented-v12-fight",
+      seed: "caller-chosen-seed",
+      rerolls: 1,
+    }).offer;
+    state.pendingReward = { ...oldOffer, rulesetId: "solitaire-tow-v1.2" };
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("recompiles an owed v1.2 reward under the current ruleset", () => {
+    const receipt = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics = applyCharacterBootstrap(state.mechanics, receipt).mechanics;
+    state.combatSettlementReceipts = [{
+      version: 1,
+      sessionId: "settled-v12-fight",
+      outcome: "victory",
+    }];
+    const oldOffer = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: "settled-v12-fight",
+      seed: "retired-reward-seed",
+      rerolls: 1,
+    }).offer;
+    state.pendingReward = { ...oldOffer, rulesetId: "solitaire-tow-v1.2" };
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(upgraded.state.pendingReward).toMatchObject({
+      sourceReceiptId: "settled-v12-fight",
+      seed: "retired-reward-seed",
+      rulesetId: TOW_RULESET_ID,
+      rerollsRemaining: 1,
+    });
+    expect(claimReward(
+      upgraded.state.mechanics.build,
+      upgraded.state.pendingReward,
+      upgraded.state.pendingReward.candidates[0].id,
+    ).ok).toBe(true);
   });
 
   it("adds only absent Tower defaults to a partial v1 sidecar", () => {

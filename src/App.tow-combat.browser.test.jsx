@@ -16,7 +16,8 @@ import { LAST_OPENED_KEY, readResumeSnapshot } from "./engine/campaign-resume.js
 import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt } from "./gameplay/tow/outcomes.js";
 import { createTowSession, markTowSessionSettled } from "./gameplay/tow/session.js";
-import { startingBuild } from "./gameplay/tow/build.js";
+import { createTowBuild, startingBuild } from "./gameplay/tow/build.js";
+import { compileRewardOffer } from "./gameplay/tow/rewards.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import { verifyTowSession } from "./gameplay/tow/replay.js";
 import { Solitaire } from "./App.jsx";
@@ -262,7 +263,63 @@ afterAll(() => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
+describe("a held-skill victory promotion", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
+  it("claims a held-skill promotion from a full build without replacement controls", async () => {
+    const state = campaignInAFight();
+    const baseBuild = startingBuild("fighter", { level: 1 });
+    state.mechanics.build = createTowBuild({
+      ...baseBuild,
+      skills: [...baseBuild.skills, { id: "sudden-blow", rank: 1 }],
+    });
+    state.mechanics.tow.activeCombat = null;
+    state.combatSettlementReceipts = [
+      ...(state.combatSettlementReceipts || []),
+      {
+        version: 1,
+        sessionId: "promotion-ui-fight",
+        outcome: "victory",
+        rounds: 1,
+        sequence: 1,
+        playerHp: 10,
+        playerResolve: 0,
+        combatItemsSpent: {},
+        fallen: 1,
+        proficiencyGains: {},
+      },
+    ];
+    for (let index = 0; index < 500; index += 1) {
+      const compiled = compileRewardOffer(state.mechanics.build, {
+        sourceReceiptId: "promotion-ui-fight",
+        seed: `promotion-ui-${index}`,
+      });
+      if (compiled.offer?.candidates.some((candidate) => candidate.id === "strike")) {
+        state.pendingReward = compiled.offer;
+        break;
+      }
+    }
+    expect(state.pendingReward).toBeTruthy();
+    harness.serverState = state;
+
+    const mounted = await mountCampaign();
+    const panel = await waitFor(() => mounted.querySelector(".tow-reward"));
+    const strikeChoice = [...panel.querySelectorAll(".tow-reward__choice")]
+      .find((button) => /strike/i.test(button.textContent));
+    const strikeReplacement = [...panel.querySelectorAll(".tow-reward__replacement")]
+      .find((group) => /strike/i.test(group.textContent));
+
+    expect(strikeChoice).toBeTruthy();
+    expect(strikeReplacement).toBeUndefined();
+    await click(strikeChoice);
+    await waitFor(() => harness.serverState.pendingReward === null);
+    expect(harness.serverState.mechanics.build.skills).toHaveLength(5);
+    expect(harness.serverState.mechanics.build.skills.find((skill) => skill.id === "strike"))
+      .toEqual({ id: "strike", rank: 2 });
+  });
+
+});
+
 describe("a fight survives a reload", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
+
   it("resumes an admitted fight that has had no commands yet", async () => {
     const mounted = await mountCampaign();
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
@@ -393,14 +450,29 @@ describe("Resolve carries between fights", { timeout: APP_INTEGRATION_TIMEOUT },
       .find((button) => !/end turn/i.test(button.textContent));
     await click(settle);
 
-    // The road gives nothing back on its own: what the fight spent is still spent, and the
-    // retired v1 per-ability map remains empty.
-    const remainingResolve = await waitFor(() => (
-      harness.serverState.character.resolve < openingResolve
-        ? harness.serverState.character.resolve
-        : null
+    // The encounter owns both payment and round regeneration. Settlement must persist the
+    // exact terminal pool rather than assuming the opening spend can never be recovered.
+    const closed = await waitFor(() => {
+      const decoded = decodeTowSession(savedSession());
+      return decoded.ok && decoded.session.status === "settled" ? decoded.session : null;
+    });
+    expect(closed.encounter.events).toContainEqual(expect.objectContaining({
+      type: "resolve-spent",
+      actorId: "wanderer",
+      skillId: "block",
+      amount: 1,
+    }));
+    expect(closed.encounter.events).toContainEqual(expect.objectContaining({
+      type: "resolve-regenerated",
+      actorId: "wanderer",
+    }));
+    const receipt = await waitFor(() => (
+      harness.serverState.combatSettlementReceipts?.find((entry) => (
+        entry.sessionId === closed.sessionId
+      )) || null
     ));
-    expect(remainingResolve).toBe(openingResolve - 1);
+    expect(harness.serverState.character.resolve).toBe(receipt.playerResolve);
+    expect(receipt.playerResolve).toBeLessThanOrEqual(openingResolve);
     expect(harness.serverState.mechanics.tow.readiness).toEqual({});
   });
 });
