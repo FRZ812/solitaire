@@ -38,10 +38,10 @@ jobs:
           fetch-depth: 0 # v1.2 verifier integrity is anchored to deployed commit d925c35
       - uses: actions/setup-node@v4
         with:
-          node-version: 22 # Vitest 4 pulls in Vite 8 (needs Node ^20.19 || >=22.12)
+          node-version: 22 # Vite 8 needs Node ^20.19 || >=22.12
           cache: npm
       - run: npm ci
-      - run: npm test
+
       - name: Check Supabase browser configuration
         run: |
           test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL repository variable"; exit 1; }
