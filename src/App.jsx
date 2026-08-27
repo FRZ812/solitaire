@@ -3218,7 +3218,7 @@ export function Solitaire() {
     const sidecar = hasMechanicsSidecar(base) ? base.mechanics : emptyMechanicsSidecar();
     return {
       ...base,
-      mechanics: { ...sidecar, archetype: { ...(sidecar.combat || {}), ...patch } },
+      mechanics: { ...sidecar, combat: { ...(sidecar.combat || {}), ...patch } },
     };
   }
 

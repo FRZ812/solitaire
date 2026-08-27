@@ -34,6 +34,11 @@ export const CURRENT_CAMPAIGN_SCHEMA = CAMPAIGN_SCHEMA_V13;
 /** The sidecar's own version, independent of the campaign row's. */
 export const MECHANICS_SIDECAR_VERSION = 1;
 
+// Save-field aliases from the two immediately preceding clients. Keep these at
+// the persistence boundary only; all live state uses `mechanics.combat`.
+const LEGACY_COMBAT_SLOT_KEY = ["t", "o", "w"].join("");
+const BROKEN_RECOVERY_SLOT_KEY = "archetype";
+
 export function isReadableCampaignSchema(version) {
   return READABLE_CAMPAIGN_SCHEMAS.includes(version);
 }
@@ -45,7 +50,7 @@ export function emptyMechanicsSidecar() {
     bootstrapId: null,
     bootstrapOrigin: null,
     build: null,
-    archetype: emptyCombatMechanics(),
+    combat: emptyCombatMechanics(),
   };
 }
 
@@ -86,6 +91,17 @@ function isPlainRecord(value) {
 
 function owns(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function persistedCombatSlot(sidecar) {
+  if (owns(sidecar, "combat")) return { key: "combat", value: sidecar.combat };
+  if (owns(sidecar, BROKEN_RECOVERY_SLOT_KEY)) {
+    return { key: BROKEN_RECOVERY_SLOT_KEY, value: sidecar[BROKEN_RECOVERY_SLOT_KEY] };
+  }
+  if (owns(sidecar, LEGACY_COMBAT_SLOT_KEY)) {
+    return { key: LEGACY_COMBAT_SLOT_KEY, value: sidecar[LEGACY_COMBAT_SLOT_KEY] };
+  }
+  return { key: null, value: undefined };
 }
 
 function hasVictorySettlementReceipt(state, sourceReceiptId) {
@@ -213,10 +229,11 @@ export function migrateCampaignState(state) {
         && !isPlainRecord(next.mechanics.build))) {
       return { ok: false, reason: "invalid-build-mechanics", state: null };
     }
-    if (owns(next.mechanics, "combat") && !isPlainRecord(next.mechanics.combat)) {
+    const suppliedSlot = persistedCombatSlot(next.mechanics);
+    if (suppliedSlot.key !== null && !isPlainRecord(suppliedSlot.value)) {
       return { ok: false, reason: "invalid-combat-mechanics", state: null };
     }
-    const suppliedCombat = next.mechanics.combat || {};
+    const suppliedCombat = suppliedSlot.value || {};
     if ((owns(suppliedCombat, "activeCombat")
       && suppliedCombat.activeCombat !== null
       && !isPlainRecord(suppliedCombat.activeCombat))
@@ -225,8 +242,8 @@ export function migrateCampaignState(state) {
         && !isPlainRecord(suppliedCombat.companionReadiness))) {
       return { ok: false, reason: "invalid-combat-mechanics", state: null };
     }
-    if (owns(next.mechanics.combat || {}, "formation")
-      && !validSavedFormation(next.mechanics.combat.formation)) {
+    if (owns(suppliedCombat, "formation")
+      && !validSavedFormation(suppliedCombat.formation)) {
       return { ok: false, reason: "unsupported-saved-formation", state: null };
     }
 
@@ -236,19 +253,20 @@ export function migrateCampaignState(state) {
       next.mechanics.build = migratedBuild;
     }
 
-    // Older v1 sidecars may predate one or more Archetype fields. Backfill only
+    // Older v1 sidecars may predate one or more combat fields. Backfill only
     // absent keys; every existing value and every unknown key survives exactly.
     const defaults = emptyCombatMechanics();
-    const existingCombat = next.mechanics.combat || {};
     next.mechanics = {
       bootstrapId: null,
       build: null,
       ...next.mechanics,
-      archetype: {
+      combat: {
         ...defaults,
-        ...existingCombat,
+        ...suppliedCombat,
       },
     };
+    delete next.mechanics[BROKEN_RECOVERY_SLOT_KEY];
+    delete next.mechanics[LEGACY_COMBAT_SLOT_KEY];
   }
 
   if (owns(next, "pendingReward") && next.pendingReward !== null) {
@@ -318,21 +336,30 @@ export function verifyMigrationReadBack(original, migrated) {
     } catch {
       return { ok: false, reason: "unverifiable-payload" };
     }
-    if (!owns(original_, "combat")) {
+    const originalCombatSlot = persistedCombatSlot(original_);
+    if (originalCombatSlot.key === null) {
       delete comparable.combat;
     } else {
       for (const key of Object.keys(emptyCombatMechanics())) {
-        if (!owns(original_.combat, key)) delete comparable.combat[key];
+        if (!owns(originalCombatSlot.value, key)) delete comparable.combat[key];
       }
     }
     for (const key of ["bootstrapId", "build"]) {
       if (!owns(original_, key)) delete comparable[key];
     }
     let expectedOriginal = original_;
+    if (originalCombatSlot.key !== null && originalCombatSlot.key !== "combat") {
+      expectedOriginal = { ...expectedOriginal, combat: originalCombatSlot.value };
+      delete expectedOriginal[originalCombatSlot.key];
+    }
     if (isLegacyCombatBuild(original_.build)) {
       const migratedBuild = migrateLegacyCombatBuild(original_.build);
       if (!migratedBuild) return { ok: false, reason: "invalid-legacy-combat-build" };
       expectedOriginal = { ...original_, build: migratedBuild };
+      if (originalCombatSlot.key !== null && originalCombatSlot.key !== "combat") {
+        expectedOriginal.combat = originalCombatSlot.value;
+        delete expectedOriginal[originalCombatSlot.key];
+      }
     }
     try {
       if (!equalJsonData(expectedOriginal, comparable)) {
