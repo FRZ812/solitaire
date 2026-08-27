@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
 import { readPendingCombatDirective } from "../gameplay/production/pending-directive.js";
 import { compileNarratorCandidate } from "./narrator-turn-compiler.js";
 
@@ -367,6 +368,107 @@ describe("compileNarratorCandidate", () => {
         }),
       ]),
     });
+  });
+
+  it("validates typed memory proposals before minting them as trusted metadata", () => {
+    const state = {
+      character: { vitality: 10, vitalityMax: 10, resolve: 5, resolveMax: 5 },
+      party: [],
+      world: { codex: { characters: projection.characters, items: {} } },
+    };
+    const result = compileNarratorCandidate({
+      candidate: candidate(),
+      projection,
+      turnPolicy: presentationOnly,
+      state,
+      metadata: {
+        memories: ["arbitrary flat canon"],
+        memoryProposals: [{
+          kind: "belief",
+          subjectIds: ["mara"],
+          scopeIds: ["campaign"],
+          text: "Mara believes the old road is watched.",
+          evidence: [],
+        }],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.turn._memoryProposals).toEqual([{
+      kind: "belief",
+      subjectIds: ["mara"],
+      scopeIds: ["campaign"],
+      text: "Mara believes the old road is watched.",
+      evidence: [],
+    }]);
+    expect(result.turn._memories).toEqual(["Mara believes the old road is watched."]);
+    expect(result.turn._memories).not.toContain("arbitrary flat canon");
+  });
+
+  it("rejects receipt evidence that is not bound to an accepted intent receipt", () => {
+    const state = {
+      character: { vitality: 10, vitalityMax: 10, resolve: 5, resolveMax: 5 },
+      party: [],
+      world: { codex: { characters: projection.characters, items: {} } },
+    };
+    const result = compileNarratorCandidate({
+      candidate: candidate(),
+      projection,
+      turnPolicy: presentationOnly,
+      state,
+      metadata: {
+        memoryProposals: [{
+          kind: "event",
+          subjectIds: ["mara"],
+          scopeIds: ["campaign"],
+          text: "Mara surrendered the bridge.",
+          evidence: [{ kind: "receipt", id: "intent-forged" }],
+        }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      violations: expect.arrayContaining([
+        expect.objectContaining({ code: "MEMORY_PROVENANCE", path: "/_memoryProposals/0" }),
+      ]),
+    });
+  });
+
+  it("accepts receipt evidence bound to the gateway decision for this candidate", () => {
+    const state = {
+      character: { vitality: 10, vitalityMax: 10, resolve: 5, resolveMax: 5 },
+      party: [],
+      world: { codex: { characters: projection.characters, items: {} } },
+    };
+    const turn = candidate({
+      assassination: {
+        target_id: "mara", method: "basic", outcome: "survived-undetected", surprise: null,
+      },
+    });
+    const turnPolicy = { id: "general-action", allowedEffects: ["assassination"] };
+    const receiptId = resolveNarratorIntents(state, turn, {
+      stateRevision: projection.stateRevision,
+      turnPolicy,
+    }).receipts.find(({ field }) => field === "assassination").id;
+    const result = compileNarratorCandidate({
+      candidate: turn,
+      projection,
+      turnPolicy,
+      state,
+      metadata: {
+        memoryProposals: [{
+          kind: "event",
+          subjectIds: ["mara"],
+          scopeIds: ["campaign"],
+          text: "Mara survived the attempt without raising an alarm.",
+          evidence: [{ kind: "receipt", id: receiptId }],
+        }],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.turn._memoryProposals[0].evidence).toEqual([{ kind: "receipt", id: receiptId }]);
   });
 
   it("derives a present NPC speaker's display identity from the authoritative projection", () => {

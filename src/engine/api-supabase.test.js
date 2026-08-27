@@ -16,7 +16,10 @@ vi.mock("./narrator-models.js", () => ({
 vi.mock("./narrative-sequence.js", () => ({ storyTextLength: () => 0 }));
 vi.mock("./narrator-history.js", () => ({ prepareNarratorHistory: () => [] }));
 vi.mock("./narrator-settings.js", () => ({ normalizeNarratorSettings: () => ({ memoryMode: "off" }) }));
-vi.mock("./memory.js", () => ({ mergeMemoryBank: (_base, values = []) => values }));
+vi.mock("./memory.js", () => ({
+  mergeMemoryBank: (_base, values = []) => values,
+  cleanMemoryText: (value) => typeof value === "string" ? value.trim() : "",
+}));
 
 import { callNarrator } from "./api-supabase.js";
 import { NARRATOR_SKILLS } from "../narrator-instructions.js";
@@ -260,6 +263,31 @@ describe("callNarrator lifecycle deadline", () => {
       { reset: true },
       { reset: true },
     ]);
+  });
+
+  it("carries typed memory proposals from the SSE attempt into compiler metadata", async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: { access_token: "test-token" } } });
+    const proposal = {
+      kind: "person",
+      subjectIds: ["wanderer"],
+      scopeIds: ["campaign"],
+      text: "The wanderer asked after the old road.",
+      evidence: [],
+    };
+    const stream = [
+      `data: ${JSON.stringify({ type: "memory_delta", fact: proposal.text, proposal })}`,
+      `data: ${JSON.stringify({
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: JSON.stringify(validCandidate()) },
+      })}`,
+      'data: {"type":"message_stop"}',
+      "",
+    ].join("\n\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream)));
+
+    const result = await callNarrator(narratorState(), "look around", vi.fn(), { timeoutMs: 5_000 });
+
+    expect(result._memoryProposals).toEqual([proposal]);
   });
 
   it("retries a contract-invalid candidate and returns only the accepted turn", async () => {

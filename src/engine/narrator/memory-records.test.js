@@ -66,6 +66,20 @@ describe("what the model may propose", () => {
     })).ok).toBe(true);
   });
 
+  it("binds receipt evidence to ids the engine accepted when that ledger is available", () => {
+    const forged = validateMemoryProposal(proposal({
+      kind: "event",
+      evidenceRefs: [{ kind: "receipt", id: "intent-forged" }],
+    }), DEFAULT_MEMORY_POLICY, { acceptedReceiptIds: ["intent-accepted"] });
+    expect(forged).toMatchObject({ ok: false, reason: "memory-receipt-not-accepted" });
+
+    const bound = validateMemoryProposal(proposal({
+      kind: "event",
+      evidenceRefs: [{ kind: "receipt", id: "intent-accepted" }],
+    }), DEFAULT_MEMORY_POLICY, { acceptedReceiptIds: ["intent-accepted"] });
+    expect(bound.ok).toBe(true);
+  });
+
   it("lets a belief stand as a perspective without a receipt", () => {
     // A belief is explicitly one character's view, so it does not need to be true.
     expect(validateMemoryProposal(proposal({ kind: "belief", evidenceRefs: [] })).ok).toBe(true);

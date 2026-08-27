@@ -189,6 +189,7 @@ async function callNarratorWithinDeadline(
         userMsg: response.userMsg,
         model,
         memories: response.memories,
+        memoryProposals: response.memoryProposals,
       },
     });
     if (!compiled.ok) {
@@ -275,12 +276,15 @@ async function runOneAttemptWithinDeadline(
     throw new Error(`narrate ${response.status}`);
   }
 
-  const { text, thinking, memories } = await accumulateAnthropicSSE(response.body, onProgress);
+  const { text, thinking, memories, memoryProposals } = await accumulateAnthropicSSE(
+    response.body,
+    onProgress,
+  );
   // Store only the action. The next request already carries a fresh state_context;
   // persisting it inside every history item multiplied payload and save size.
   const userMsg = canonicalUserMsg;
   const parsed = parseStrictNarratorCandidate(text);
-  return { candidate: parsed, text, thinking, userMsg, memories };
+  return { candidate: parsed, text, thinking, userMsg, memories, memoryProposals };
 }
 
 async function accumulateAnthropicSSE(body, onProgress) {

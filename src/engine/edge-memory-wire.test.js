@@ -203,13 +203,13 @@ describe("through the real provider loop", () => {
     const rounds = [
       // Round one: the model calls `remember`.
       [
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-1", function: { name: "remember", arguments: toolArguments } } ] } }] },
-        { choices: [{ finish_reason: "tool_calls" }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: "remember", arguments: toolArguments } }] }, finish_reason: null }] },
+        { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
       ],
       // Round two: it finishes.
       [
-        { choices: [{ delta: { content: "{}" } }] },
-        { choices: [{ finish_reason: "stop" }] },
+        { choices: [{ delta: { content: "{}" }, finish_reason: null }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
       ],
     ];
     let round = 0;
@@ -281,17 +281,12 @@ describe("through the real provider loop", () => {
     expect(events.some((event) => event.type === "memory_delta")).toBe(false);
   });
 
-  it("still records for a client that predates the typed shape", async () => {
-    // The deploy-safety property, end to end: the Edge ships first, and a browser on the
-    // previous release keeps recording memories until it catches up.
+  it("does not canonize the retired bare-fact shape", async () => {
     const { events, results } = await runTurn(JSON.stringify({
       fact: "The ferryman owes the player passage.",
     }));
-    expect(results).toEqual(["recorded"]);
-    const memory = events.find((event) => event.type === "memory_delta");
-    expect(memory.fact).toBe("The ferryman owes the player passage.");
-    expect(memory.proposal.kind).toBe("event");
-    expect(memory.proposal.evidence[0].kind).toBe("legacy-canonical");
+    expect(results[0]).toContain("unknown field fact");
+    expect(events.some((event) => event.type === "memory_delta")).toBe(false);
   });
 
   it("streams nothing when the arguments are not JSON at all", async () => {
@@ -301,35 +296,17 @@ describe("through the real provider loop", () => {
   });
 });
 
-describe("the one old shape still accepted, for the length of a deploy", () => {
-  // The Edge deploys before the clients do, and a browser on the previous release still tells
-  // the model to call remember({fact}). Refusing that would silently stop every live player's
-  // narrator recording anything between the two deploys.
-  it("reads a bare fact and scopes it honestly", async () => {
+describe("the retired bare-fact shape", () => {
+  it("is rejected instead of promoted to arbitrary legacy canon", async () => {
     const { asMemoryProposal } = await wire();
     const read = asMemoryProposal({ fact: "The ferryman owes the player passage." });
-    expect(read.error).toBeUndefined();
-    expect(read.proposal).toEqual({
-      kind: "event",
-      subjectIds: ["campaign"],
-      scopeIds: ["campaign"],
-      text: "The ferryman owes the player passage.",
-      // Not a receipt: nothing anchored it. The evidence kind says what is true of it.
-      evidence: [{ kind: "legacy-canonical", id: "pre-typed-wire" }],
-    });
-  });
-
-  it("does not invent a subject the model never named", async () => {
-    // A bare string is about nobody in particular, and saying otherwise would put words in
-    // the narrator's mouth.
-    const { asMemoryProposal } = await wire();
-    expect(asMemoryProposal({ fact: "Something happened." }).proposal.subjectIds)
-      .toEqual(["campaign"]);
+    expect(read.proposal).toBeUndefined();
+    expect(read.error).toContain("unknown field fact");
   });
 
   it("refuses a bare fact with nothing in it", async () => {
     const { asMemoryProposal } = await wire();
-    expect(asMemoryProposal({ fact: "   " }).error).toContain("no fact given");
+    expect(asMemoryProposal({ fact: "   " }).error).toContain("unknown field fact");
   });
 
   it("accepts only that exact shape, never a confused mixture", async () => {

@@ -120,7 +120,9 @@ export function validateMemoryProposal(proposal, policy = DEFAULT_MEMORY_POLICY,
     if (strangers.length > 0) return refuse("memory-about-a-stranger", { strangers });
   }
 
-  const evidence = (proposal.evidenceRefs || []).filter((ref) => isId(ref?.id ?? ref));
+  const evidenceSource = proposal.evidence ?? proposal.evidenceRefs ?? [];
+  const evidence = (Array.isArray(evidenceSource) ? evidenceSource : [])
+    .filter((ref) => isId(ref?.id ?? ref));
   if (EVIDENCE_REQUIRED_KINDS.includes(proposal.kind) && evidence.length === 0) {
     // A promise nobody can point at is a promise the narrator invented this turn.
     return refuse("memory-without-evidence", { kind: proposal.kind });
@@ -133,6 +135,16 @@ export function validateMemoryProposal(proposal, policy = DEFAULT_MEMORY_POLICY,
   // that has to be anchored to a receipt the engine issued.
   if (proposal.kind === "event" && !evidence.some((ref) => (ref?.kind ?? "turn") === "receipt")) {
     return refuse("canonical-event-without-receipt");
+  }
+  if (context.acceptedReceiptIds != null) {
+    const acceptedReceiptIds = new Set(context.acceptedReceiptIds);
+    const unaccepted = evidence
+      .filter((ref) => (ref?.kind ?? "turn") === "receipt")
+      .map((ref) => ref.id)
+      .filter((id) => !acceptedReceiptIds.has(id));
+    if (unaccepted.length > 0) {
+      return refuse("memory-receipt-not-accepted", { unaccepted });
+    }
   }
 
   return {

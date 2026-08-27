@@ -5,6 +5,10 @@ import { PRISONER_POOL } from "../data/gaol.js";
 import { readPendingCombatDirective } from "../gameplay/production/pending-directive.js";
 import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
 import {
+  DEFAULT_MEMORY_POLICY,
+  validateMemoryProposal,
+} from "./narrator/memory-records.js";
+import {
   NARRATOR_CHARACTER_CUE_ACTIONS,
   NARRATOR_CHARACTER_CUE_MANNERS,
   NARRATOR_SCENE_CUE_TEXT,
@@ -1205,6 +1209,7 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     ));
   }
 
+  let acceptedReceiptIds = state ? [] : null;
   if (violations.length === 0 && state) {
     try {
       const governed = resolveNarratorIntents(state, candidate, {
@@ -1212,6 +1217,9 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         route: turnPolicy?.id ?? null,
         turnPolicy,
       });
+      acceptedReceiptIds = governed.receipts
+        .filter(({ status }) => status === "applied" || status === "passed-through")
+        .map(({ id }) => id);
       for (const refusal of governed.refusals) {
         violations.push(violation(
           "OWNER_REFUSAL",
@@ -1225,6 +1233,34 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         "/",
         "The engine could not validate this response atomically.",
       ));
+    }
+  }
+
+  const trustedMemoryProposals = [];
+  if (metadata && Object.prototype.hasOwnProperty.call(metadata, "memoryProposals")) {
+    if (!Array.isArray(metadata.memoryProposals)) {
+      violations.push(violation(
+        "MEMORY_PROVENANCE",
+        "/_memoryProposals",
+        "Typed memory proposals must be a list.",
+      ));
+    } else {
+      const knownSubjectIds = [...Object.keys(characters), "campaign"];
+      metadata.memoryProposals.forEach((proposal, index) => {
+        const checked = validateMemoryProposal(proposal, DEFAULT_MEMORY_POLICY, {
+          knownSubjectIds,
+          acceptedReceiptIds,
+        });
+        if (!checked.ok) {
+          violations.push(violation(
+            "MEMORY_PROVENANCE",
+            `/_memoryProposals/${index}`,
+            "Memory proposal evidence or subjects were not accepted by the engine.",
+          ));
+        } else {
+          trustedMemoryProposals.push(checked.proposal);
+        }
+      });
     }
   }
 
@@ -1242,8 +1278,8 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     // They are minted only now, on a candidate that has passed every check above — which is
     // what makes "a rejected turn persists nothing" true rather than hoped for: an attempt
     // that fails validation returns above and never reaches this line.
-    _memories: metadata.memories,
-    _memoryProposals: metadata.memoryProposals,
+    _memories: trustedMemoryProposals.map(({ text }) => text),
+    _memoryProposals: trustedMemoryProposals,
   } : {};
   let materializedCandidate = candidate;
   let materializedPolicy = turnPolicy;

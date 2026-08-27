@@ -123,7 +123,7 @@ function inventoryChangeCatalogVerdict(state, value) {
   const invented = [];
   for (const collection of ["added", "removed"]) {
     for (const entry of value?.[collection] || []) {
-      if (!entry?.itemId || entry.entry) continue;
+      if (!entry?.itemId) continue;
       if (!itemTemplate(entry.itemId) && !state?.world?.codex?.items?.[entry.itemId]) {
         invented.push(entry.itemId);
       }
@@ -437,7 +437,8 @@ const ENFORCED = Object.freeze({
 
   /**
    * Items are combat stats through the bridge, so an invented item id is an invented weapon.
-   * Loot-minted instances carry their own entry and are exempt; a bare id must be catalogued.
+   * Generated loot must already have been accepted into the Codex before this gateway can
+   * transfer it; an embedded `entry` cannot mint an item through the narrator command path.
    */
   inventory_changes(state, value, turn) {
     const catalogued = inventoryChangeCatalogVerdict(state, value);

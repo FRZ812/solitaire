@@ -74,6 +74,32 @@ describe("edge provider stream trust boundary", () => {
       .rejects.toThrow("Provider stream reported an error.");
   });
 
+  it.each([
+    ["missing", undefined],
+    ["empty", []],
+    ["multiple", [{ delta: {} }, { delta: {} }]],
+  ])("requires exactly one provider choice when choices are %s", async (_label, choices) => {
+    const payload = choices === undefined ? {} : { choices };
+    const provider = new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`);
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow("Provider stream must contain exactly one choice.");
+  });
+
+  it.each([
+    ["a scalar choice", { choices: [7] }],
+    ["a missing delta", { choices: [{ finish_reason: "stop" }] }],
+    ["an array delta", { choices: [{ delta: [] }] }],
+    ["numeric content", { choices: [{ delta: { content: 7 } }] }],
+    ["structured content", { choices: [{ delta: { content: [{ text: "laundered" }] } }] }],
+    ["an unknown delta field", { choices: [{ delta: { surprise: "ignored" } }] }],
+  ])("rejects %s instead of treating it as an empty provider delta", async (_label, payload) => {
+    const provider = new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`);
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow(/invalid (choice|delta|content) shape/i);
+  });
+
   it("bounds provider bytes even when tool-call data is never forwarded", async () => {
     const provider = new Response(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "x".repeat(200) } }] } }] })}\n\n`);
 
@@ -81,10 +107,51 @@ describe("edge provider stream trust boundary", () => {
       .rejects.toThrow("Provider response exceeded the byte limit.");
   });
 
+  it("enforces one aggregate raw-provider byte ceiling across tool rounds", async () => {
+    const firstRound = [
+      `data: ${JSON.stringify({ choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: "call-1",
+            type: "function",
+            function: { name: "remember", arguments: "{}" },
+          }],
+        },
+        finish_reason: null,
+      }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+    const finalRound = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "{}" }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+    const encoder = new TextEncoder();
+    const firstBytes = encoder.encode(firstRound).byteLength;
+    const finalBytes = encoder.encode(finalRound).byteLength;
+    const aggregateLimit = firstBytes + finalBytes - 1;
+    expect(firstBytes).toBeLessThan(aggregateLimit);
+    expect(finalBytes).toBeLessThan(aggregateLimit);
+    const rounds = [firstRound, finalRound];
+    let round = 0;
+
+    await expect(collect(streamProviderToolLoop(options(null, {
+      maxRounds: 2,
+      maxProviderBytes: aggregateLimit,
+      requestRound: async () => new Response(rounds[round++]),
+      resolveToolCall: () => ({ result: "recorded" }),
+    }))))
+      .rejects.toThrow("Provider response exceeded the byte limit.");
+    expect(round).toBe(2);
+  });
+
   it("rejects provider EOF without its terminal marker", async () => {
-    const provider = new Response(`data: ${JSON.stringify({
-      choices: [{ delta: { content: "partial" }, finish_reason: "stop" }],
-    })}\n\n`);
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "partial" }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n`,
+    ].join(""));
 
     await expect(collect(streamProviderToolLoop(options(provider))))
       .rejects.toThrow("Provider stream ended without a terminal marker.");
@@ -106,27 +173,130 @@ describe("edge provider stream trust boundary", () => {
   });
 
   it("rejects non-success provider finish reasons", async () => {
-    const provider = new Response(`data: ${JSON.stringify({
-      choices: [{ delta: { content: "truncated" }, finish_reason: "length" }],
-    })}\n\ndata: [DONE]\n\n`);
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "truncated" }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "length" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
 
     await expect(collect(streamProviderToolLoop(options(provider))))
       .rejects.toThrow("Provider stream ended with a non-success finish reason.");
   });
 
-  it("rejects unknown or unresolved provider tool calls", async () => {
-    const provider = new Response(`data: ${JSON.stringify({
-      choices: [{
+  it("never launders a length finish into a later stop", async () => {
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "length" }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "late" }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow("Provider stream continued after its finish reason.");
+  });
+
+  it("rejects content after stop before the terminal marker", async () => {
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "late" }, finish_reason: null }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow("Provider stream continued after its finish reason.");
+  });
+
+  it("rejects tool fragments paired with a stop finish", async () => {
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{
         delta: {
           tool_calls: [{
             index: 0,
             id: "call-1",
+            type: "function",
+            function: { name: "remember", arguments: "{}" },
+          }],
+        },
+        finish_reason: "stop",
+      }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow("Provider finish event contained a non-empty delta.");
+  });
+
+  it.each([
+    ["a non-array collection", {}],
+    ["an empty collection", []],
+    ["a scalar call", [7]],
+    ["a call without an index", [{ id: "call-1", type: "function", function: { name: "remember", arguments: "{}" } }]],
+    ["a negative index", [{ index: -1, id: "call-1", type: "function", function: { name: "remember", arguments: "{}" } }]],
+    ["an unknown call field", [{ index: 0, id: "call-1", type: "function", surprise: true, function: { name: "remember", arguments: "{}" } }]],
+    ["a non-function type", [{ index: 0, id: "call-1", type: "command", function: { name: "remember", arguments: "{}" } }]],
+    ["a non-string id", [{ index: 0, id: 7, type: "function", function: { name: "remember", arguments: "{}" } }]],
+    ["a scalar function", [{ index: 0, id: "call-1", type: "function", function: 7 }]],
+    ["an unknown function field", [{ index: 0, id: "call-1", type: "function", function: { name: "remember", arguments: "{}", surprise: true } }]],
+    ["a non-string name", [{ index: 0, id: "call-1", type: "function", function: { name: 7, arguments: "{}" } }]],
+    ["non-string arguments", [{ index: 0, id: "call-1", type: "function", function: { name: "remember", arguments: {} } }]],
+  ])("rejects tool_calls with %s", async (_label, toolCalls) => {
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: toolCalls }, finish_reason: null }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow("Provider stream contained an invalid tool-call shape.");
+  });
+
+  it("rejects mutable tool identity across fragments", async () => {
+    const fragments = [
+      { index: 0, id: "call-1", type: "function", function: { name: "remember", arguments: "{" } },
+      { index: 0, id: "call-2", function: { name: "other", arguments: "}" } },
+    ];
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [fragments[0]] }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [fragments[1]] }, finish_reason: null }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
+
+    await expect(collect(streamProviderToolLoop(options(provider))))
+      .rejects.toThrow("Provider tool-call identity changed during streaming.");
+  });
+
+  it("rejects incomplete tool calls instead of synthesizing protocol identity", async () => {
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{
+        delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] },
+        finish_reason: null,
+      }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
+
+    await expect(collect(streamProviderToolLoop(options(provider, {
+      maxRounds: 2,
+      resolveToolCall: () => ({ result: "ok" }),
+    }))))
+      .rejects.toThrow("Provider emitted an incomplete tool call.");
+  });
+
+  it("rejects unknown or unresolved provider tool calls", async () => {
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: "call-1",
+            type: "function",
             function: { name: "unauthorized_tool", arguments: "{}" },
           }],
         },
-        finish_reason: "tool_calls",
-      }],
-    })}\n\ndata: [DONE]\n\n`);
+        finish_reason: null,
+      }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
 
     await expect(collect(streamProviderToolLoop(options(provider, {
       maxRounds: 2,
@@ -136,14 +306,21 @@ describe("edge provider stream trust boundary", () => {
   });
 
   it("rejects tool calls during the reserved final round", async () => {
-    const provider = new Response(`data: ${JSON.stringify({
-      choices: [{
+    const provider = new Response([
+      `data: ${JSON.stringify({ choices: [{
         delta: {
-          tool_calls: [{ index: 0, id: "call-1", function: { name: "remember", arguments: "{}" } }],
+          tool_calls: [{
+            index: 0,
+            id: "call-1",
+            type: "function",
+            function: { name: "remember", arguments: "{}" },
+          }],
         },
-        finish_reason: "tool_calls",
-      }],
-    })}\n\ndata: [DONE]\n\n`);
+        finish_reason: null,
+      }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""));
 
     await expect(collect(streamProviderToolLoop(options(provider, {
       resolveToolCall: () => ({ result: "ok" }),

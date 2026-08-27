@@ -41,6 +41,12 @@ describe("narrator instruction library", () => {
     expect(SYSTEM_PROMPT).not.toContain(
       "Routine dialogue or atmosphere with no specialized state change can answer from this core alone",
     );
+    expect(SYSTEM_PROMPT).toContain(
+      "On an ordinary general-action turn after creation, assassination is the only non-neutral effect",
+    );
+    expect(SYSTEM_PROMPT).toContain(
+      "Conversation, exploration, training, gifts, wounds, relationships, discoveries, and loot do not grant their mechanics through ordinary narration",
+    );
   });
 
   it("publishes the strict versioned wire contract with typed canonical speakers", () => {
@@ -103,7 +109,10 @@ describe("narrator instruction library", () => {
     const normalize = (value) => value.replace(/\s+/g, " ").trim();
     const detailedDoctrine = NARRATOR_INSTRUCTION_CORPUS
       .slice(0, NARRATOR_INSTRUCTION_CORPUS.indexOf("OUTPUT — STRICT JSON, NOTHING ELSE"));
-    expect(normalize(NARRATOR_SKILLS.map(({ content }) => content).join("\n")))
+    const doctrineBodies = NARRATOR_SKILLS.map(({ content }) => (
+      content.slice(content.indexOf("DOMAIN DOCTRINE") + "DOMAIN DOCTRINE".length).trim()
+    ));
+    expect(normalize(doctrineBodies.join("\n")))
       .toBe(normalize(detailedDoctrine));
 
     const creation = NARRATOR_SKILLS.find(({ id }) => id === "narrative-craft");
@@ -118,19 +127,28 @@ describe("narrator instruction library", () => {
     const progression = NARRATOR_SKILLS.find(({ id }) => id === "progression-and-professions");
     const magic = NARRATOR_SKILLS.find(({ id }) => id === "magic-and-mounts");
     const combat = NARRATOR_SKILLS.find(({ id }) => id === "combat-and-consequences");
+    const relationships = NARRATOR_SKILLS.find(({ id }) => id === "relationships-and-party");
+    const inventory = NARRATOR_SKILLS.find(({ id }) => id === "inventory-and-light");
+    expect(NARRATOR_SKILLS.every(({ content }) => content.startsWith("MECHANICS-CLOSED ROUTE"))).toBe(true);
     expect(world.content).toContain("GEOGRAPHY KNOWN BY LEGEND");
     expect(world.content).toContain(
       "tile_move stays null unless the current [TURN POLICY] supplies that exact destination",
     );
     expect(world.content).not.toContain("Set tile_move:{x,y} on a beat");
     expect(world.content).not.toContain("you may also narrate an encounter drawing from the local spawn table");
-    expect(progression.content.startsWith("PROGRESSION — engine-owned")).toBe(true);
+    expect(progression.content).toContain("PROGRESSION — engine-owned");
     expect(creation.content).toContain("TOWER ARCHETYPE OVERRIDE — CLOSED COMBAT KIT");
+    expect(creation.content).not.toContain("pack items via inventory_changes.added");
+    expect(creation.content).not.toContain("Add them via inventory_changes.added");
     expect(magic.content).toContain("[GRANTABLE WORLD POWERS] is present, it is the COMPLETE grant catalogue");
     expect(magic.content).toContain(
       "grant_mount stays null unless the current [TURN POLICY] authorizes that exact beast id",
     );
     expect(magic.content).not.toContain("you may grant_mount after a lighter trial");
+    expect(magic.content).not.toContain("grant one by adding it to discoveries.skills");
+    expect(relationships.content).not.toContain("Record significant shared moments with memory_updates");
+    expect(inventory.content).not.toContain("loot you grant still lands");
+    expect(inventory.content).not.toContain("Every weapon, piece of armour, tool, or consumable you award");
 
     const tower = makeInitialState();
     tower.created = true;
@@ -169,6 +187,9 @@ describe("narrator instruction library", () => {
     expect(combat.content).not.toContain("emit start_combat instead");
     expect(combat.content).not.toContain("the strike LANDS and KILLS");
     expect(combat.content).not.toContain("THAT guard takes the blow and dies");
+    expect(combat.content).not.toContain("Apply vitality_change with negative deltas");
+    expect(combat.content).not.toContain("apply a blocking condition");
+    expect(combat.content).not.toContain("Record them on the current tile with location_update");
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"roll": null,');
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"encounter": null,');
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"tile_discovery": null,');

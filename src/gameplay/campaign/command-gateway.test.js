@@ -386,11 +386,13 @@ describe("purchases, party and items", () => {
       .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "uncatalogued-item" });
   });
 
-  it("allows a loot-minted instance that carries its own entry", () => {
+  it("refuses unsupported generated-loot additions even when they carry an embedded entry", () => {
     const result = resolveNarratorIntents(rich(), turnWith({
       inventory_changes: { added: [{ itemId: "rare-blade-a1b2", quantity: 1, entry: { id: "rare-blade-a1b2", name: "Keen Blade" } }] },
     }));
-    expect(receiptFor(result, "inventory_changes").status).toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(result, "inventory_changes"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "uncatalogued-item" });
+    expect(result.turn.inventory_changes).toBeNull();
   });
 
   it("allows a carried generated codex item to be handed to a companion", () => {

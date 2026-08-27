@@ -310,7 +310,7 @@ describe("compiled narrator turn application", () => {
     )).toThrow();
   });
 
-  it("persists what the tool channel actually recorded", () => {
+  it("persists only the typed proposal the tool channel recorded", () => {
     // This was broken and silent: the compiler never picked memories out of its metadata, so
     // `beat._memories` was always undefined and every fact the `remember` tool recorded
     // merged into nothing. The tool was writing to a channel that ended one object short of
@@ -320,7 +320,16 @@ describe("compiled narrator turn application", () => {
       state,
       { id: "general-action", allowedEffects: [] },
       {},
-      { memories: ["The ferryman owes the player passage."] },
+      {
+        memories: ["arbitrary compatibility text"],
+        memoryProposals: [{
+          kind: "person",
+          subjectIds: ["wanderer"],
+          scopeIds: ["campaign"],
+          text: "The ferryman owes the player passage.",
+          evidence: [],
+        }],
+      },
     );
 
     const next = applyCompiledNarratorTurn(state, turn);
@@ -391,17 +400,25 @@ describe("the typed memory bank", () => {
     expect(record.salience).toBeLessThan(100);
   });
 
-  it("refuses a memory about someone the world has never heard of", () => {
+  it("refuses a memory about someone the world has never heard of before application", () => {
     // The same rule the gateway applies to knowledge_updates, wherever a name arrives.
     const state = { ...makeInitialState(), memories: [] };
-    const turn = compileTurn(
+    const projection = buildNarratorProjection(state);
+    const result = compileNarratorCandidate({
+      candidate: candidate(projection),
+      projection,
+      turnPolicy: { id: "general-action", allowedEffects: [] },
       state,
-      { id: "general-action", allowedEffects: [] },
-      {},
-      { memoryProposals: [proposal({ subjectIds: ["someone-invented"] })] },
-    );
+      metadata: { memoryProposals: [proposal({ subjectIds: ["someone-invented"] })] },
+    });
 
-    expect(applyCompiledNarratorTurn(state, turn).memoryBank).toEqual([]);
+    expect(result).toMatchObject({
+      ok: false,
+      violations: expect.arrayContaining([
+        expect.objectContaining({ code: "MEMORY_PROVENANCE", path: "/_memoryProposals/0" }),
+      ]),
+    });
+    expect(state.memoryBank).toBeUndefined();
   });
 
   it("types old string memories on first touch rather than in a migration pass", () => {
