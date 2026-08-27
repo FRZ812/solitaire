@@ -285,7 +285,7 @@ describe("authored character templates", () => {
     expect(CHARACTER_PORTRAITS["court-envoy"]).toContain("court-envoy-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["confidence-artist"]).toContain("confidence-artist-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["guild-advocate"]).toContain("guild-advocate-grounded-v3.webp");
-    expect(CHARACTER_PORTRAITS["velvet-courtier"]).toContain("velvet-courtier-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["velvet-courtier"]).toContain("velvet-courtier-portrait-v3.png");
     const aliases = {
       knight: "arctic-knight",
       ranger: "demon-slayer",

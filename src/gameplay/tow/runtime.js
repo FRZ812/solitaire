@@ -28,6 +28,7 @@ import {
   markTowSessionSettled,
   spendTowSessionStream,
   streamSequencer,
+  towSettlementContextForSession,
 } from "./session.js";
 import { settleTowEncounter } from "./settlement.js";
 
@@ -94,7 +95,13 @@ const V1_RUNTIME = Object.freeze({
   replay(session) {
     return replayTowCombatSession(session.genesis, session.commands);
   },
-  verify: verifyTowSession,
+  verify(session) {
+    const decoded = decodeTowSession(session);
+    if (!decoded.ok) {
+      return { ok: false, reason: decoded.reason, divergence: null };
+    }
+    return verifyTowSession(decoded.session);
+  },
   sealTerminalReceipt: sealTowTerminalReceipt,
   events: towSessionEvents,
   worldFates(session) {
@@ -182,6 +189,8 @@ export function decodeTowRuntimeSession(value) {
 export function encodeTowRuntimeSession(session) {
   const routed = route(session);
   if (!routed.ok) return { ok: false, reason: routed.reason, payload: null };
+  const verified = routed.runtime.verify(session);
+  if (!verified.ok) return { ok: false, reason: verified.reason, payload: null };
   return routed.runtime.encode(session);
 }
 
@@ -281,7 +290,7 @@ export function sealTowRuntimeTerminalReceipt(session) {
  * This deliberately does not mark the session settled. The App spends the deterministic
  * loot/reward streams after campaign folding and only then closes the durable session.
  */
-export function settleTowRuntimeEncounter(state, session, context = {}) {
+export function settleTowRuntimeEncounter(state, session) {
   const routed = route(session);
   if (!routed.ok) {
     return {
@@ -292,7 +301,39 @@ export function settleTowRuntimeEncounter(state, session, context = {}) {
       duplicate: false,
     };
   }
-  return routed.runtime.settleEncounter(state, session, context);
+  if (session.mode !== "campaign") {
+    return {
+      ok: false,
+      reason: "campaign-session-required",
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  const verified = routed.runtime.verify(session);
+  if (!verified.ok) {
+    return {
+      ok: false,
+      reason: verified.reason,
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  if (!session.terminalReceipt) {
+    return {
+      ok: false,
+      reason: "missing-terminal-receipt",
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  return routed.runtime.settleEncounter(
+    state,
+    session,
+    towSettlementContextForSession(session),
+  );
 }
 
 export function spendTowRuntimeSessionStream(session, name, endpoint) {

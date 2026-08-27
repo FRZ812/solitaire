@@ -58,6 +58,7 @@ const REFUSALS = {
   "on-cooldown": (skill) => `ready in ${skill.cooldownRemaining}`,
   "no-uses-remaining": () => "spent",
   "insufficient-resolve": () => "not enough Resolve",
+  "basic-recovery-required": () => "use a free basic ability first",
   "item-spent": () => "spent",
   "health-full": () => "health is already full",
   "resolve-full": () => "Resolve is already full",
@@ -530,7 +531,7 @@ function CombatantDossier({ actor, art, abilityRows, onClose }) {
     ["HP", `${actor.hp}/${actor.maxHp}`],
     ...(hasResolve ? [["Resolve", `${actor.resolve}/${actor.resolveMax}`]] : []),
     ...(hasResolve && Number.isFinite(actor.resolveRegen)
-      ? [["Resolve recovery", `${actor.resolveRegen}/round`]]
+      ? [["Free-basic recovery", `${actor.resolveRegen} Resolve`]]
       : []),
     ["Ward", actor.shield || 0],
     ["Attack", actor.stats?.attack ?? 0],

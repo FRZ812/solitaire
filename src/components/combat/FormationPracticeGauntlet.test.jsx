@@ -170,7 +170,7 @@ describe("formation practice combat gauntlet", () => {
         const actor = practice.session.encounter.actors[actorId];
         expect(meter.querySelector(".tow-formation-unit__meter-value")?.textContent.trim())
           .toBe(label === "RP" && actor.resolveRegen > 0
-            ? `${current}/${maximum}+${actor.resolveRegen}/r`
+            ? `${current}/${maximum}+${actor.resolveRegen}/basic`
             : `${current}/${maximum}`);
         expect(cell.getAttribute("aria-label")).toContain(current);
       }

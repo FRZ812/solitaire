@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { gameplayChecksum } from "../kernel/replay.js";
 import { createTowBuild, isTowBuild, startingBuild } from "./build.js";
 import {
   REWARD_CHOICE_COUNT,
@@ -6,6 +7,7 @@ import {
   compileRewardOffer,
   grantRune,
   isRewardOffer,
+  migrateRewardOfferToCurrentRuleset,
   rerollRewardOffer,
   rewardCandidates,
   rewardSeedFor,
@@ -49,6 +51,64 @@ function offerWithSkill(target, predicate) {
 }
 
 describe("compiling an offer", () => {
+  it("reseals an exact retired offer only after deterministic validation", () => {
+    const target = build();
+    const current = offerFor(target, "retired-offer-migration");
+    const retired = { ...current, rulesetId: "solitaire-tow-v1.2", checksum: null };
+    const { checksum: _checksum, ...payload } = retired;
+    retired.checksum = gameplayChecksum(payload);
+
+    const migrated = migrateRewardOfferToCurrentRuleset(target, retired);
+
+    expect(migrated).toMatchObject({ ok: true, reason: null });
+    expect(isRewardOffer(migrated.offer)).toBe(true);
+    expect(migrated.offer).toMatchObject({
+      id: current.id,
+      candidates: current.candidates,
+      sourceReceiptId: current.sourceReceiptId,
+      seed: current.seed,
+    });
+  });
+
+  it("reseals an unclaimed retired offer from before replacement receipts", () => {
+    const target = build();
+    const current = offerFor(target, "legacy-retired-offer-migration");
+    const {
+      checksum: _checksum,
+      replacedSkill: _replacedSkill,
+      ...legacyPayload
+    } = current;
+    const retired = {
+      ...legacyPayload,
+      rulesetId: "solitaire-tow-v1.3",
+      checksum: null,
+    };
+    const { checksum: _empty, ...checksumPayload } = retired;
+    retired.checksum = gameplayChecksum(checksumPayload);
+
+    const migrated = migrateRewardOfferToCurrentRuleset(target, retired);
+
+    expect(migrated).toMatchObject({ ok: true, reason: null });
+    expect(migrated.offer).toMatchObject({
+      rulesetId: "solitaire-tow-v1.4",
+      replacedSkill: null,
+      sourceReceiptId: current.sourceReceiptId,
+      seed: current.seed,
+    });
+  });
+
+  it("refuses to reseal a retired offer with a forged checksum", () => {
+    const retired = {
+      ...offerFor(build(), "forged-retired-offer"),
+      rulesetId: "solitaire-tow-v1.2",
+    };
+    expect(migrateRewardOfferToCurrentRuleset(build(), retired)).toMatchObject({
+      ok: false,
+      reason: "invalid-retired-reward-offer",
+      offer: null,
+    });
+  });
+
   it("gives three distinct, well-formed choices", () => {
     const offer = offerFor();
     expect(isRewardOffer(offer)).toBe(true);
@@ -272,7 +332,7 @@ describe("claiming", () => {
     expect(claimed.provenance).toMatchObject({
       offerId: offer.id,
       sourceReceiptId: "combat-1",
-      rulesetId: "solitaire-tow-v1.3",
+      rulesetId: "solitaire-tow-v1.4",
       id: choice.id,
     });
     if (choice.kind === "skill") expect(claimed.build.skills).toContain(choice.id);
@@ -294,6 +354,19 @@ describe("claiming", () => {
     const again = claimReward(first.build, first.offer, offer.candidates[0].id);
     expect(again).toMatchObject({ ok: true, duplicate: true });
     expect(again.build).toBe(first.build);
+  });
+
+  it("refuses a duplicate claim against the stale pre-claim build", () => {
+    const target = build();
+    const offer = offerFor(target);
+    const candidateId = offer.candidates[0].id;
+    const first = claimReward(target, offer, candidateId);
+
+    expect(claimReward(target, first.offer, candidateId)).toMatchObject({
+      ok: false,
+      reason: "claimed-reward-build-mismatch",
+      build: null,
+    });
   });
 
   it("refuses a second, different reward from one offer", () => {
@@ -347,6 +420,8 @@ describe("claiming", () => {
     expect(claimed.build.skills).toContainEqual({ id: choice.id, rank: 1 });
     expect(claimed.build.skills.map((skill) => skill.id)).not.toContain(replacedId);
     expect(claimed.provenance.replacedId).toBe(replacedId);
+    expect(claimReward(claimed.build, claimed.offer, choice.id))
+      .toMatchObject({ ok: true, duplicate: true, build: claimed.build });
   });
 
   it("can offer and claim an alternate Basic Attack without moving the other four slots", () => {

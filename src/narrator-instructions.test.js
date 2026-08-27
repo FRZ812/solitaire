@@ -55,8 +55,22 @@ describe("narrator instruction library", () => {
     expect(SYSTEM_PROMPT).toContain('"assassination":null|{"target_id":"exact-valid-attempt-id","method":"basic-or-exact-valid-ability-id","outcome":"killed|survived-undetected|detected-combat|interrupted","surprise":null|<boolean>}');
     expect(SYSTEM_PROMPT).toContain("An assassination attempt does not automatically start combat");
     expect(SYSTEM_PROMPT).toContain(
-      "start_combat must remain null unless the current [NARRATOR CONTRACT] authorizes that exact combat handoff",
+      "start_combat must remain null unless the current [TURN POLICY] and [NARRATOR CONTRACT] authorize that exact combat handoff",
     );
+    expect(SYSTEM_PROMPT).toContain(
+      "The current [TURN POLICY] is the only mutation capability for this response",
+    );
+    expect(SYSTEM_PROMPT).toContain(
+      "If the accepted story materially establishes an authorized effect, emit that effect in the same response",
+    );
+    expect(SYSTEM_PROMPT).toContain(
+      "If a required outcome cannot be represented by an authorized field, do not narrate that outcome",
+    );
+    expect(SYSTEM_PROMPT).toContain('"roll":null');
+    expect(SYSTEM_PROMPT).toContain('"encounter":null');
+    expect(SYSTEM_PROMPT).toContain('"tile_discovery":null');
+    expect(SYSTEM_PROMPT).toContain('"progression_focus":null');
+    expect(SYSTEM_PROMPT).not.toContain('"progression_focus":null|"racial"');
     expect(SYSTEM_PROMPT).not.toContain('"speaker_id":"existing-or-same-response-character-id"');
     expect(SYSTEM_PROMPT).not.toContain('"name":"canonical NPC display name"');
   });
@@ -105,9 +119,18 @@ describe("narrator instruction library", () => {
     const magic = NARRATOR_SKILLS.find(({ id }) => id === "magic-and-mounts");
     const combat = NARRATOR_SKILLS.find(({ id }) => id === "combat-and-consequences");
     expect(world.content).toContain("GEOGRAPHY KNOWN BY LEGEND");
+    expect(world.content).toContain(
+      "tile_move stays null unless the current [TURN POLICY] supplies that exact destination",
+    );
+    expect(world.content).not.toContain("Set tile_move:{x,y} on a beat");
+    expect(world.content).not.toContain("you may also narrate an encounter drawing from the local spawn table");
     expect(progression.content.startsWith("PROGRESSION — engine-owned")).toBe(true);
     expect(creation.content).toContain("TOWER ARCHETYPE OVERRIDE — CLOSED COMBAT KIT");
     expect(magic.content).toContain("[GRANTABLE WORLD POWERS] is present, it is the COMPLETE grant catalogue");
+    expect(magic.content).toContain(
+      "grant_mount stays null unless the current [TURN POLICY] authorizes that exact beast id",
+    );
+    expect(magic.content).not.toContain("you may grant_mount after a lighter trial");
 
     const tower = makeInitialState();
     tower.created = true;
@@ -134,8 +157,9 @@ describe("narrator instruction library", () => {
     expect(combat.content).not.toContain('"story": describe the opening blow');
     expect(combat.content).not.toContain("combat_effect");
     expect(combat.content).toContain(
-      "start_combat remains null unless the current [NARRATOR CONTRACT] authorizes that exact handoff",
+      "start_combat remains null unless the current [TURN POLICY] and [NARRATOR CONTRACT] authorize that exact handoff",
     );
+    expect(combat.content).not.toContain("even start_combat for what the noise drew");
     expect(combat.content).not.toContain("You hand a fight to it with the start_combat field");
     expect(combat.content).toContain("An assassination attempt does not automatically start combat");
     expect(combat.content).toContain("stat/ability-authorized assassination deaths");
@@ -145,5 +169,11 @@ describe("narrator instruction library", () => {
     expect(combat.content).not.toContain("emit start_combat instead");
     expect(combat.content).not.toContain("the strike LANDS and KILLS");
     expect(combat.content).not.toContain("THAT guard takes the blow and dies");
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"roll": null,');
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"encounter": null,');
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"tile_discovery": null,');
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"tile_move": null,');
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"progression_focus": null,');
+    expect(NARRATOR_INSTRUCTION_CORPUS).not.toContain('"progression_focus": null OR "racial"');
   });
 });

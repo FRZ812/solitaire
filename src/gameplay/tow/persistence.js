@@ -27,6 +27,10 @@ import {
   towSessionChecksum,
 } from "./session.js";
 import { TOW_COMBAT_STATES, TOW_WORLD_FATES } from "./outcomes.js";
+import {
+  TOW_LEGACY_V1_3_RULESET_ID,
+  TOW_LEGACY_V1_SESSION_VERSION,
+} from "./ruleset.js";
 
 /** A fight that has run this long is a loop, not a fight; pausing beats inventing a winner. */
 export const MAX_TOW_ROUNDS = 2000;
@@ -249,6 +253,38 @@ export function decodeTowSession(value) {
 
   if (towSessionChecksum(session) !== session.checksum) {
     return rejected("tow-session-checksum-mismatch");
+  }
+  return { ok: true, reason: null, session };
+}
+
+/** Strictly decode a v1.3 session without laundering its original checksum. */
+export function decodeRetiredTowV13Session(value) {
+  let session;
+  try {
+    session = cloneJsonData(value, "invalid-retired-v1.3-session-payload");
+  } catch {
+    return rejected("invalid-retired-v1.3-session-payload");
+  }
+  if (session?.version !== TOW_LEGACY_V1_SESSION_VERSION
+    || session?.rulesetId !== TOW_LEGACY_V1_3_RULESET_ID) {
+    return rejected("retired-v1.3-session-required");
+  }
+  try {
+    if (towSessionChecksum(session) !== session.checksum) {
+      return rejected("retired-v1.3-checksum-mismatch");
+    }
+    const compatible = cloneJsonData(session, "invalid-retired-v1.3-session-payload");
+    compatible.rulesetId = TOW_RULESET_ID;
+    compatible.genesis.mode = compatible.mode;
+    compatible.context.rewardPolicy.rerolls = 0;
+    if (compatible.terminalReceipt !== null) {
+      compatible.terminalReceipt.rulesetId = TOW_RULESET_ID;
+    }
+    compatible.checksum = towSessionChecksum(compatible);
+    const decoded = decodeTowSession(compatible);
+    if (!decoded.ok) return rejected(decoded.reason);
+  } catch {
+    return rejected("invalid-retired-v1.3-session");
   }
   return { ok: true, reason: null, session };
 }

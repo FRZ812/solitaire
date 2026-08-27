@@ -12,6 +12,7 @@ import {
 import { storeGet, storeDel } from "./engine/storage.js";
 import { callNarrator } from "./engine/api-supabase.js";
 import { buildNarratorProjection, narratorTurnPolicy } from "./engine/narrator-projection.js";
+import { playerCombatDirective } from "./engine/player-combat-intent.js";
 import { specializedNarratorPolicyOptions } from "./engine/narrator-specialized-policy.js";
 import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-supabase.js";
 import { listCampaigns, loadCampaignRecord, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
@@ -97,6 +98,7 @@ import { regionDifficulty } from "./data/regions.js";
 import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
 import {
+  canCommitTowSession,
   emptyMechanicsSidecar,
   hasMechanicsSidecar,
   upgradeCampaignPayload,
@@ -133,7 +135,6 @@ import {
   sealTowRuntimeTerminalReceipt,
   settleTowRuntimeEncounter,
   spendTowRuntimeSessionStream,
-  towRuntimeWorldFates,
 } from "./gameplay/tow/runtime.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
 import { towBuildForCharacter } from "./gameplay/tow/professions.js";
@@ -193,10 +194,9 @@ import { resolvePlayerCombatCutout } from "./components/combat/tow-combat-art.js
 import ProductionCombatView from "./components/combat/ProductionCombatView.jsx";
 import { ReferenceCombatView } from "./components/combat/ReferenceCombatView.jsx";
 import { VitalsStrip, InputBar, ErrorBanner } from "./components/primitives.jsx";
-import { LiveNarratorStream } from "./components/LiveNarratorStream.jsx";
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
-import { BeatRender } from "./components/beats/BeatRender.jsx";
+import { VisualNovelStage } from "./components/VisualNovelStage.jsx";
 import { PanelDeck } from "./components/PanelDeck.jsx";
 import { WorldExploration } from "./components/exploration/WorldExploration.jsx";
 import { TraderView } from "./components/TraderView.jsx";
@@ -312,7 +312,7 @@ function convertLegacyV10ToHex(legacy) {
 
 export function prepareCampaignState(loaded) {
   const upgraded = upgradeCampaignPayload(loaded);
-  if (!upgraded.ok || !upgraded.writable) {
+  if (!upgraded.ok || (!upgraded.writable && !upgraded.recoverable)) {
     const error = new Error(`Campaign migration failed: ${upgraded.reason || "unwritable-payload"}`);
     error.code = "CAMPAIGN_MIGRATION_FAILED";
     error.reason = upgraded.reason || "unwritable-payload";
@@ -834,7 +834,8 @@ export function Solitaire() {
     : null;
   const pendingTravelCombatInvalid = pendingTravelCombatValue != null && !pendingTravelCombat.ok;
   const productionCombatOpen = Boolean(productionCombatSession || productionCombatInvalid);
-  const exclusiveGameplayOpen = referenceGameplayOpen || productionCombatOpen;
+  const towCombatOpen = Boolean(combat) && !referenceGameplayOpen && !productionCombatOpen;
+  const exclusiveGameplayOpen = referenceGameplayOpen || productionCombatOpen || towCombatOpen;
   const referenceRunSettled = referenceRun?.status === "completed"
     || referenceRun?.status === "defeated";
   const referenceGameplayWasOpenRef = useRef(referenceGameplayOpen);
@@ -855,6 +856,7 @@ export function Solitaire() {
         || element.classList.contains("reference-combat")
         || element.classList.contains("production-combat")
         || element.classList.contains("production-combat-recovery")
+        || element.classList.contains("tow-combat")
         || ownedBackgrounds.has(element)) return;
       ownedBackgrounds.set(element, {
         hadInert: element.hasAttribute("inert"),
@@ -1526,6 +1528,19 @@ export function Solitaire() {
   // backgrounded app…) the message is preserved and stashed for a one-tap Retry —
   // the typed action is never lost.
   async function runNarratorTurn(base, message) {
+    const pendingPlayers = pendingPlayerBeats(base);
+    if (!base.pendingCombatDirective && pendingPlayers.length === 1) {
+      const combatDirective = playerCombatDirective(
+        pendingPlayers[0].content,
+        buildNarratorProjection(base),
+      );
+      if (combatDirective) {
+        setError(null);
+        setRetry(null);
+        setPendingEngage({ dir: combatDirective });
+        return;
+      }
+    }
     const request = beginNarratorRequest(base);
     const policyOptions = base.narratorTurnContinuation || {};
     setError(null);
@@ -1634,6 +1649,7 @@ export function Solitaire() {
     const arrival = {
       id: `character-arrival:${bootstrapReceipt?.id || Date.now()}`,
       type: "narration",
+      actorId: "wanderer",
       content: `${setup.name} enters Whitemarch through the press of the Grand Market, where Grain Square rings with cart wheels, hawkers, temple bells, and a hundred roads arguing over where they begin. ${archetype ? `The ${archetype.name} kit sits as it should: ${archetype.tagline}` : "Their chosen kit is settled and ready."}\n\nNo grey threshold waits behind them. The city is already moving, and the next choice is theirs.`,
     };
     let built = applyEngineBeat(base, beat);
@@ -2142,7 +2158,7 @@ export function Solitaire() {
       ? `[PLAYER ACTION] You take to the air on ${flightMount.name}, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`
       : `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`;
     const costNote = viaMount ? "" : ` It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}.`;
-    const msg = `${opener}${modeNote}${townNote} ${endNote}${costNote} Use minutes_passed = ${mins}.`;
+    const msg = `${opener}${modeNote}${townNote} ${endNote}${costNote} Time is already settled; emit minutes_passed = 0.`;
     const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", mountId: viaMount ? flightMount.id : null, discovery: authoritativeTravelDiscovery(legTile), intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
     await finishTravel(stateWithPlayer, msg, travel);
   }
@@ -2185,7 +2201,7 @@ export function Solitaire() {
     const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `${spell.name} to ${toName}.` };
     const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
-    const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
+    const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Time is already settled; emit minutes_passed = 0.`;
     const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport", discovery: authoritativeTravelDiscovery(destTile) };
     await finishTravel(stateWithPlayer, msg, travel);
   }
@@ -2570,12 +2586,13 @@ export function Solitaire() {
     setLoading(true);
     const key = `${res.pos.x},${res.pos.y}`;
     const baseState = { ...state, world: { ...state.world, seen: { ...state.world.seen, [key]: true } } };
+    const timedState = applyEngineBeat(baseState, { minutes_passed: 10 });
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You scry for ${res.name}.` };
-    const stateWithPlayer = { ...baseState, beats: [...baseState.beats, playerBeat] };
+    const stateWithPlayer = { ...timedState, beats: [...timedState.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
       const near = res.place ? `${Math.round(res.place.dist)} hex(es) from ${res.place.name}` : `open, unmapped country at (${res.pos.x},${res.pos.y})`;
-      const msg = `[PLAYER ACTION] [SCRY] (id: ${id}) You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Use minutes_passed = 10.`;
+      const msg = `[PLAYER ACTION] [SCRY] (id: ${id}) You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Scrying time is already settled; emit minutes_passed = 0.`;
       const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
       if (!beat) return;
     } catch (e) {
@@ -2807,8 +2824,9 @@ export function Solitaire() {
     if (!menu || !menu.canRewind || loading) return;
     // Same boundary as a rewrite: presentation may be replayed from a locked receipt, the
     // mechanic behind it may not be undone.
-    const target = menu.kind === "player" ? turnForBeatIndex(state, menu.index) : menu.turnK;
-    const rewindable = canRewindToTurn(state, target);
+    const rewindable = menu.turnK >= 0
+      ? canRewindToTurn(state, menu.turnK)
+      : { ok: true };
     if (!rewindable.ok) {
       closeBeatMenu();
       setError("That moment is behind something already settled — the story can be retold from here, but not taken back past it.");
@@ -3086,6 +3104,10 @@ export function Solitaire() {
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
+    if (st.pendingReward?.sourceReceiptId) {
+      setError("Claim or reroll the owed reward before starting another fight.");
+      return;
+    }
     if (enemies.length > 9) {
       setError("This formation can field at most nine foes. Split this encounter into waves before it begins.");
       return;
@@ -3295,6 +3317,13 @@ export function Solitaire() {
   function handleDiscardInvalidTowCombat() {
     if (!towCombatInvalid) return;
     const base = liveStateRef.current;
+    if (base.pendingReward?.sourceReceiptId
+      && base.pendingReward.sourceReceiptId === storedTowCombat?.sessionId) {
+      setTowCombatFeedback(
+        "Claim or reroll the owed reward before discarding its source fight record.",
+      );
+      return;
+    }
     const next = withTowCombat({
       ...base,
       beats: [
@@ -3317,6 +3346,10 @@ export function Solitaire() {
 
   /** Write a session into durable campaign state. The only path a fight is saved through. */
   function commitTowSession(session) {
+    if (!canCommitTowSession(liveStateRef.current, session)) {
+      setTowCombatFeedback("Claim or reroll the owed reward before starting another fight.");
+      return liveStateRef.current;
+    }
     const next = withTowCombat(liveStateRef.current, session);
     setTowCombatFeedback(null);
     liveStateRef.current = next;
@@ -3501,28 +3534,10 @@ export function Solitaire() {
     // receipt. It is read here, never re-derived — the player agreed to those stakes before
     // the first blow, and nothing about how the fight went may change them afterwards.
     const epicDeath = receipt.playerWorldFate === "dead";
-    const lethal = ctx.lethalPolicy !== "nonlethal";
+    const lethal = session.context.lethalPolicy !== "nonlethal";
     const place = ctx.location || currentLocationName(state);
     const flavor = ctx.source.note;
-    const npcIds = Object.fromEntries(
-      Object.entries(ctx.participantBindings)
-        .filter(([, binding]) => binding.campaignEntityId)
-        .map(([actorId, binding]) => [actorId, binding.campaignEntityId]),
-    );
-    const fates = towRuntimeWorldFates(session);
-    if (!fates.ok) {
-      setError(`The fight outcome could not be read: ${fates.reason}.`);
-      return;
-    }
-    const settled = settleTowRuntimeEncounter(state, session, {
-      encounterId: session.sessionId,
-      proficiencyId: ctx.rewardPolicy.proficiencyId,
-      npcIds,
-      lethal,
-      // Per-participant fates win over the blanket flag: one duel inside a brawl can be
-      // real while the rest is fists, and the codex has to record each person correctly.
-      worldFates: fates.worldFates,
-    });
+    const settled = settleTowRuntimeEncounter(state, session);
     if (!settled.ok && settled.reason !== "tow-encounter-already-settled") {
       setError(`The fight could not be settled: ${settled.reason}.`);
       return;
@@ -3731,7 +3746,12 @@ export function Solitaire() {
    * than one they were told they could not have.
    */
   function handleClaimReward(candidateId, replacingId = null) {
-    const base = liveStateRef.current;
+    const verified = upgradeCampaignPayload(liveStateRef.current);
+    if (!verified.ok || !verified.writable) {
+      setError(`That reward could not be verified: ${verified.reason}.`);
+      return;
+    }
+    const base = verified.state;
     const offer = base.pendingReward;
     if (!offer || !base.mechanics?.build) return;
     const claimed = claimReward(base.mechanics.build, offer, candidateId, { replacingId });
@@ -3742,7 +3762,21 @@ export function Solitaire() {
     const next = {
       ...base,
       pendingReward: null,
-      mechanics: { ...base.mechanics, build: claimed.build },
+      mechanics: {
+        ...base.mechanics,
+        build: claimed.build,
+        tow: {
+          ...base.mechanics.tow,
+          rewardClaims: [
+            ...(base.mechanics.tow.rewardClaims || []),
+            {
+              sourceReceiptId: offer.sourceReceiptId,
+              offerId: offer.id,
+              claimedId: candidateId,
+            },
+          ],
+        },
+      },
       beats: [
         ...(base.beats || []),
         {
@@ -3760,7 +3794,12 @@ export function Solitaire() {
   }
 
   function handleRerollReward() {
-    const base = liveStateRef.current;
+    const verified = upgradeCampaignPayload(liveStateRef.current);
+    if (!verified.ok || !verified.writable) {
+      setError(`That offer could not be verified: ${verified.reason}.`);
+      return;
+    }
+    const base = verified.state;
     const offer = base.pendingReward;
     if (!offer || !base.mechanics?.build) return;
     const rerolled = rerollRewardOffer(base.mechanics.build, offer);
@@ -3808,18 +3847,20 @@ export function Solitaire() {
     const manifest = pendingLoot;
     if (!manifest || loading) return;
     setPendingLoot(null);
-    const { state: looted, taken } = applyLoot(state, manifest);
+    const lootResult = applyLoot(state, manifest);
+    const { taken } = lootResult;
+    let looted = lootResult.state;
+    looted = applyEngineBeat(looted, { minutes_passed: 5 });
     liveStateRef.current = looted;
     setState(looted);
     setError(null);
     setLoading(true);
     try {
       const place = currentLocationName(looted);
-      const msg = `[LOOTED] You take the time to search the ${manifest.deadCount > 1 ? `${manifest.deadCount} bodies` : "body"} and come away with: ${taken || "little of worth"}. This happens at ${place} and takes several minutes in plain sight. Narrate it, and adjudicate the fallout — rifling a corpse in a public, lawful place draws horror and the watch; in the wilds or a den, no one cares. Apply consequences (location_update, conditions, start_combat with guards, or tile_move) as fits.`;
+      const msg = `[LOOTED] You search the ${manifest.deadCount > 1 ? `${manifest.deadCount} bodies` : "body"} and come away with: ${taken || "little of worth"}. This happens at ${place} in plain sight. Narrate the reaction — horror or suspicion in a lawful public place, indifference in the wilds or a den. Search time is already settled; emit minutes_passed = 0. If the scene establishes a lasting fact or physical consequence, use only discoveries or new_conditions. Movement and combat are engine-owned and must remain null.`;
       const policyOptions = { route: "loot-fallout" };
       const { beat } = await narrateSpecialized(looted, msg, policyOptions);
       if (!beat) return;
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -4067,20 +4108,18 @@ export function Solitaire() {
           </div>
         )}
         <div className="story-log-frame">
-          <div
-            ref={logRef}
-            className="story-log"
-            onWheelCapture={handleStoryWheel}
-            onTouchStart={handleStoryTouchStart}
-            onTouchMove={handleStoryTouchMove}
-            onTouchEnd={() => { storyTouchYRef.current = null; }}
-            onTouchCancel={() => { storyTouchYRef.current = null; }}
-            onScroll={handleStoryScroll}
-            onKeyDownCapture={handleStoryKeyDown}
-            onPointerDownCapture={handleStoryPointerDown}
-          >
-            {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
-            {loading && <LiveNarratorStream thinking={liveNarrator.thinking} story={liveNarrator.story} />}
+          <VisualNovelStage
+            key={currentCampaignId}
+            state={state}
+            beats={state.beats}
+            loading={loading}
+            queuedCount={queuedPlayerCount}
+            onContinue={handleRunNarrator}
+            onBeatMenu={(beat, index) => openBeatMenu(beat, index)}
+          />
+        </div>
+        {(error || campaignError) && (
+          <div className="visual-novel-notices">
             {error && (
               <ErrorBanner>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
@@ -4098,12 +4137,7 @@ export function Solitaire() {
             )}
             {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
           </div>
-          {!storyFollowing && !storyAtBottom && (
-            <button type="button" className="story-jump-latest" onClick={scrollStoryToLatest} aria-label="Jump to latest story output">
-              <span>↓</span> Latest
-            </button>
-          )}
-        </div>
+        )}
         {REFERENCE_GAMEPLAY_PREVIEW_ENABLED
           && state.created !== false
           && !loading
@@ -4240,13 +4274,13 @@ export function Solitaire() {
                   : towCombatInvalid ? "Unreadable saved fight" : "Combat"}
               </div>
               <div style={{ fontSize: "13px", color: "#fde8e4", lineHeight: 1.35 }}>
-                {towCombatSettledNeedsUpdate
+                {towCombatFeedback || (towCombatSettledNeedsUpdate
                   ? "This retired fight record is marked settled under older combat rules. Discarding it removes only that unreadable record and does not apply or undo any outcome, wound, or spoil."
                   : towCombatNeedsUpdate
                     ? "This fight was saved under older combat rules and cannot be resumed safely. Discarding it applies no outcome, wound, or spoil."
                     : towCombatInvalid
                       ? `The saved fight record cannot be read (${towCombat.reason}). Discarding it applies or undoes no campaign result.`
-                      : towCombatFeedback}
+                      : "")}
               </div>
             </div>
             {towCombatInvalid && (
@@ -4696,7 +4730,7 @@ export function Solitaire() {
           onExit={handleCloseReferenceTrial}
         />
       )}
-      {combat && !exclusiveGameplayOpen && (
+      {towCombatOpen && (
         <TowCombatView
           encounter={combat}
           note={combatSession?.context?.source?.note}

@@ -9,6 +9,7 @@
 // reject most real encounters.
 
 import { cloneJsonData } from "../kernel/json-data.js";
+import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng, nextInt } from "../kernel/rng.js";
 import {
   advanceTowIntent,
@@ -41,6 +42,10 @@ import {
   normalizeFormation,
 } from "./formation.js";
 import { reflowTowFormations } from "./movement.js";
+import {
+  TOW_LEGACY_V1_3_RULESET_ID,
+  TOW_LEGACY_V1_SESSION_VERSION,
+} from "./ruleset.js";
 import { legalSkillAnchors, resolveSkillTargets } from "./targeting.js";
 import {
   createSkillState,
@@ -149,12 +154,55 @@ function push(state, type, detail) {
   };
 }
 
-function regenerateResolve(state) {
+function lastCommittedSkill(state, actorId, round = null) {
+  for (let index = state.events.length - 1; index >= 0; index -= 1) {
+    const entry = state.events[index];
+    if (round !== null && entry.round < round) break;
+    if (entry.type !== "skill-committed" || entry.actorId !== actorId) continue;
+    if (round !== null && entry.round !== round) continue;
+    return entry;
+  }
+  return null;
+}
+
+function committedSkillCost(entry) {
+  if (!entry) return null;
+  try {
+    return resolveCost(entry.skillId, entry.rank);
+  } catch {
+    return null;
+  }
+}
+
+function encounterSkillLegality(
+  state,
+  actorId,
+  skillState,
+  { turnAvailable, resolveEconomy = "free-basic-v1.4" },
+) {
+  const legality = skillLegality(skillState, {
+    turnAvailable,
+    resolveAvailable: state.actors[actorId]?.resolve,
+  });
+  if (!legality.ok) return legality;
+  const cost = resolveCost(skillState.id, skillState.rank);
+  if (resolveEconomy !== "per-round-v1.3"
+    && Number.isFinite(state.actors[actorId]?.resolve)
+    && cost > 0
+    && committedSkillCost(lastCommittedSkill(state, actorId)) > 0) {
+    return { ok: false, reason: "basic-recovery-required" };
+  }
+  return legality;
+}
+
+function regenerateResolve(state, closedRound, { resolveEconomy = "free-basic-v1.4" } = {}) {
   let next = state;
   const actorIds = [state.playerId, ...(state.allyIds || []), ...(state.enemyIds || [])];
   for (const actorId of actorIds) {
     const actor = next.actors[actorId];
     if (!actor || actor.hp <= 0 || !Number.isFinite(actor.resolve) || actor.resolveRegen <= 0) continue;
+    if (resolveEconomy !== "per-round-v1.3"
+      && committedSkillCost(lastCommittedSkill(next, actorId, closedRound)) !== 0) continue;
     const after = Math.min(actor.resolveMax, actor.resolve + actor.resolveRegen);
     const amount = after - actor.resolve;
     if (amount <= 0) continue;
@@ -961,15 +1009,15 @@ function enemySkillReserved(state, enemyId, skillState) {
   });
 }
 
-function availableEnemySchedule(state, enemyId) {
+function availableEnemySchedule(state, enemyId, options = {}) {
   const schedule = state.intentSchedules[enemyId];
   const build = state.enemyBuilds?.[enemyId];
   if (!schedule || !build) return schedule;
 
   const legal = build.skills.filter((skillState) => (
-    skillLegality(skillState, {
+    encounterSkillLegality(state, enemyId, skillState, {
       turnAvailable: true,
-      resolveAvailable: state.actors[enemyId]?.resolve,
+      resolveEconomy: options.resolveEconomy,
     }).ok
     && !enemySkillReserved(state, enemyId, skillState)
   ));
@@ -1068,14 +1116,14 @@ function reflowRoundFormations(state) {
  * group's declarations are reproducible and a foe added to the middle of a line-up cannot
  * silently re-roll the others.
  */
-function declareRoundIntents(state) {
+function declareRoundIntents(state, options = {}) {
   let next = state;
   let rng = state.intentRng;
   const intents = { ...state.intents };
 
   for (const enemyId of state.enemyIds) {
     const enemy = next.actors[enemyId];
-    const schedule = availableEnemySchedule(next, enemyId);
+    const schedule = availableEnemySchedule(next, enemyId, options);
     // A foe with no action index has nothing to telegraph, and a dead one has nothing left
     // to say. Both drop their declaration rather than keeping a stale one.
     if (!schedule || enemy.hp <= 0) {
@@ -1108,8 +1156,8 @@ function declareRoundIntents(state) {
 }
 
 /** Move one foe's telegraph on to the next step of its rotation. */
-function advanceEnemyIntent(state, enemyId) {
-  const schedule = availableEnemySchedule(state, enemyId);
+function advanceEnemyIntent(state, enemyId, options = {}) {
+  const schedule = availableEnemySchedule(state, enemyId, options);
   const held = state.intents[enemyId];
   if (!held) return state;
   if (!schedule) {
@@ -2413,9 +2461,8 @@ export function combatSkillLegality(state, skillId, actorId = state.playerId) {
   if (!build) return { ok: false, reason: "unknown-actor" };
   const skillState = build.skills.find((entry) => entry.id === skillId);
   if (!skillState) return { ok: false, reason: "skill-not-held" };
-  const legality = skillLegality(skillState, {
+  const legality = encounterSkillLegality(state, actorId, skillState, {
     turnAvailable: actionsLeftFor(state, actorId) > 0,
-    resolveAvailable: actor.resolve,
   });
   if (!legality.ok) return legality;
   const definition = getSkill(skillId);
@@ -2432,12 +2479,13 @@ export function combatSkillLegality(state, skillId, actorId = state.playerId) {
 /**
  * Use one of the player's skills. Turn-free skills leave the primary action open.
  */
-export function useSkill(
+function useSkillWithPolicy(
   state,
   skillId,
   targetId = null,
   actorId = state.playerId,
   anchorCell = null,
+  options = {},
 ) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
   const actor = state.actors[actorId];
@@ -2450,9 +2498,9 @@ export function useSkill(
   const index = build.skills.findIndex((entry) => entry.id === skillId);
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = build.skills[index];
-  const legality = skillLegality(skillState, {
+  const legality = encounterSkillLegality(state, actorId, skillState, {
     turnAvailable: actionsLeftFor(state, actorId) > 0,
-    resolveAvailable: actor.resolve,
+    resolveEconomy: options.resolveEconomy,
   });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
 
@@ -2485,6 +2533,16 @@ export function useSkill(
   if (definition.consumesTurn) next = spendAction(next, actorId);
   next = applyResolvedSkillEffects(next, definition, skillState.rank, actorId, resolvedTargets);
   return { ok: true, reason: null, state: settle(next) };
+}
+
+export function useSkill(
+  state,
+  skillId,
+  targetId = null,
+  actorId = state.playerId,
+  anchorCell = null,
+) {
+  return useSkillWithPolicy(state, skillId, targetId, actorId, anchorCell, {});
 }
 
 /** Whether one carried combat consumable can be committed by this actor now. */
@@ -2857,15 +2915,15 @@ function resolveActorTurnEnd(state, actorId, { includeMisfortune = false } = {})
   return decayActorStatusesAtBoundary(damaged, actorId);
 }
 
-function useEnemySkill(state, enemyId, skillId, targetId) {
+function useEnemySkill(state, enemyId, skillId, targetId, options = {}) {
   const build = state.enemyBuilds?.[enemyId];
   const index = build?.skills.findIndex((entry) => entry.id === skillId) ?? -1;
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = build.skills[index];
   const enemy = state.actors[enemyId];
-  const legality = skillLegality(skillState, {
+  const legality = encounterSkillLegality(state, enemyId, skillState, {
     turnAvailable: true,
-    resolveAvailable: enemy?.resolve,
+    resolveEconomy: options.resolveEconomy,
   });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
   const definition = getSkill(skillId);
@@ -2901,7 +2959,7 @@ function useEnemySkill(state, enemyId, skillId, targetId) {
  * End the player's turn: every living enemy acts, then boundary statuses tick, then the
  * round advances and cadence traits fire.
  */
-export function endTurn(state) {
+function endTurnWithPolicy(state, options = {}) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
 
   // Every living foe's declaration is checked against its own action index before anything
@@ -2916,9 +2974,9 @@ export function endTurn(state) {
       ? enemySkillState(state, enemyId, declared.skillId)
       : null;
     if (!declared || (declared.skillId && (
-      !skillState || !skillLegality(skillState, {
+      !skillState || !encounterSkillLegality(state, enemyId, skillState, {
         turnAvailable: true,
-        resolveAvailable: enemy.resolve,
+        resolveEconomy: options.resolveEconomy,
       }).ok
     ))) {
       return { ok: false, reason: "intent-desync", state };
@@ -3027,7 +3085,7 @@ export function endTurn(state) {
         const definition = getSkill(declared.skillId);
         const hasteBefore = statusCount(next.actors[enemyId].statuses, "haste");
         const priorityBefore = priorityAdvantageFor(next, enemyId);
-        const used = useEnemySkill(next, enemyId, declared.skillId, targetId);
+        const used = useEnemySkill(next, enemyId, declared.skillId, targetId, options);
         if (!used.ok) return { ok: false, reason: "intent-desync", state };
         const hasteAfter = statusCount(used.state.actors[enemyId].statuses, "haste");
         const priorityAfter = priorityAdvantageFor(used.state, enemyId);
@@ -3039,7 +3097,7 @@ export function endTurn(state) {
         // Advance from the declaration that was actually honoured. Availability is
         // evaluated after spending it, so a cooling-down Chi Liberation cannot be selected
         // repeatedly inside the newly-created Priority sequence.
-        next = advanceEnemyIntent(used.state, enemyId);
+        next = advanceEnemyIntent(used.state, enemyId, options);
         if (definition.consumesTurn) {
           if (spendingPriority) {
             next = consumeActorPriority(next, enemyId);
@@ -3087,7 +3145,7 @@ export function endTurn(state) {
         attackId: attack.id,
         hits: resolved.hits,
       });
-      if (declared) next = advanceEnemyIntent(next, enemyId);
+      if (declared) next = advanceEnemyIntent(next, enemyId, options);
       if (spendingPriority) {
         next = consumeActorPriority(next, enemyId);
         priorityRemaining = Math.max(0, priorityRemaining - 1);
@@ -3121,9 +3179,10 @@ export function endTurn(state) {
   for (const [enemyId, build] of Object.entries(next.enemyBuilds || {})) {
     tickedEnemyBuilds[enemyId] = { ...build, skills: build.skills.map(tickSkillCooldown) };
   }
+  const closedRound = next.round;
   next = {
     ...next,
-    round: next.round + 1,
+    round: closedRound + 1,
     build: {
       ...next.build,
       skills: next.build.skills.map(tickSkillCooldown),
@@ -3131,7 +3190,7 @@ export function endTurn(state) {
     allyBuilds: tickedAllyBuilds,
     enemyBuilds: tickedEnemyBuilds,
   };
-  next = regenerateResolve(next);
+  next = regenerateResolve(next, closedRound, options);
 
   // Cadence traits still fire before the action count is read, so a Swift proc this round is
   // an extra action this round rather than next. Moving formations reflow once afterwards,
@@ -3142,8 +3201,125 @@ export function endTurn(state) {
     next = reflowRoundFormations(next);
     next = retargetHeldIntents(next);
   }
-  next = declareRoundIntents(withFreshTurn(next));
+  next = declareRoundIntents(withFreshTurn(next), options);
   return { ok: true, reason: null, state: settle(next) };
+}
+
+export function endTurn(state) {
+  return endTurnWithPolicy(state, {});
+}
+
+function retiredReplayFailure(reason, encounter = null, divergence = null, replayedCommands = 0) {
+  return { ok: false, reason, encounter, divergence, replayedCommands };
+}
+
+/** Verifier-only full replay for an exact retired v1.3 session. */
+export function replayRetiredV13TowEncounter(value) {
+  let session;
+  try {
+    session = cloneJsonData(value, "invalid-retired-v1.3-session-payload");
+  } catch {
+    return retiredReplayFailure("invalid-retired-v1.3-session-payload");
+  }
+  if (session?.version !== TOW_LEGACY_V1_SESSION_VERSION
+    || session?.rulesetId !== TOW_LEGACY_V1_3_RULESET_ID
+    || (session.terminalReceipt !== null
+      && session.terminalReceipt?.rulesetId !== TOW_LEGACY_V1_3_RULESET_ID)) {
+    return retiredReplayFailure("retired-v1.3-session-required");
+  }
+  const { checksum, ...body } = session;
+  if (checksum !== `integrity-v1:${gameplayChecksum(body)}`) {
+    return retiredReplayFailure("retired-v1.3-checksum-mismatch");
+  }
+  if (!Array.isArray(session.commands)) {
+    return retiredReplayFailure("invalid-replay-commands");
+  }
+  if (session.commands.length > 4096) {
+    return retiredReplayFailure("replay-command-limit-exceeded");
+  }
+
+  let encounter;
+  try {
+    const genesis = session.genesis;
+    encounter = createTowEncounter({
+      seed: genesis.seedManifest.combat,
+      intentSeed: genesis.seedManifest.intent,
+      allies: genesis.allySnapshots,
+      intentSchedules: Object.keys(genesis.intentSchedules).length > 0
+        ? genesis.intentSchedules
+        : undefined,
+      player: genesis.playerSnapshot,
+      enemies: genesis.enemySnapshots,
+      build: genesis.effectiveBuild,
+      ...(genesis.formations ? { formations: genesis.formations } : {}),
+    });
+  } catch (error) {
+    return retiredReplayFailure(error?.message || "invalid-replay-genesis");
+  }
+
+  for (let index = 0; index < session.commands.length; index += 1) {
+    const command = session.commands[index];
+    const actorId = command.actorId ?? encounter.playerId;
+    const eventsFrom = encounter.sequence;
+    let resolved;
+    if (command.type === "use-skill") {
+      resolved = useSkillWithPolicy(
+        encounter,
+        command.skillId,
+        command.targetId,
+        actorId,
+        command.anchorCell ?? null,
+        { resolveEconomy: "per-round-v1.3" },
+      );
+    } else if (command.type === "use-item") {
+      resolved = useCombatItem(encounter, command.itemId, command.targetId, actorId);
+    } else if (command.type === "attempt-retreat") {
+      resolved = attemptRetreat(encounter, actorId);
+    } else if (command.type === "stand-down") {
+      resolved = skipTurn(encounter, actorId);
+    } else if (command.type === "end-turn") {
+      resolved = endTurnWithPolicy(encounter, { resolveEconomy: "per-round-v1.3" });
+    } else {
+      resolved = { ok: false, reason: "unsupported-command-type", state: encounter };
+    }
+    if (!resolved.ok) {
+      return retiredReplayFailure("replay-command-refused", encounter, {
+        reason: "replay-command-refused",
+        commandSeq: index,
+        commandId: command.id ?? null,
+        path: "command",
+        expected: command.type,
+        actual: resolved.reason,
+      }, index);
+    }
+    encounter = resolved.state;
+    if ((Number.isSafeInteger(command.eventsFrom) && command.eventsFrom !== eventsFrom)
+      || (Number.isSafeInteger(command.eventsTo) && command.eventsTo !== encounter.sequence)) {
+      return retiredReplayFailure("replay-event-range-mismatch", encounter, {
+        reason: "replay-event-range-mismatch",
+        commandSeq: index,
+        commandId: command.id ?? null,
+      }, index);
+    }
+    if (typeof command.stateChecksum === "string"
+      && command.stateChecksum !== gameplayChecksum(encounter)) {
+      return retiredReplayFailure("replay-state-divergence", encounter, {
+        reason: "replay-state-divergence",
+        commandSeq: index,
+        commandId: command.id ?? null,
+        path: "encounter",
+        expected: command.stateChecksum,
+        actual: gameplayChecksum(encounter),
+      }, index);
+    }
+  }
+  return {
+    ok: true,
+    reason: null,
+    encounter,
+    divergence: null,
+    replayedCommands: session.commands.length,
+  };
 }
 
 /** Remaining combat resource; legacy encounters still report their captured charge total. */

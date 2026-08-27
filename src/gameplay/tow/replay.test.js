@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { gameplayChecksum } from "../kernel/replay.js";
+import v13ResolveCadenceSession from "./fixtures/v13-resolve-cadence-session.json";
+import * as commandApi from "./commands.js";
 import { dispatchTowCommand } from "./commands.js";
 import { sealTowTerminalReceipt } from "./outcomes.js";
-import { firstJsonDifference, replayTowCombatSession, verifyTowSession } from "./replay.js";
-import { createTowSession, markTowSessionSettled, spendTowSessionStream } from "./session.js";
+import {
+  firstJsonDifference,
+  replayTowCombatSession,
+  verifyRetiredTowV13Session,
+  verifyTowSession,
+} from "./replay.js";
+import {
+  TOW_RULESET_ID,
+  createTowSession,
+  markTowSessionSettled,
+  spendTowSessionStream,
+  towSessionChecksum,
+} from "./session.js";
 
 function open(context = {}) {
   const opened = createTowSession({
@@ -94,6 +107,53 @@ function advanceMoving(session) {
 }
 
 describe("replaying from genesis", () => {
+  it("does not expose an arbitrary retired-v1.3 command reducer", () => {
+    expect(commandApi.resolveRetiredV13TowCommandOnEncounter).toBeUndefined();
+  });
+
+  it("replays the pinned v1.3 paid-skill cadence only under its retired policy", () => {
+    expect(v13ResolveCadenceSession).toMatchObject({
+      rulesetId: "solitaire-tow-v1.3",
+      checksum: "integrity-v1:852f566c2371b384",
+      revision: 7,
+    });
+    expect(verifyTowSession(v13ResolveCadenceSession)).toMatchObject({
+      ok: false,
+      reason: "replay-event-range-mismatch",
+    });
+    expect(verifyRetiredTowV13Session(v13ResolveCadenceSession))
+      .toEqual({ ok: true, reason: null, divergence: null });
+  });
+
+  it.each([
+    ["invalid original checksum", (session) => {
+      session.checksum = "integrity-v1:0000000000000000";
+    }],
+    ["unknown command field", (session) => {
+      session.commands[0].futureAuthority = true;
+      session.checksum = towSessionChecksum(session);
+    }],
+  ])("rejects a v1.3 session with %s before replay normalization", (_label, mutate) => {
+    const session = JSON.parse(JSON.stringify(v13ResolveCadenceSession));
+    mutate(session);
+
+    expect(verifyRetiredTowV13Session(session).ok).toBe(false);
+  });
+
+  it("cannot apply the retired policy to a current-identity session", () => {
+    const disguised = JSON.parse(JSON.stringify(v13ResolveCadenceSession));
+    disguised.rulesetId = TOW_RULESET_ID;
+    disguised.terminalReceipt.rulesetId = TOW_RULESET_ID;
+    disguised.checksum = towSessionChecksum(disguised);
+
+    expect(verifyTowSession(disguised, {
+      resolveEconomy: "per-round-v1.3",
+    })).toMatchObject({
+      ok: false,
+      reason: "replay-event-range-mismatch",
+    });
+  });
+
   it("reproduces the live encounter byte for byte", () => {
     const session = play(open());
     const replayed = replayTowCombatSession(session.genesis, session.commands);

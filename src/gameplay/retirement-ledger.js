@@ -41,6 +41,29 @@ export const RETIREMENT_LEDGER = Object.freeze([
   entry("kernel/tow-actor.js", DESTINATION.KEEP, {
     why: "The live actor model, carrying crit, dodge and a shield pool separate from HP.",
   }),
+  entry("kernel/tow-actor-v12.js", DESTINATION.KEEP, {
+    why: "Frozen verifier-only v1.2 actor semantics required to authenticate retired combat "
+      + "history without routing playable/current combat through historical rules.",
+  }),
+  ...[
+    "ability-targeting-v12.js",
+    "character-abilities-v12.js",
+    "combat-items-v12.js",
+    "combat-policy-v12.js",
+    "commands-v12.js",
+    "encounter-v12.js",
+    "movement-v12.js",
+    "outcomes-v12.js",
+    "replay-v12.js",
+    "ruleset-v12.js",
+    "session-v12.js",
+    "skills-v12.js",
+    "targeting-v12.js",
+    "weapon-techniques-v12.js",
+  ].map((module) => entry(`tow/${module}`, DESTINATION.KEEP, {
+    why: "Frozen verifier-only deployed-v1.2 semantics; retained solely to authenticate "
+      + "historical combat and never registered as a playable runtime.",
+  })),
   entry("kernel/tow-damage.js", DESTINATION.KEEP, {
     why: "The live damage resolver. Per-hit resolution is what makes Steelskin, Thorn and "
       + "Burn behave differently against a flurry than against one heavy blow.",

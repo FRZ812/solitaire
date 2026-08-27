@@ -153,7 +153,7 @@ const UNIQUE = {
   presence: [ // WILLPOWER — sustain your Resolve, endure, and refuse to break
     { t: { resolveRegen: 1 } },          // 5  rare      — force of will fuels you
     { s: { dmgDefer: 0.15 } },           // 10 very-rare — iron will: endure, spread the pain over time
-    { t: { resolveRegen: 1 } },          // 15 epic      — your will keeps fueling you (+1 more/turn)
+    { t: { resolveRegen: 1 } },          // 15 epic      — +1 more after a free basic ability
     { s: { ccDurationReduction: 0.25 } },// 20 legendary — control & debuffs on you wear off faster
     { s: { dmgDefer: 0.15 } },           // 25 mythic    — defer ever more of the brunt
     { s: { maxResolve: 3 } },             // 30 — mortal pinnacle reserves of conviction
@@ -217,7 +217,7 @@ const EFFECT_FMT = {
   lifesteal:        (v) => `heal for ${v}% of the damage you deal`,
   shieldGen:        (v) => `conjure a shield worth ${Math.round(v * 100)}% max HP each turn`,
   magicShieldGen:   (v) => `weave a magic ward worth ${Math.round(v * 100)}% max HP each turn`,
-  resolveRegen:     (v) => `recover +${v} resolve each turn`,
+  resolveRegen:     (v) => `recover +${v} Resolve after a free basic ability`,
   controlDuration:  (v) => `+${Math.round(v * 100)}% control duration`,
   ccDurationReduction:(v) => `incoming stuns, slows & debuffs last ${Math.round(v * 100)}% less`,
   spellSurge:       () => `your abilities cost double Resolve but deal 50% more damage`,

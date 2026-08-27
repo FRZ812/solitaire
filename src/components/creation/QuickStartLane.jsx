@@ -1246,7 +1246,7 @@ export function QuickStartLane({
             {STARTING_ARCHETYPES.map((entry, index) => (
               <button
                 type="button"
-                aria-label={`${entry.name}, ${characterKind(entry)}`}
+                aria-label={`${entry.name}, ${characterKind(entry)}, ${entry.role}, ${entry.attention} attention`}
                 className="character-choice-card"
                 style={{
                   "--character-accent": entry.color,
@@ -1261,7 +1261,9 @@ export function QuickStartLane({
                 <img className="character-choice-card__art" src={combatArtFor(entry)} alt="" />
                 <span className="character-choice-card__shade" />
                 <span className="character-choice-card__copy">
+                  <small>{entry.role}</small>
                   <strong>{entry.name}</strong>
+                  <span>{entry.attention} attention</span>
                 </span>
               </button>
             ))}
@@ -1315,6 +1317,18 @@ export function QuickStartLane({
             <h1>{selected.name}</h1>
             <h2>{selected.descriptor}</h2>
             <p className="character-preview__summary">{selected.summary}</p>
+            <div className="character-preview__combat-readout" aria-label="Starting combat readout">
+              <span>
+                <small>{selected.role}</small>
+                <b>{selected.attention} attention</b>
+              </span>
+              <dl>
+                <div><dt>HP</dt><dd>{selected.baseStats.maxHp}</dd></div>
+                <div><dt>Resolve</dt><dd>{selected.baseStats.resolveMax}</dd></div>
+                <div><dt>ATK</dt><dd>{selected.baseStats.attack}</dd></div>
+                <div><dt>DEF</dt><dd>{selected.baseStats.defense}</dd></div>
+              </dl>
+            </div>
             <div className="character-preview__kit">
               <div
                 className="character-preview__trait"
@@ -1364,21 +1378,34 @@ export function QuickStartLane({
 
             {error ? <p className="character-preview__alert" role="alert">{error}</p> : null}
 
-            <div className="character-preview__actions">
+            <div className={`character-preview__actions${onPractice ? " has-practice" : ""}`}>
               <button type="button" className="character-preview__details-button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(true)}>
                 Details
               </button>
+              {onPractice ? (
+                <button
+                  type="button"
+                  className="character-preview__practice-button"
+                  disabled={busy}
+                  onClick={() => onPractice(normalized, scenarioId, allyGroupId)}
+                >
+                  <span>Practice fight</span>
+                  <small>Nothing saved</small>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="character-preview__begin"
                 disabled={busy}
+                aria-busy={busy ? "true" : undefined}
                 onClick={() => onBegin?.({
                   archetypeId: normalized.archetypeId,
                   keepsakeId: normalized.keepsakeId,
                   preview: true,
                 })}
               >
-                <span>Begin journey</span>
+                <span>{busy ? "Entering Whitemarch…" : "Begin journey"}</span>
+                <small>Commit this campaign</small>
                 <ArrowIcon />
               </button>
             </div>

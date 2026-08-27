@@ -13,17 +13,34 @@ import {
 } from "./character-portrait-roster.js";
 
 describe("complete authored character portrait roster", () => {
-  it("locks the exhaustive 112-identity, 224-variant production boundary", () => {
-    expect(CHARACTER_PORTRAIT_IDENTITIES).toHaveLength(112);
-    expect(new Set(CHARACTER_PORTRAIT_IDENTITIES.map(({ key }) => key)).size).toBe(112);
-    expect(CHARACTER_PORTRAIT_IDENTITIES.every(({ requiredVariants }) => requiredVariants === 2)).toBe(true);
-    expect(CHARACTER_PORTRAIT_IDENTITIES.reduce((sum, entry) => sum + entry.requiredVariants, 0)).toBe(224);
-    expect(Object.keys(CHARACTER_PORTRAIT_IDENTITY_BY_KEY)).toHaveLength(112);
+  it("locks the exhaustive roster while explicitly allowing named missing-art fallbacks", () => {
+    expect(CHARACTER_PORTRAIT_IDENTITIES).toHaveLength(162);
+    expect(new Set(CHARACTER_PORTRAIT_IDENTITIES.map(({ key }) => key)).size).toBe(162);
+    expect(CHARACTER_PORTRAIT_IDENTITIES.reduce((sum, entry) => sum + entry.requiredVariants, 0)).toBe(219);
+    expect(Object.keys(CHARACTER_PORTRAIT_IDENTITY_BY_KEY)).toHaveLength(162);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["wanted:eel"].requiredVariants).toBe(0);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["wanted:crows"].requiredVariants).toBe(0);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["template:velvet-courtier"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["companion:tomkin"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["bonded:rurik"].requiredVariants).toBe(0);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["bonded:loff"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["wanted:redhand"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["wanted:vane"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["codex:heron-archivist-isera"].requiredVariants).toBe(0);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["codex:whitemarch-apothecary-tavia-vane"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["codex:selenyan-moonbough-irelwen"].requiredVariants).toBe(1);
+    expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY["codex:old-root-ritualist-velisse"].requiredVariants).toBe(2);
+    for (const id of ["elske", "garran", "linnet"]) {
+      expect(CHARACTER_PORTRAIT_IDENTITY_BY_KEY[`companion:${id}`].requiredVariants).toBe(0);
+    }
   });
 
   it("covers every stable authored source pool exactly once", () => {
     expect(CHARACTER_PORTRAIT_CATEGORY_COUNTS).toEqual({
       "fixed-codex": 23,
+      "repurposed-codex": 8,
+      "regional-establishment": 10,
+      "portrait-candidate-codex": 29,
       "playable-template": CHARACTER_TEMPLATES.length,
       "tow-archetype": STARTING_ARCHETYPES.length,
       companion: COMPANION_LIST.length,
@@ -43,6 +60,8 @@ describe("complete authored character portrait roster", () => {
     expect(characterPortraitIdentityKey({ id: "wanted-redhand" })).toBe("wanted:redhand");
     expect(characterPortraitIdentityKey({ id: "dragon", kind: "mount" })).toBe("mount:dragon");
     expect(characterPortraitIdentityKey({ id: "demon-king" })).toBe("codex:demon-king");
+    expect(characterPortraitIdentityKey({ id: "whitemarch-deed-keeper-ilyra" })).toBe("codex:whitemarch-deed-keeper-ilyra");
+    expect(characterPortraitIdentityKey({ id: "whitemarch-apothecary-tavia-vane" })).toBe("codex:whitemarch-apothecary-tavia-vane");
     expect(characterPortraitIdentityKey({ id: "wanderer" })).toBeNull();
   });
 });

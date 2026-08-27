@@ -77,7 +77,7 @@ describe("narrator request size contract", () => {
 describe("narrator model routing contract", () => {
   it("executes with the same exact model registry as the client", () => {
     expect(NARRATOR_MODEL_IDS).toEqual(NARRATOR_MODELS.map((model) => model.id));
-    expect(DEFAULT_MODEL).toBe("deepseek/deepseek-v4-flash-0731");
+    expect(DEFAULT_MODEL).toBe("z-ai/glm-5.3-flash");
     for (const retired of [
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
@@ -124,6 +124,7 @@ describe("narrator model routing contract", () => {
     expect(selectedServiceTier("openai/gpt-5.6-luna")).toBeUndefined();
     expect(selectedServiceTier("openai/gpt-5.6-terra")).toBeUndefined();
     expect(selectedServiceTier("deepseek/deepseek-v4-flash-0731")).toBeUndefined();
+    expect(selectedServiceTier("z-ai/glm-5.3-flash")).toBeUndefined();
   });
 
   it("executes the exact manual and automatic OpenRouter request bodies", async () => {
@@ -273,12 +274,26 @@ describe("narrator application trust boundary", () => {
     expect(appSource).not.toContain("const narratorEncounter = travelBeat.start_combat");
     expect(appSource).toContain("Time is already settled; emit minutes_passed = 0.");
     expect(appSource).not.toContain("Use minutes_passed = ${legMins}.");
+    expect(appSource).not.toContain("Use minutes_passed = ${mins}.");
+    expect(appSource).not.toContain("Use minutes_passed = 5.");
     expect(appSource).toMatch(/applyCompiledNarratorPresentation\(\s*liveStateRef\.current,\s*travelBeat,\s*applyTravelNarrationPresentation,\s*stateWithPlayer,/);
     expect(appSource).toContain("const rewritePolicyOptions = checkpointPolicyOptions(cp)");
     expect(appSource).toContain("beginNarratorRequest(base)");
     expect(appSource).toContain("request.controller.signal, rewritePolicyOptions, cp.message");
     expect(appSource).not.toContain("beat._userMsg = cp.message");
     expect(appSource).toContain("policyOptions: rewritePolicyOptions");
+  });
+
+  it("settles the fixed scry clock locally before requesting presentation-only narration", () => {
+    expect(appSource).toContain("applyEngineBeat(baseState, { minutes_passed: 10 })");
+    expect(appSource).toContain("Scrying time is already settled; emit minutes_passed = 0.");
+    expect(appSource).not.toContain("Use minutes_passed = 10.");
+  });
+
+  it("settles corpse-search time locally and does not ask narration to invent movement or combat", () => {
+    expect(appSource).toContain("applyEngineBeat(looted, { minutes_passed: 5 })");
+    expect(appSource).toContain("Search time is already settled; emit minutes_passed = 0.");
+    expect(appSource).not.toContain("location_update, conditions, start_combat with guards, or tile_move");
   });
 
   it("issues route capabilities at every specialized narrator call site", () => {
@@ -304,7 +319,7 @@ describe("narrator application trust boundary", () => {
     // The engine settles the fight before a word of it is narrated. The settlement moved
     // from applyCombatResult to the ruleset-routed Tower settlement when the deck engine
     // retired; the invariant — settle first, narrate second — is unchanged.
-    expect(appSource).toContain("settleTowRuntimeEncounter(state, session,");
+    expect(appSource).toContain("settleTowRuntimeEncounter(state, session);");
     // Permanent death is read off the terminal receipt, which read it off the admission
     // recorded before the first blow. It is never re-derived at settlement from how the
     // fight happened to go — that would mean the answer to "can I die here" only existed
@@ -364,9 +379,10 @@ describe("narrator party-removal contract", () => {
   // Companion fate used to be something narration could author: the corpus taught the
   // model to emit party_removals whenever a story beat killed someone, which made the
   // narrator an authority over roster state. It is engine-owned now — the schema keeps
-  // the field, but the model may only fill it from a fate the engine already settled.
-  it("keeps the removal field in the output schema", () => {
-    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"party_removals": null OR [{"id":"current-party-member-id","reason":"dead|left"}]');
+  // the field, but the provider-facing schema keeps it neutral because combat and
+  // departure reducers already own every production removal path.
+  it("keeps the engine-owned removal field neutral in the output schema", () => {
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"party_removals": null,');
   });
 
   it("forbids narration from authoring a companion's death or departure", () => {
@@ -375,7 +391,7 @@ describe("narrator party-removal contract", () => {
       "never declare a companion or mount dead, permanently departed, or removed merely through narration",
     );
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain(
-      "party_removals remains null unless the current [NARRATOR CONTRACT] authorizes an exact canonical id",
+      "party_removals remains null; combat and confirmed departure paths update the roster locally",
     );
   });
 });
@@ -384,7 +400,7 @@ describe("narrator progression contract", () => {
   it("uses numeric racial and profession allocation without character-tier labels", () => {
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain("racial_levels");
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain("profession_plan");
-    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"progression_focus": null OR "racial"');
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"progression_focus": null,');
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain("up to 30 RACIAL EVOLUTION levels plus up to 70 combined PROFESSION levels");
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain("Never invent or emit durable path ids/ranks");
     expect(NARRATOR_INSTRUCTION_CORPUS).not.toContain("WORLD POWER BANDS");

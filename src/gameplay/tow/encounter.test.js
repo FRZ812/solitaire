@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyStatus, statusCount } from "../kernel/status-stack.js";
 import {
   attemptRetreat,
+  combatSkillLegality,
   createTowEncounter,
   declaredIntents,
   endTurn,
@@ -236,6 +237,31 @@ describe("using skills", () => {
     expect(result.state.build.skills.find((s) => s.id === "block").usesRemaining).toBe(29);
   });
 
+  it("does not let callers select retired Resolve semantics through current reducers", () => {
+    let state = start({
+      player: { resolve: 8, resolveMax: 8, resolveRegen: 1 },
+      build: { skills: ["strike", "block"] },
+    });
+    state = useSkill(
+      state,
+      "block",
+      null,
+      state.playerId,
+      null,
+      { resolveEconomy: "per-round-v1.3" },
+    ).state;
+    state = endTurn(state, { resolveEconomy: "per-round-v1.3" }).state;
+
+    expect(useSkill(
+      state,
+      "block",
+      null,
+      state.playerId,
+      null,
+      { resolveEconomy: "per-round-v1.3" },
+    )).toMatchObject({ ok: false, reason: "basic-recovery-required" });
+  });
+
   it("normalizes current abilities to Resolve and spends the shared pool", () => {
     const state = start({
       player: { resolve: 8, resolveMax: 8 },
@@ -264,6 +290,35 @@ describe("using skills", () => {
     const strike = useSkill(state, "strike");
     expect(strike.ok).toBe(true);
     expect(strike.state.actors["arctic-knight"].resolve).toBe(5);
+  });
+
+  it("requires a free basic after Mortal Blow and its forced skipped turn", () => {
+    let state = start({
+      player: { resolve: 8, resolveMax: 8, resolveRegen: 1 },
+      build: { skills: ["arctic-strike", "arctic-mortal-blow"] },
+    });
+    const mortal = useSkill(state, "arctic-mortal-blow");
+    expect(mortal.ok).toBe(true);
+    state = endTurn(mortal.state).state;
+    expect(combatSkillLegality(state, "arctic-mortal-blow")).toMatchObject({
+      ok: false,
+      reason: "action-nullified",
+    });
+    for (let skipped = 0; skipped < 4; skipped += 1) {
+      if (combatSkillLegality(state, "arctic-strike").reason !== "action-nullified") break;
+      const skippedTurn = skipTurn(state, state.playerId);
+      expect(skippedTurn.ok).toBe(true);
+      state = endTurn(skippedTurn.state).state;
+    }
+
+    expect(combatSkillLegality(state, "arctic-mortal-blow")).toEqual({
+      ok: false,
+      reason: "basic-recovery-required",
+    });
+    expect(combatSkillLegality(state, "arctic-strike")).toMatchObject({ ok: true });
+    state = useSkill(state, "arctic-strike").state;
+    state = endTurn(state).state;
+    expect(combatSkillLegality(state, "arctic-mortal-blow")).toMatchObject({ ok: true });
   });
 
   it("keeps source-scale direct damage unchanged against peer health pools", () => {
@@ -462,20 +517,34 @@ describe("retreat", () => {
 });
 
 describe("ending the turn", () => {
-  it("regenerates each living current actor's snapshotted Resolve at round open", () => {
-    const result = endTurn(start({
+  it("regenerates Resolve only for an actor whose last skill that round was free", () => {
+    const used = useSkill(start({
       player: { resolve: 2, resolveMax: 8, resolveRegen: 2 },
       enemies: [foe({ resolve: 1, resolveMax: 8, resolveRegen: 3 })],
-    }));
+    }), "strike");
+    const result = endTurn(used.state);
 
     expect(result.ok).toBe(true);
     expect(result.state.actors["arctic-knight"].resolve).toBe(4);
-    expect(result.state.actors.gatekeeper.resolve).toBe(4);
+    expect(result.state.actors.gatekeeper.resolve).toBe(1);
     expect(result.state.events.filter((event) => event.type === "resolve-regenerated"))
       .toEqual([
         expect.objectContaining({ actorId: "arctic-knight", amount: 2, before: 2, after: 4 }),
-        expect.objectContaining({ actorId: "gatekeeper", amount: 3, before: 1, after: 4 }),
       ]);
+  });
+
+  it("does not regenerate Resolve after a paid skill", () => {
+    const used = useSkill(start({
+      player: { resolve: 4, resolveMax: 8, resolveRegen: 2 },
+    }), "block");
+    expect(used.state.actors["arctic-knight"].resolve).toBe(3);
+
+    const result = endTurn(used.state);
+    expect(result.ok).toBe(true);
+    expect(result.state.actors["arctic-knight"].resolve).toBe(3);
+    expect(result.state.events.some((event) => (
+      event.type === "resolve-regenerated" && event.actorId === "arctic-knight"
+    ))).toBe(false);
   });
 
   it("lets the enemy answer and advances the round", () => {
@@ -944,7 +1013,7 @@ describe("moving formation round boundary", () => {
         resolve: 20,
         maxHp: 500,
         archetypeId: "ranger",
-        build: { traits: {}, skills: ["demon-kick"], runes: [] },
+        build: { traits: {}, skills: ["demon-kick", "arctic-strike"], runes: [] },
         ...enemyOverrides,
       })],
       build: { traits: {}, skills: ["clocktower-grenade-toss"], runes: [] },
@@ -958,7 +1027,13 @@ describe("moving formation round boundary", () => {
         enemy: [null, "gatekeeper", null, null, null, null, null, null, null],
       },
       intentSchedules: {
-        gatekeeper: { id: "kick-only", steps: [{ id: "kick", attackIds: ["demon-kick"] }] },
+        gatekeeper: {
+          id: "kick-and-recover",
+          steps: [
+            { id: "kick", attackIds: ["demon-kick"] },
+            { id: "recover", attackIds: ["arctic-strike"] },
+          ],
+        },
       },
     });
   }

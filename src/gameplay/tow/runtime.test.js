@@ -70,8 +70,8 @@ function sessionInput(overrides = {}) {
   };
 }
 
-function openSession() {
-  const opened = createTowSession(sessionInput());
+function openSession(overrides = {}) {
+  const opened = createTowSession(sessionInput(overrides));
   if (!opened.ok) throw new Error(opened.reason);
   return opened.session;
 }
@@ -87,8 +87,8 @@ function strikeInput(session, id = "runtime-strike") {
   };
 }
 
-function terminalSession() {
-  const session = openSession();
+function terminalSession(overrides = {}) {
+  const session = openSession(overrides);
   const result = dispatchTowCommand(session, strikeInput(session));
   if (!result.ok || result.session.status !== "terminal") {
     throw new Error(result.reason || "fixture-did-not-end-fight");
@@ -157,7 +157,7 @@ describe("Tower runtime registration", () => {
     const retiredIdentity = { version: 1, rulesetId: "solitaire-tow-v1.1" };
     const retiredSession = { ...openSession(), ...retiredIdentity };
 
-    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.3");
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.4");
     expect(supportsTowRuntime(retiredIdentity)).toBe(false);
     expect(decodeTowRuntimeSession(retiredSession)).toEqual({
       ok: false,
@@ -170,7 +170,20 @@ describe("Tower runtime registration", () => {
     const retiredIdentity = { version: 1, rulesetId: "solitaire-tow-v1.2" };
     const retiredSession = { ...openSession(), ...retiredIdentity };
 
-    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.3");
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.4");
+    expect(supportsTowRuntime(retiredIdentity)).toBe(false);
+    expect(decodeTowRuntimeSession(retiredSession)).toEqual({
+      ok: false,
+      reason: TOW_RUNTIME_REASONS.legacyRuntime,
+      session: null,
+    });
+  });
+
+  it("retires v1.3 before free-basic Resolve recovery becomes current", () => {
+    const retiredIdentity = { version: 1, rulesetId: "solitaire-tow-v1.3" };
+    const retiredSession = { ...openSession(), ...retiredIdentity };
+
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.4");
     expect(supportsTowRuntime(retiredIdentity)).toBe(false);
     expect(decodeTowRuntimeSession(retiredSession)).toEqual({
       ok: false,
@@ -299,6 +312,96 @@ describe("v1 runtime compatibility", () => {
       reason: "replay-state-divergence",
       session: null,
     });
+    expect(encodeTowRuntimeSession(tampered)).toEqual({
+      ok: false,
+      reason: "replay-state-divergence",
+      payload: null,
+    });
+  });
+
+  it("rejects a replay-valid practice victory before campaign settlement", () => {
+    const terminal = terminalSession({ mode: "practice" });
+    const sealed = sealTowRuntimeTerminalReceipt(terminal);
+    expect(sealed.ok).toBe(true);
+    expect(sealed.session.mode).toBe("practice");
+    expect(verifyTowRuntimeSession(sealed.session).ok).toBe(true);
+    const state = makeInitialState();
+    const before = JSON.stringify(state);
+
+    expect(settleTowRuntimeEncounter(state, sealed.session, {
+      encounterId: sealed.session.sessionId,
+    })).toEqual({
+      ok: false,
+      reason: "campaign-session-required",
+      state,
+      receipt: null,
+      duplicate: false,
+    });
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("rejects practice authority relabeled as campaign even after recomputing its checksum", () => {
+    const sealed = sealTowRuntimeTerminalReceipt(terminalSession({ mode: "practice" }));
+    const forged = JSON.parse(JSON.stringify(sealed.session));
+    forged.mode = "campaign";
+    forged.checksum = towSessionChecksum(forged);
+    const state = makeInitialState();
+    const before = JSON.stringify(state);
+
+    expect(verifyTowRuntimeSession(forged).ok).toBe(false);
+    expect(settleTowRuntimeEncounter(state, forged)).toMatchObject({
+      ok: false,
+      state,
+      receipt: null,
+      duplicate: false,
+    });
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("derives settlement identity from the sealed session and deduplicates caller aliases", () => {
+    const sealed = sealTowRuntimeTerminalReceipt(terminalSession()).session;
+    const state = makeInitialState();
+
+    const first = settleTowRuntimeEncounter(state, sealed, { encounterId: "forged-alias-a" });
+    expect(first).toMatchObject({
+      ok: true,
+      receipt: { sessionId: sealed.sessionId },
+      duplicate: false,
+    });
+    const second = settleTowRuntimeEncounter(first.state, sealed, { encounterId: "forged-alias-b" });
+    expect(second).toMatchObject({
+      ok: false,
+      reason: "tow-encounter-already-settled",
+      receipt: { sessionId: sealed.sessionId },
+      duplicate: true,
+    });
+    expect(second.state).toBe(first.state);
+  });
+
+  it("refuses replay-divergent Resolve before settlement changes campaign state", () => {
+    const tampered = JSON.parse(JSON.stringify(terminalSession({
+      player: {
+        ...sessionInput().player,
+        resolve: 6,
+        resolveMax: 6,
+        resolveRegen: 1,
+      },
+    })));
+    tampered.encounter.actors.wanderer.resolve = 5;
+    tampered.checksum = towSessionChecksum(tampered);
+    expect(decodeTowSession(tampered).ok).toBe(true);
+    const state = makeInitialState();
+    const before = JSON.stringify(state);
+
+    expect(settleTowRuntimeEncounter(state, tampered, { encounterId: tampered.sessionId }))
+      .toEqual({
+        ok: false,
+        reason: "replay-state-divergence",
+        state,
+        receipt: null,
+        duplicate: false,
+      });
+    expect(JSON.stringify(state)).toBe(before);
   });
 
   it("dispatches low-level and App-facing player commands exactly as v1", () => {

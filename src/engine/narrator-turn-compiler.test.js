@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readPendingCombatDirective } from "../gameplay/production/pending-directive.js";
 import { compileNarratorCandidate } from "./narrator-turn-compiler.js";
 
 function candidate(overrides = {}) {
@@ -108,7 +109,7 @@ describe("compileNarratorCandidate", () => {
           target_id: "mara", method: "execute", outcome: "killed", surprise: null,
         },
         start_combat: null,
-        story: [{ type: "beat", text: "Mara Vale dies." }],
+        story: [{ type: "beat", actorId: "mara", text: "Mara Vale dies." }],
       }),
     });
   });
@@ -294,6 +295,80 @@ describe("compileNarratorCandidate", () => {
     });
   });
 
+  it.each([
+    ["an unsupported initiator", { initiator: "narrator" }],
+    ["an expanded foe count beyond the handoff limit", { foes: [{ npc_id: "mara", kind: "npc", name: "Mara Vale", tier: "rare", count: 17 }] }],
+    ["an unknown foe tier", { foes: [{ npc_id: "mara", kind: "npc", name: "Mara Vale", tier: "cosmic", count: 1 }] }],
+    ["an oversized note", { note: "x".repeat(2_001) }],
+  ])("rejects start_combat with %s before minting a compiled turn", (_label, override) => {
+    const startCombat = {
+      initiator: "player",
+      surprise: false,
+      lethal: true,
+      foes: [{ npc_id: "mara", kind: "npc", name: "Mara Vale", tier: "rare", count: 1 }],
+      note: "Blades are drawn.",
+      ...override,
+    };
+    const result = compileNarratorCandidate({
+      candidate: candidate({ start_combat: startCombat }),
+      projection,
+      turnPolicy: { id: "loot-fallout", allowedEffects: ["start_combat"] },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      violations: expect.arrayContaining([
+        expect.objectContaining({ code: "COMBAT_HANDOFF", path: "/start_combat" }),
+      ]),
+    });
+  });
+
+  it("guarantees every compiled start_combat value is accepted by the persisted handoff boundary", () => {
+    const result = compileNarratorCandidate({
+      candidate: candidate({
+        start_combat: {
+          initiator: "player",
+          surprise: false,
+          lethal: true,
+          foes: [{ npc_id: "mara", kind: "npc", name: "Mara Vale", tier: "rare", count: 1 }],
+          note: "Blades are drawn.",
+        },
+      }),
+      projection,
+      turnPolicy: { id: "loot-fallout", allowedEffects: ["start_combat"] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(readPendingCombatDirective(result.turn.start_combat)).toMatchObject({ ok: true });
+  });
+
+  it("rejects owner-refused mechanics before story or raw history can be branded for application", () => {
+    const result = compileNarratorCandidate({
+      candidate: candidate({
+        memory_updates: [{ id: "mara", adds: ["a", "b", "c", "d", "e"] }],
+      }),
+      projection,
+      turnPolicy: { id: "general-action", allowedEffects: ["memory_updates"] },
+      state: {
+        character: { vitality: 10, vitalityMax: 10, resolve: 5, resolveMax: 5 },
+        party: [],
+        world: { codex: { characters: projection.characters, items: {} } },
+      },
+      metadata: { raw: "provider output that must not persist" },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      violations: expect.arrayContaining([
+        expect.objectContaining({
+          code: "OWNER_REFUSAL",
+          path: "/memory_updates",
+          message: expect.stringContaining("too-many-memories"),
+        }),
+      ]),
+    });
+  });
+
   it("derives a present NPC speaker's display identity from the authoritative projection", () => {
     const result = compileNarratorCandidate({ candidate: candidate(), projection, turnPolicy: presentationOnly });
 
@@ -304,6 +379,32 @@ describe("compileNarratorCandidate", () => {
       }),
     });
     expect(Object.isFrozen(result.turn)).toBe(true);
+  });
+
+  it("derives a closed character action's portrait actor from the authoritative projection", () => {
+    const result = compileNarratorCandidate({
+      candidate: candidate({
+        story: [{
+          type: "beat",
+          cue: {
+            kind: "character",
+            actor_id: "mara",
+            action: "waits",
+            target_id: null,
+            manner: "quietly",
+          },
+        }],
+      }),
+      projection,
+      turnPolicy: presentationOnly,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      turn: expect.objectContaining({
+        story: [{ type: "beat", actorId: "mara", text: "Mara Vale waits quietly." }],
+      }),
+    });
   });
 
   it("does not turn an engine-authorized remote scry target into a present dialogue speaker", () => {
@@ -358,7 +459,7 @@ describe("compileNarratorCandidate", () => {
     expect(result).toEqual({
       ok: true,
       turn: expect.objectContaining({
-        story: [{ type: "beat", text: "Remote Rook waits quietly." }],
+        story: [{ type: "beat", actorId: "remote-rook", text: "Remote Rook waits quietly." }],
       }),
     });
   });

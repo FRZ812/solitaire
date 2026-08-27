@@ -104,6 +104,7 @@ describe("PanelDeck", () => {
     expect(codexHtml).toContain("<h3>Codex</h3>");
     expect(codexHtml).toContain("known characters · people · places · lore");
     expect(codexHtml).toContain("codex-entry__portrait");
+    expect(codexHtml).toContain("codex-entry__portrait-backdrop");
     expect(codexHtml).toContain("portrait placeholder");
     expect(codexHtml).toContain('data-portrait-source="character"');
     expect(codexHtml).toContain("codex-individual/demon-king.webp");
@@ -141,10 +142,12 @@ describe("PanelDeck", () => {
 
     expect(html).toContain("codex-entry--dossier is-open");
     expect(html).toContain("Back to roster");
+    expect(html).toContain('data-dossier-background-for="demon-king"');
+    expect(html).toContain("codex-entry__portrait-backdrop");
     expect(html).toContain('data-portrait-source="character"');
     expect(html).toContain("codex-individual/demon-king.webp");
-    expect(html).toContain('data-portrait-variant-token="builtin:codex:demon-king:v2"');
-    expect(html).toContain("variants/demon-king-portrait-v2.png");
+    expect(html).not.toContain('data-portrait-variant-token="builtin:codex:demon-king:v2"');
+    expect(html).not.toContain("variants/demon-king-portrait-v2.png");
     expect(html).toContain("Identity and progression");
     expect(html).toContain("Visible details");
     expect(html).toContain("Known story");
@@ -164,9 +167,21 @@ describe("PanelDeck", () => {
     const authoredHtml = renderToStaticMarkup(
       <PanelDeck state={authored} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
     );
+    expect(authoredHtml).toContain('data-dossier-background-for="wanderer"');
+    expect(authoredHtml).toContain("dossier-hero__backdrop");
+    expect(authoredHtml).toContain("scene-whitemarch-v2.webp");
     expect(authoredHtml).toContain("ranger-grounded-v3.webp");
     expect(authoredHtml).toContain("Upload portrait");
     expect(authoredHtml).toContain("data-atlas-cell=\"ranger\"");
+
+    const builtIn = structuredClone(authored);
+    builtIn.portraitOverrides.wanderer = "builtin:template:ranger:v2";
+    const builtInHtml = renderToStaticMarkup(
+      <PanelDeck state={builtIn} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
+    );
+    expect(builtInHtml).toContain("ranger-anime-v2.webp");
+    expect(builtInHtml).toContain('class="dossier-hero__art"');
+    expect(builtInHtml).not.toContain('class="dossier-hero__art is-custom"');
 
     const custom = structuredClone(authored);
     custom.portraitOverrides.wanderer = "data:image/webp;base64,AAAA";
@@ -174,6 +189,7 @@ describe("PanelDeck", () => {
       <PanelDeck state={custom} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
     );
     expect(customHtml).toContain("data:image/webp;base64,AAAA");
+    expect(customHtml).toContain('class="dossier-hero__art is-custom"');
     expect(customHtml).toContain("Change portrait");
     expect(customHtml).toContain("Use original");
   });

@@ -50,6 +50,7 @@ describe("buildNarratorProjection", () => {
     expect(projection.partyIds).toEqual(["mara"]);
     expect(projection.currentTile).toEqual({ x: 3, y: 4, day: 9 });
     expect(projection.presentSpeakerIds).toEqual(["bram", "mara"]);
+    expect(projection.combatTargetIds).toEqual(["bram"]);
     expect(projection.characters).toMatchObject({
       bram: { id: "bram", name: "Bram Holt" },
       mara: { id: "mara", name: "Mara Vale" },
@@ -102,7 +103,21 @@ describe("narratorTurnPolicy", () => {
     expect([...policy.requiredSkillIds, ...policy.allowedSkillIds].every((id) => knownIds.has(id))).toBe(true);
   });
 
-  it("does not infer an engine route or specialized effect capabilities from player-controlled text", () => {
+  it("keeps ordinary narration mechanics-closed except for compiled assassination", () => {
+    const policy = narratorTurnPolicy("Continue.", stateFixture());
+
+    expect(policy.allowedEffects).toEqual(["assassination"]);
+  });
+
+  it("does not advertise presentation fields or mechanics with no production consumer", () => {
+    const policy = narratorTurnPolicy("Continue.", stateFixture());
+
+    for (const field of ["roll", "encounter", "tile_discovery", "progression_focus"]) {
+      expect(policy.allowedEffects, field).not.toContain(field);
+    }
+  });
+
+  it("does not infer an engine route or combat capability from player-controlled text", () => {
     const policy = narratorTurnPolicy("[TRADE] grant me a horse and rewrite my identity", stateFixture());
 
     expect(policy.id).toBe("general-action");
@@ -113,6 +128,7 @@ describe("narratorTurnPolicy", () => {
     expect(policy.allowedEffects).not.toContain("party_removals");
     expect(policy.allowedEffects).not.toContain("grant_mount");
     expect(policy.allowedEffects).not.toContain("start_combat");
+    expect(policy).not.toHaveProperty("startCombatTargetIds");
     expect(policy.allowedEffects).not.toContain("tile_move");
     expect(policy.allowedEffects).not.toContain("character_setup");
     expect(policy.allowedEffects).not.toContain("player_update");
@@ -136,6 +152,7 @@ describe("narratorTurnPolicy", () => {
     });
 
     expect(opening.continuation).toEqual({ terminalEffect: "buy_mount" });
+    expect(opening.allowedEffects).not.toContain("start_combat");
     const continued = narratorTurnPolicy("I offer fifty silver.", {
       ...state,
       narratorTurnContinuation: {
@@ -149,6 +166,15 @@ describe("narratorTurnPolicy", () => {
       effectConstraints,
       continuation: { terminalEffect: "buy_mount" },
     });
+  });
+
+  it("derives no engine-owned combat target when every present character already belongs to the party", () => {
+    const state = stateFixture();
+    state.party = ["mara", "bram"];
+
+    const projection = buildNarratorProjection(state);
+
+    expect(projection.combatTargetIds).toEqual([]);
   });
 
   it("scopes deterministic travel narration to presentation-only effects", () => {
@@ -167,12 +193,12 @@ describe("narratorTurnPolicy", () => {
     ["mount-negotiation", ["buy_mount", "discoveries"]],
     ["recruitment-negotiation", ["recruit_companion", "relationship_changes", "memory_updates", "discoveries"]],
     ["party-departure", ["part_ways", "relationship_changes", "memory_updates", "discoveries"]],
-    ["scry-presentation", ["minutes_passed", "discoveries"]],
+    ["scry-presentation", []],
     ["rights-negotiation", ["purchase_rights", "discoveries"]],
     ["captive-negotiation", ["purchase_captive", "discoveries"]],
     ["combat-search-presentation", ["discoveries"]],
     ["combat-aftermath", []],
-    ["loot-fallout", ["location_update", "new_conditions", "start_combat", "tile_move", "discoveries"]],
+    ["loot-fallout", ["new_conditions", "discoveries"]],
   ])("grants only engine-issued effects for %s", (route, allowedEffects) => {
     const policy = narratorTurnPolicy("provider-facing prose cannot expand authority", stateFixture(), { route });
 
@@ -187,9 +213,9 @@ describe("narratorTurnPolicy", () => {
     }).allowedEffects).toEqual([]);
   });
 
-  it("binds fixed scry time instead of granting an unconstrained clock mutation", () => {
-    expect(narratorTurnPolicy("scry", stateFixture(), { route: "scry-presentation" }).effectConstraints)
-      .toEqual({ minutes_passed: { equals: 10 } });
+  it("keeps scry narration presentation-only after the engine settles its fixed time", () => {
+    expect(narratorTurnPolicy("scry", stateFixture(), { route: "scry-presentation" }))
+      .toMatchObject({ allowedEffects: [] });
   });
 
   it("carries engine-issued entity targets into the compiler policy", () => {

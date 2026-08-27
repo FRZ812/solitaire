@@ -48,6 +48,26 @@ function proficiencyGains(encounter, proficiencyId) {
   return gains;
 }
 
+export function deriveTowSettlementReceipt(state, encounter, context = {}) {
+  const { encounterId, proficiencyId = null } = context;
+  const player = encounter.actors[encounter.playerId];
+  const gains = usesLegacyCharacterProgression(state.character)
+    ? proficiencyGains(encounter, proficiencyId)
+    : {};
+  return {
+    version: 1,
+    sessionId: encounterId,
+    outcome: encounter.phase,
+    rounds: encounter.round,
+    sequence: encounter.sequence,
+    playerHp: player.hp,
+    playerResolve: Number.isFinite(player.resolve) ? player.resolve : null,
+    combatItemsSpent: spentCombatItems(encounter, encounter.playerId),
+    fallen: encounter.enemyIds.filter((enemyId) => encounter.actors[enemyId].hp <= 0).length,
+    proficiencyGains: gains,
+  };
+}
+
 /**
  * Settle a terminal Tower of Winter encounter into campaign state.
  *
@@ -114,7 +134,8 @@ export function settleTowEncounter(state, encounter, context = {}) {
     character.resolve = Math.max(0, Math.min(character.resolveMax, Math.round(player.resolve)));
     character.towResolveMaxBonus = Math.min(character.resolveMax, appliedMaxBonus);
   }
-  const combatItemsSpent = spentCombatItems(encounter, encounter.playerId);
+  const receiptData = deriveTowSettlementReceipt(state, encounter, context);
+  const combatItemsSpent = receiptData.combatItemsSpent;
   character.inventory = settleCombatItems(character.inventory, combatItemsSpent);
 
   if (encounter.phase === "defeat") {
@@ -129,7 +150,7 @@ export function settleTowEncounter(state, encounter, context = {}) {
   // The Tower archetype model owns its combat growth. Feeding these encounters back into
   // the retired proficiency/level ledger would create a second, invisible advancement
   // system even though the old progression screen is no longer mounted.
-  const gains = usesLegacyProgression ? proficiencyGains(encounter, proficiencyId) : {};
+  const gains = receiptData.proficiencyGains;
   character.proficiencies = { ...(character.proficiencies || {}) };
   for (const [id, amount] of Object.entries(gains)) {
     character.proficiencies[id] = (character.proficiencies[id] || 0) + amount;
@@ -207,18 +228,7 @@ export function settleTowEncounter(state, encounter, context = {}) {
     world = { ...state.world, codex: { ...state.world.codex, characters } };
   }
 
-  const receipt = ownedReceipt({
-    version: 1,
-    sessionId: encounterId,
-    outcome: encounter.phase,
-    rounds: encounter.round,
-    sequence: encounter.sequence,
-    playerHp: player.hp,
-    playerResolve: Number.isFinite(player.resolve) ? player.resolve : null,
-    combatItemsSpent,
-    fallen: fallen.length,
-    proficiencyGains: gains,
-  });
+  const receipt = ownedReceipt(receiptData);
 
   const content = encounter.phase === "victory"
     ? `${fallen.length === 1 ? fallen[0] : `${fallen.length} foes`} down. The fight is over.`
@@ -229,6 +239,7 @@ export function settleTowEncounter(state, encounter, context = {}) {
   return {
     ok: true,
     reason: null,
+    duplicate: false,
     receipt,
     state: {
       ...state,

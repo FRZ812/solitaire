@@ -57,9 +57,10 @@ function compileTurn(
     candidate: candidate(projection, overrides),
     projection,
     turnPolicy,
+    state,
     metadata,
   });
-  expect(result.ok).toBe(true);
+  expect(result.ok, JSON.stringify(result.violations || [])).toBe(true);
   return result.turn;
 }
 
@@ -120,6 +121,34 @@ describe("compiled narrator turn application", () => {
       { role: "user", content: "settled aftermath" },
       { role: "assistant", content: "{}" },
     ]);
+  });
+
+  it("keeps a closed character action's portrait actor on the story-only path", () => {
+    const state = makeInitialState();
+    const turn = compileTurn(
+      state,
+      { id: "presentation", allowedEffects: [] },
+      {
+        story: [{
+          type: "beat",
+          cue: {
+            kind: "character",
+            actor_id: "threshold-voice",
+            action: "waits",
+            target_id: null,
+            manner: "quietly",
+          },
+        }],
+      },
+    );
+
+    const next = applyCompiledNarratorStoryPresentation(state, turn);
+
+    expect(next.beats.at(-1)).toMatchObject({
+      type: "narration",
+      actorId: "threshold-voice",
+      content: "The Threshold Voice waits quietly.",
+    });
   });
 
   it("deep-freezes compiled output before application", () => {
@@ -242,6 +271,30 @@ describe("compiled narrator turn application", () => {
     );
     expect(acceptedState.party).toContain("horse");
     expect(acceptedState).not.toHaveProperty("narratorTurnContinuation");
+  });
+
+  it("applies effects admitted by the compiler-bound route instead of a stale second allowlist", () => {
+    const state = makeInitialState();
+    const policy = { id: "loot-fallout", allowedEffects: ["discoveries"] };
+    const turn = compileTurn(state, policy, {
+      discoveries: {
+        characters: [],
+        races: [{
+          id: "river-folk",
+          name: "River Folk",
+          appearance: "Reed-cloaked travelers",
+          description: "People of the lower river.",
+        }],
+        items: [],
+        spells: [],
+        skills: [],
+      },
+    });
+
+    const next = applyCompiledNarratorTurn(state, turn);
+
+    expect(next).not.toHaveProperty("lastIntentRefusals");
+    expect(next.world.codex.races["river-folk"]).toMatchObject({ name: "River Folk" });
   });
 
   it("refuses a memory the model tried to author in its own response body", () => {

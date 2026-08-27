@@ -135,9 +135,12 @@ describe("the simple grid-to-preview flow", () => {
     expect(mounted.querySelectorAll(".character-choice-card img")).toHaveLength(STARTING_ARCHETYPES.length);
     expect(mounted.querySelectorAll(".character-choice-card__copy strong")).toHaveLength(STARTING_ARCHETYPES.length);
     STARTING_ARCHETYPES.forEach((entry, index) => {
+      const card = mounted.querySelectorAll(".character-choice-card")[index];
       const portraitSrc = mounted.querySelectorAll(".character-choice-card__art")[index].getAttribute("src");
       expect(portraitSrc).toBe(resolvePlayerCombatCutout(entry.character.portraitKey, entry.character));
       expect(portraitSrc).toMatch(new RegExp(`${expectedPortraitFiles[index].replace(".", "\\.")}$`));
+      expect(card.getAttribute("aria-label")).toContain(entry.role);
+      expect(card.getAttribute("aria-label")).toContain(`${entry.attention} attention`);
     });
     expect(mounted.querySelector(".character-preview")).toBeNull();
     expect(mounted.querySelector("input")).toBeNull();
@@ -173,6 +176,40 @@ describe("the simple grid-to-preview flow", () => {
     expect(preview.textContent).not.toContain("Starting trait");
     expect(preview.textContent).not.toMatch(/\bRank\s+\d/);
     expect(mounted.textContent).not.toContain("Starting equipment");
+  });
+
+  it("surfaces the live combat readout and launches disposable practice without opening details", async () => {
+    const asked = [];
+    const selected = STARTING_ARCHETYPES[2];
+    const mounted = await render(
+      <ControlledStart onPractice={(draft, scenarioId, allyGroupId) => (
+        asked.push([draft, scenarioId, allyGroupId])
+      )} />,
+    );
+
+    const card = mounted.querySelectorAll(".character-choice-card")[2];
+    expect(card.textContent).toContain(selected.role);
+    expect(card.textContent).toContain(`${selected.attention} attention`);
+    await click(card);
+
+    const readout = mounted.querySelector(".character-preview__combat-readout");
+    expect(readout).toBeTruthy();
+    expect(readout.textContent).toContain(`HP${selected.baseStats.maxHp}`);
+    expect(readout.textContent).toContain(`Resolve${selected.baseStats.resolveMax}`);
+    expect(readout.textContent).toContain(`ATK${selected.baseStats.attack}`);
+    expect(readout.textContent).toContain(`DEF${selected.baseStats.defense}`);
+    expect(mounted.querySelector(".character-details")).toBeNull();
+
+    await click(mounted.querySelector(".character-preview__practice-button"));
+    expect(asked).toEqual([[
+      {
+        archetypeId: selected.id,
+        keepsakeId: DEFAULT_STARTING_KEEPSAKE_ID,
+        preview: true,
+      },
+      PRACTICE_SCENARIOS[0].id,
+      DEFAULT_PRACTICE_ALLY_GROUP_ID,
+    ]]);
   });
 
   it("changes the whole authored identity from the side-scrolling carousel", async () => {

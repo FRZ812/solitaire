@@ -9,12 +9,14 @@ import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY } from "./engine/campaign-resume.js";
+import { startTurnCheckpoint } from "./engine/timeline.js";
 import { DEFAULT_STARTING_KEEPSAKE_ID, STARTING_KEEPSAKES } from "./gameplay/tow/keepsakes.js";
 import {
   PRACTICE_ALLY_GROUPS,
   PRACTICE_SCENARIOS,
 } from "./gameplay/tow/practice-scenarios.js";
 import { STARTING_ARCHETYPES } from "./gameplay/tow/starting-archetypes.js";
+import { resolveCharacterPortrait } from "./components/character-portrait-assets.js";
 import { Solitaire } from "./App.jsx";
 
 const harness = vi.hoisted(() => ({
@@ -208,8 +210,13 @@ describe("one new-campaign start", () => {
     await click(start.querySelector(".character-preview__begin"));
 
     await waitFor(() => !mounted.querySelector(".archetype-start"));
+    const storyStage = await waitFor(() => mounted.querySelector(".visual-novel-stage"));
     expect(mounted.textContent).toContain(`${STARTING_ARCHETYPES[3].character.name} enters Whitemarch`);
     expect(mounted.textContent).not.toContain("There is no floor");
+    expect(storyStage.querySelectorAll(".beat")).toHaveLength(1);
+    expect(storyStage.querySelector(".visual-novel-character").dataset.characterId).toBe("wanderer");
+    expect(storyStage.querySelector(".visual-novel-character img").getAttribute("src"))
+      .toBe(resolveCharacterPortrait(STARTING_ARCHETYPES[3].character));
     await waitFor(() => harness.serverState.created === true);
     expect(harness.serverState.character).toMatchObject({
       name: STARTING_ARCHETYPES[3].character.name,
@@ -220,6 +227,40 @@ describe("one new-campaign start", () => {
     });
     expect(harness.serverState.mechanics.bootstrapOrigin).toBe("archetype");
     expect(harness.serverState.world.codex.characters.wanderer.worn.length).toBeGreaterThan(0);
+  });
+});
+
+describe("visual-novel player rewind", () => {
+  it("turns a completed player bubble back into pending input", async () => {
+    const initial = { ...makeInitialState(), created: true };
+    const playerBeat = { id: "player-rewind", type: "player", content: "I wait by the gate." };
+    const base = { ...initial, beats: [...initial.beats, playerBeat] };
+    harness.serverState = startTurnCheckpoint(base, "[PLAYER ACTION] I wait by the gate.", {
+      ...base,
+      beats: [
+        ...base.beats,
+        { id: "answer-rewind", type: "narration", content: "The gatekeeper waves you through." },
+      ],
+    });
+
+    const mounted = await mount();
+    const stage = await waitFor(() => mounted.querySelector(".visual-novel-stage"));
+    expect(stage.textContent).toContain("The gatekeeper waves you through.");
+    await click(stage.querySelector('[aria-label="Previous story beat"]'));
+    expect(stage.textContent).toContain("I wait by the gate.");
+
+    await act(async () => stage.querySelector(".beat-pressable").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    ));
+    const rewind = await waitFor(() => [...mounted.querySelectorAll(".beat-action-sheet__row")]
+      .find((button) => button.textContent.includes("Rewind to here")));
+    expect(rewind.disabled).toBe(false);
+    await click(rewind);
+
+    await waitFor(() => stage.querySelector(".visual-novel-stage__counter")?.textContent.includes("2 / 2"));
+    expect(stage.textContent).toContain("I wait by the gate.");
+    expect(stage.textContent).not.toContain("The gatekeeper waves you through.");
+    expect(mounted.textContent).not.toContain("behind something already settled");
   });
 });
 

@@ -59,6 +59,16 @@ describe("applyBeat — time & feed", () => {
     expect(dialogue).toMatchObject({ speakerId: "lorna", name: "Lorna Fitch", line: "Drink up." });
   });
 
+  it("retains a closed character action's canonical actor id in the timeline", () => {
+    const base = fresh();
+    const next = applyBeat(base, { story: [
+      { type: "beat", actorId: "lorna", text: "Lorna Fitch waits." },
+    ] });
+    const narration = next.beats.slice(base.beats.length).find((beat) => beat.type === "narration");
+
+    expect(narration).toMatchObject({ actorId: "lorna", content: "Lorna Fitch waits." });
+  });
+
   it("treats the input state as immutable", () => {
     const base = fresh();
     const beatsLen = base.beats.length;

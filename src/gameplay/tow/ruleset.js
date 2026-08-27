@@ -9,8 +9,9 @@ export const TOW_LEGACY_V1_SESSION_VERSION = 1;
 export const TOW_LEGACY_V1_RULESET_ID = "solitaire-tow-v1";
 export const TOW_LEGACY_V1_1_RULESET_ID = "solitaire-tow-v1.1";
 export const TOW_LEGACY_V1_2_RULESET_ID = "solitaire-tow-v1.2";
+export const TOW_LEGACY_V1_3_RULESET_ID = "solitaire-tow-v1.3";
 export const TOW_SESSION_VERSION = 1;
-export const TOW_RULESET_ID = "solitaire-tow-v1.3";
+export const TOW_RULESET_ID = "solitaire-tow-v1.4";
 
 export const TOW_RETIRED_RUNTIME_IDENTITIES = Object.freeze([
   Object.freeze({
@@ -24,5 +25,9 @@ export const TOW_RETIRED_RUNTIME_IDENTITIES = Object.freeze([
   Object.freeze({
     version: TOW_LEGACY_V1_SESSION_VERSION,
     rulesetId: TOW_LEGACY_V1_2_RULESET_ID,
+  }),
+  Object.freeze({
+    version: TOW_LEGACY_V1_SESSION_VERSION,
+    rulesetId: TOW_LEGACY_V1_3_RULESET_ID,
   }),
 ]);

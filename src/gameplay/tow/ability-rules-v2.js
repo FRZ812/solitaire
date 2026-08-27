@@ -1,8 +1,8 @@
 // Opt-in spatial ability contract for the next Tower ruleset.
 //
-// The shipped combat reducer and replay path remain pinned to solitaire-tow-v1.3. This module
+// The shipped combat reducer and replay path remain pinned to solitaire-tow-v1.4. This module
 // deliberately has no adapter from the captured v1 catalogue: a v2 action exists only when
-// it is authored against this exact ruleset id and validated here. Current v1.3 receipts and
+// it is authored against this exact ruleset id and validated here. Current v1.4 receipts and
 // future v2 receipts remain distinct, while retired v1 fights fail at the runtime boundary.
 
 export const TOW_ABILITY_RULESET_V2_ID = "solitaire-tow-v2";

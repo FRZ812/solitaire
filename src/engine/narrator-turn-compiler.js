@@ -2,6 +2,8 @@ import { itemTemplate } from "../data/catalog.js";
 import { MOUNTS } from "../data/mounts.js";
 import { CAPTIVE_POOL } from "../data/slaves.js";
 import { PRISONER_POOL } from "../data/gaol.js";
+import { readPendingCombatDirective } from "../gameplay/production/pending-directive.js";
+import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
 import {
   NARRATOR_CHARACTER_CUE_ACTIONS,
   NARRATOR_CHARACTER_CUE_MANNERS,
@@ -771,7 +773,7 @@ function isCompleteNewCharacter(character) {
     && character.knows.every((fact) => typeof fact === "string" && fact);
 }
 
-export function compileNarratorCandidate({ candidate, projection, turnPolicy, metadata = null }) {
+export function compileNarratorCandidate({ candidate, projection, turnPolicy, metadata = null, state = null }) {
   const violations = [];
   if (candidate?.contract_version !== projection?.contractVersion) {
     violations.push(violation(
@@ -1153,7 +1155,11 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         && (cue.target_id === null || TARGETABLE_CHARACTER_CUE_ACTIONS.has(cue.action))
         && (cue.manner === null || CHARACTER_CUE_MANNERS.has(cue.manner))
       ) {
-        story.push({ type: "beat", text: renderNarratorCharacterCue(cue, characters) });
+        story.push({
+          type: "beat",
+          actorId: cue.actor_id,
+          text: renderNarratorCharacterCue(cue, characters),
+        });
       }
       continue;
     }
@@ -1199,6 +1205,29 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     ));
   }
 
+  if (violations.length === 0 && state) {
+    try {
+      const governed = resolveNarratorIntents(state, candidate, {
+        stateRevision: projection.stateRevision,
+        route: turnPolicy?.id ?? null,
+        turnPolicy,
+      });
+      for (const refusal of governed.refusals) {
+        violations.push(violation(
+          "OWNER_REFUSAL",
+          `/${refusal.field}`,
+          `Engine owner rejected ${refusal.field}: ${refusal.reason}.`,
+        ));
+      }
+    } catch {
+      violations.push(violation(
+        "OWNER_VALIDATION_FAILED",
+        "/",
+        "The engine could not validate this response atomically.",
+      ));
+    }
+  }
+
   if (violations.length) return { ok: false, violations };
   const trustedMetadata = metadata ? {
     _raw: metadata.raw,
@@ -1217,6 +1246,7 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     _memoryProposals: metadata.memoryProposals,
   } : {};
   let materializedCandidate = candidate;
+  let materializedPolicy = turnPolicy;
   if (assassination?.outcome === "detected-combat") {
     const target = characters[assassination.target_id];
     materializedCandidate = {
@@ -1235,13 +1265,30 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         note: `${target.name || assassination.target_id} survives the assassination attempt and fights back.`,
       },
     };
+    materializedPolicy = {
+      ...(turnPolicy || {}),
+      allowedEffects: [...new Set([...(turnPolicy?.allowedEffects || []), "start_combat"])],
+    };
+  }
+  if (materializedCandidate.start_combat) {
+    const combatHandoff = readPendingCombatDirective(materializedCandidate.start_combat);
+    if (!combatHandoff.ok) {
+      return {
+        ok: false,
+        violations: [violation(
+          "COMBAT_HANDOFF",
+          "/start_combat",
+          `Combat handoff rejected: ${combatHandoff.reason}.`,
+        )],
+      };
+    }
   }
   return {
     ok: true,
     turn: mintCompiledTurn(
       { ...materializedCandidate, story, discoveries, ...trustedMetadata },
       projection,
-      turnPolicy,
+      materializedPolicy,
     ),
   };
 }

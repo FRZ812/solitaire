@@ -118,6 +118,75 @@ function allow(detail = {}) {
   return { status: INTENT_STATUS.APPLIED, reason: null, ...detail };
 }
 
+function inventoryChangeCatalogVerdict(state, value) {
+  if (value === null || value === undefined) return allow();
+  const invented = [];
+  for (const collection of ["added", "removed"]) {
+    for (const entry of value?.[collection] || []) {
+      if (!entry?.itemId || entry.entry) continue;
+      if (!itemTemplate(entry.itemId) && !state?.world?.codex?.items?.[entry.itemId]) {
+        invented.push(entry.itemId);
+      }
+    }
+  }
+  return invented.length > 0 ? refuse("uncatalogued-item", { invented }) : allow();
+}
+
+function itemChangeCounts(entries) {
+  const counts = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry?.itemId) continue;
+    const quantity = entry.quantity ?? 1;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) return null;
+    counts.set(entry.itemId, (counts.get(entry.itemId) || 0) + quantity);
+  }
+  return counts;
+}
+
+function companionGearTransferVerdict(state, value, inventoryChanges) {
+  if (value === null || value === undefined) return allow();
+  if (!Array.isArray(value)) return refuse("companion-gear-not-a-list");
+
+  const gearAdded = new Map();
+  const gearRemoved = new Map();
+  const invented = [];
+  const strangers = [];
+  for (const entry of value) {
+    if (!inParty(state, entry?.id)) strangers.push(entry?.id);
+    const worn = new Set(state?.world?.codex?.characters?.[entry?.id]?.worn || []);
+    for (const itemId of Array.isArray(entry?.add) ? entry.add : []) {
+      if (!itemTemplate(itemId) && !state?.world?.codex?.items?.[itemId]) invented.push(itemId);
+      if (worn.has(itemId)) return refuse("companion-gear-already-worn", { id: entry.id, itemId });
+      gearAdded.set(itemId, (gearAdded.get(itemId) || 0) + 1);
+    }
+    for (const itemId of Array.isArray(entry?.remove) ? entry.remove : []) {
+      if (!itemTemplate(itemId) && !state?.world?.codex?.items?.[itemId]) invented.push(itemId);
+      if (!worn.has(itemId)) return refuse("companion-gear-not-worn", { id: entry.id, itemId });
+      gearRemoved.set(itemId, (gearRemoved.get(itemId) || 0) + 1);
+    }
+  }
+  if (strangers.length > 0) return refuse("gear-for-someone-not-in-the-party", { strangers });
+  if (invented.length > 0) return refuse("uncatalogued-item", { invented });
+
+  const inventoryAdded = itemChangeCounts(inventoryChanges?.added);
+  const inventoryRemoved = itemChangeCounts(inventoryChanges?.removed);
+  if (!inventoryAdded || !inventoryRemoved) return refuse("companion-gear-transfer-unpaired");
+  for (const [itemId, quantity] of gearAdded) {
+    if ((inventoryRemoved.get(itemId) || 0) !== quantity) {
+      return refuse("companion-gear-transfer-unpaired", { itemId });
+    }
+    const held = (state?.character?.inventory?.carried || [])
+      .find((entry) => entry?.itemId === itemId)?.quantity || 0;
+    if (held < quantity) return refuse("companion-gear-not-in-player-inventory", { itemId });
+  }
+  for (const [itemId, quantity] of gearRemoved) {
+    if ((inventoryAdded.get(itemId) || 0) !== quantity) {
+      return refuse("companion-gear-transfer-unpaired", { itemId });
+    }
+  }
+  return allow();
+}
+
 // ---------------------------------------------------------------------------
 // Enforced owners
 // ---------------------------------------------------------------------------
@@ -237,12 +306,19 @@ const ENFORCED = Object.freeze({
   memory_updates(state, value) {
     if (value === null || value === undefined) return allow();
     if (!Array.isArray(value)) return refuse("memories-not-a-list");
-    if (value.length > MAX_MEMORIES_PER_TURN) {
-      return refuse("too-many-memories", { asked: value.length, limit: MAX_MEMORIES_PER_TURN });
+    const known = state?.world?.codex?.characters || {};
+    const strangers = value
+      .map((entry) => entry?.id)
+      .filter((id) => typeof id !== "string" || !Object.hasOwn(known, id));
+    if (strangers.length > 0) return refuse("memory-about-a-stranger", { strangers });
+    if (value.some((entry) => !Array.isArray(entry?.adds))) return refuse("memory-adds-not-a-list");
+    const additions = value.flatMap((entry) => entry.adds);
+    if (additions.length > MAX_MEMORIES_PER_TURN) {
+      return refuse("too-many-memories", { asked: additions.length, limit: MAX_MEMORIES_PER_TURN });
     }
-    const empty = value.filter((entry) => !cleanMemoryText(entry));
+    const empty = additions.filter((entry) => !cleanMemoryText(entry));
     if (empty.length > 0) return refuse("empty-memory");
-    const overlong = value.filter((entry) => typeof entry === "string" && entry.length > MEMORY_TEXT_LIMIT * 4);
+    const overlong = additions.filter((entry) => typeof entry === "string" && entry.length > MEMORY_TEXT_LIMIT * 4);
     if (overlong.length > 0) return refuse("memory-far-past-limit");
     return allow();
   },
@@ -312,11 +388,7 @@ const ENFORCED = Object.freeze({
   /** Steers growth, and the only steer the progression system understands is racial. */
   progression_focus(state, value) {
     if (value === null || value === undefined) return allow();
-    if (state?.character?.progressionModel === "tow-archetype") {
-      return refuse("progression-retired-for-archetype");
-    }
-    if (value !== "racial") return refuse("unknown-progression-focus", { asked: value });
-    return allow();
+    return refuse("progression-no-consumer");
   },
 
   /**
@@ -367,32 +439,20 @@ const ENFORCED = Object.freeze({
    * Items are combat stats through the bridge, so an invented item id is an invented weapon.
    * Loot-minted instances carry their own entry and are exempt; a bare id must be catalogued.
    */
-  inventory_changes(state, value) {
-    if (value === null || value === undefined) return allow();
-    const invented = [];
-    for (const collection of ["added", "removed"]) {
-      for (const entry of value?.[collection] || []) {
-        if (!entry?.itemId || entry.entry) continue;
-        if (!itemTemplate(entry.itemId)) invented.push(entry.itemId);
-      }
+  inventory_changes(state, value, turn) {
+    const catalogued = inventoryChangeCatalogVerdict(state, value);
+    if (catalogued.status === INTENT_STATUS.REFUSED) return catalogued;
+    if (Array.isArray(turn?.companion_gear) && turn.companion_gear.length > 0) {
+      return companionGearTransferVerdict(state, turn.companion_gear, value);
     }
-    if (invented.length > 0) return refuse("uncatalogued-item", { invented });
-    return allow();
+    return catalogued;
   },
 
   /** Companion equipment is companion combat stats; the same catalogue rule applies. */
-  companion_gear(state, value) {
-    if (value === null || value === undefined) return allow();
-    if (!Array.isArray(value)) return refuse("companion-gear-not-a-list");
-    const invented = [];
-    for (const entry of value) {
-      for (const slot of ["weapon", "armor", "offhand", "trinket"]) {
-        const itemId = entry?.[slot];
-        if (typeof itemId === "string" && itemId && !itemTemplate(itemId)) invented.push(itemId);
-      }
-    }
-    if (invented.length > 0) return refuse("uncatalogued-item", { invented });
-    return allow();
+  companion_gear(state, value, turn) {
+    const catalogued = inventoryChangeCatalogVerdict(state, turn?.inventory_changes);
+    if (catalogued.status === INTENT_STATUS.REFUSED) return catalogued;
+    return companionGearTransferVerdict(state, value, turn?.inventory_changes);
   },
 
   /**
@@ -409,9 +469,7 @@ const ENFORCED = Object.freeze({
   /** Same rule: the map cannot reveal a place the generator never made. */
   tile_discovery(state, value) {
     if (value === null || value === undefined) return allow();
-    const coord = value.coord ?? value;
-    if (!onTheMap(coord)) return refuse("off-the-map", { asked: { x: coord?.x, y: coord?.y } });
-    return allow();
+    return refuse("tile-discovery-engine-owned");
   },
 
   /**
@@ -420,10 +478,7 @@ const ENFORCED = Object.freeze({
    */
   location_update(state, value) {
     if (value === null || value === undefined) return allow();
-    const name = value.name ?? value.place;
-    if (typeof name !== "string" || name.trim().length === 0) {
-      return refuse("location-without-a-name");
-    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return refuse("location-not-an-object");
     return allow();
   },
 
@@ -515,6 +570,24 @@ export function routeAllows(route, field) {
   return allowed === undefined || allowed.includes(field);
 }
 
+const NEUTRAL_NUMERIC_FIELDS = new Set([
+  "minutes_passed",
+  "vitality_change",
+  "resolve_change",
+]);
+
+function intentValuePresent(field, value) {
+  if (value === undefined || value === null) return false;
+  return !(value === 0 && NEUTRAL_NUMERIC_FIELDS.has(field));
+}
+
+function policyAllows(turnPolicy, route, field) {
+  if (turnPolicy && Array.isArray(turnPolicy.allowedEffects)) {
+    return turnPolicy.allowedEffects.includes(field);
+  }
+  return !route || routeAllows(route, field);
+}
+
 function ownerFor(field) {
   if (Object.hasOwn(ENFORCED, field)) {
     return { mode: OWNER_MODE.ENFORCED, resolve: ENFORCED[field] };
@@ -544,24 +617,34 @@ export function gatewayCoverage() {
  *
  * @param {object} state campaign state the turn is being applied to
  * @param {object} turn the compiled narrator turn
- * @param {{stateRevision?: number, route?: string}} context
+ * @param {{stateRevision?: number, route?: string, turnPolicy?: object}} context
  */
-export function resolveNarratorIntents(state, turn, { stateRevision = 0, route = null } = {}) {
+export function resolveNarratorIntents(
+  state,
+  turn,
+  { stateRevision = 0, route = null, turnPolicy = null } = {},
+) {
   const receipts = [];
   let accepted = turn;
 
   for (const field of intentFields()) {
-    const present = turn?.[field] !== undefined && turn?.[field] !== null;
+    const present = intentValuePresent(field, turn?.[field]);
     if (!present) {
       receipts.push(receipt(field, INTENT_STATUS.ABSENT, null, stateRevision));
       continue;
     }
     // Scope before legality: a route that has no business raising a field is refused
     // whatever the value would have been.
-    if (route && !routeAllows(route, field)) {
+    if (!policyAllows(turnPolicy, route, field)) {
       if (accepted === turn) accepted = { ...turn };
       accepted[field] = null;
-      receipts.push(receipt(field, INTENT_STATUS.REFUSED, "not-allowed-on-route", stateRevision, { route }));
+      receipts.push(receipt(
+        field,
+        INTENT_STATUS.REFUSED,
+        "not-allowed-on-route",
+        stateRevision,
+        { route: turnPolicy?.id ?? route },
+      ));
       continue;
     }
     const owner = ownerFor(field);
@@ -569,7 +652,7 @@ export function resolveNarratorIntents(state, turn, { stateRevision = 0, route =
       receipts.push(receipt(field, INTENT_STATUS.PASSED_THROUGH, null, stateRevision));
       continue;
     }
-    const verdict = owner.resolve(state, turn[field]);
+    const verdict = owner.resolve(state, turn[field], turn);
     if (verdict.status === INTENT_STATUS.REFUSED) {
       // Stripped before application. This is what makes the refusal real.
       if (accepted === turn) accepted = { ...turn };

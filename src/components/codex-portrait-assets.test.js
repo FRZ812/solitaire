@@ -83,8 +83,15 @@ describe("Codex portrait assets", () => {
     expect(Object.isFrozen(CODEX_PORTRAIT_MANIFEST)).toBe(true);
     for (const id of CODEX_PORTRAIT_IDS) {
       expect(CODEX_PORTRAIT_MANIFEST[id].label).toBe(canonicalCharacters[id].name);
-      expect(CODEX_PORTRAIT_MANIFEST[id].detailSrc).toContain(`codex-individual/${id}.webp`);
+      if (id === "demon-king") {
+        expect(CODEX_PORTRAIT_MANIFEST[id].detailSrc).toContain("codex-individual/demon-king.webp");
+      } else {
+        const version = id === "whitemarch-treasurer-halen" ? 3 : 2;
+        expect(CODEX_PORTRAIT_MANIFEST[id].detailSrc)
+          .toContain(`codex-individual/variants/${id}-portrait-v${version}.png`);
+      }
     }
+    expect(JSON.stringify(CODEX_PORTRAIT_MANIFEST)).not.toContain("king-of-three-portrait-v3.png");
 
     expect(resolveCodexPortrait("demon-king")).toBe(CODEX_PORTRAIT_MANIFEST["demon-king"]);
     expect(resolveCodexPortrait({ id: "heron-master-apprentice" })).toBe(CODEX_PORTRAIT_MANIFEST["heron-master-apprentice"]);

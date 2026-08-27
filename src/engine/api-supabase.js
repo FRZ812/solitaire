@@ -94,6 +94,22 @@ export function callNarrator(
   );
 }
 
+export function narratorTurnPolicyContext(turnPolicy) {
+  const contract = {
+    id: turnPolicy.id,
+    required_skills: turnPolicy.requiredSkillIds || [],
+    allowed_effects: turnPolicy.allowedEffects || [],
+    ...(turnPolicy.effectConstraints ? { effect_constraints: turnPolicy.effectConstraints } : {}),
+    ...(turnPolicy.continuation?.terminalEffect
+      ? { terminal_effect: turnPolicy.continuation.terminalEffect }
+      : {}),
+    ...(turnPolicy.storyCharacterIds?.length
+      ? { story_character_ids: turnPolicy.storyCharacterIds }
+      : {}),
+  };
+  return `[TURN POLICY — ${JSON.stringify(contract)}. All other effect fields must remain neutral. If an allowed effect is materially established by the accepted scene, emit it in this same response; never hide a mechanical result only in story.]`;
+}
+
 async function callNarratorWithinDeadline(
   state,
   userMsgRaw,
@@ -113,7 +129,7 @@ async function callNarratorWithinDeadline(
   const state_context = [
     selectedContext.text,
     projection.context,
-    `[TURN POLICY — id=${turnPolicy.id}; required narrator skills=${turnPolicy.requiredSkillIds.join(",") || "none"}; allowed effects=${turnPolicy.allowedEffects.join(",") || "none"}.]`,
+    narratorTurnPolicyContext(turnPolicy),
   ].join("\n");
   const trimmedHistory = prepareNarratorHistory(state.apiHistory);
   const narratorSettings = normalizeNarratorSettings(state.narratorSettings);
@@ -166,6 +182,7 @@ async function callNarratorWithinDeadline(
       candidate: response.candidate,
       projection,
       turnPolicy,
+      state,
       metadata: {
         raw: response.text,
         thinking: response.thinking,

@@ -166,6 +166,19 @@ describe("late travel narration", () => {
     });
   });
 
+  it("preserves canonical actor identity in a travel action beat", () => {
+    const { base } = fixture({ minutes: 60 });
+    const narrated = applyTravelNarrationPresentation(base, {
+      story: [{ type: "beat", actorId: "mara", text: "Mara signals from the ridge." }],
+    });
+
+    expect(narrated.beats.at(-1)).toMatchObject({
+      type: "narration",
+      actorId: "mara",
+      content: "Mara signals from the ridge.",
+    });
+  });
+
   it("adds presentation/history without replaying narrator mechanics", () => {
     const { base, prepared, travel } = fixture({ minutes: 60 });
     const { state: settled } = prepareTravelSettlement(base, base, prepared, travel);

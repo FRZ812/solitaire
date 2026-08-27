@@ -6,7 +6,7 @@ import { classifyLegacyAbilityGrant } from "../../data/abilities.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
 import { characterAbilitiesFor } from "./character-abilities.js";
 import { DEFAULT_STARTING_KEEPSAKE_ID, STARTING_KEEPSAKES } from "./keepsakes.js";
-import { generalAbilityIds, getSkill, skillRarityAtRank } from "./skills.js";
+import { generalAbilityIds, getSkill, resolveCost, skillRarityAtRank } from "./skills.js";
 import { practiceActor } from "./practice-scenarios.js";
 import {
   STARTING_ARCHETYPES,
@@ -78,18 +78,15 @@ describe("source-roster starting grants", () => {
     }
   });
 
-  it("lets every starter fund Mythical Resolve costs and recover another cast within four rounds", () => {
+  it("lets every starter fund one Mythical and carry a free Resolve-recovery action", () => {
     const mythicalCost = 6;
     for (const archetype of STARTING_ARCHETYPES) {
       const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
       const actor = practiceActor(compiled.receipt);
       expect(actor.resolveMax, archetype.id).toBeGreaterThanOrEqual(mythicalCost);
       expect(actor.resolveRegen, archetype.id).toBeGreaterThanOrEqual(1);
-
-      const afterFirstCast = actor.resolveMax - mythicalCost;
-      const missingForAnother = Math.max(0, mythicalCost - afterFirstCast);
-      const roundsToAnother = Math.ceil(missingForAnother / actor.resolveRegen);
-      expect(roundsToAnother, archetype.id).toBeLessThanOrEqual(4);
+      expect(archetype.build.skills.some((skillId) => resolveCost(skillId) === 0), archetype.id)
+        .toBe(true);
     }
   });
 });

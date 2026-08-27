@@ -31,7 +31,7 @@ import { towBuildForCharacter } from "./professions.js";
 import { effectMagnitude, getSkill } from "./skills.js";
 import { legalSkillAnchors, resolveSkillTargets } from "./targeting.js";
 
-export const TOW_SIMULATION_VERSION = 5;
+export const TOW_SIMULATION_VERSION = 6;
 
 /** A fight that has run this long has stopped being a fight; the run is recorded as a draw. */
 export const MAX_SIMULATED_ROUNDS = 200;
@@ -393,6 +393,36 @@ export const intentAwarePolicy = Object.freeze({
     const weakest = targets.reduce((lowest, id) => (
       state.actors[id].hp < state.actors[lowest].hp ? id : lowest
     ), targets[0]);
+    const player = state.actors[state.playerId];
+    const incoming = incomingDamage(state);
+
+    // Do not spend the one paid-ability window on a quick setup when the declared blow
+    // requires a paid guard to survive. The shared Resolve cadence deliberately makes that
+    // choice exclusive; an informed policy reserves it before considering extra inputs.
+    if (incoming >= player.hp + player.shield && defensive.length > 0) {
+      const emergencyGuard = defensive.reduce((strongest, skillState) => (
+        projectedShield(state, skillState) > projectedShield(state, strongest)
+          ? skillState
+          : strongest
+      ), defensive[0]);
+      const shield = Math.max(player.shield, projectedShield(state, emergencyGuard));
+      if (incoming < player.hp + shield) {
+        return { command: policyCommand(optionFor(emergencyGuard, targets[0])), rng };
+      }
+    }
+
+    // A paid finisher also reserves the shared cadence window. Do not spend that window on
+    // a non-turn setup when a legal attack already removes a foe before it can answer.
+    for (const targetId of targets) {
+      const target = state.actors[targetId];
+      const finisher = offensive.find(
+        (skillState) => optionFor(skillState, targetId)
+          && projectedDamage(state, skillState, targetId) >= target.hp + target.shield,
+      );
+      if (finisher) {
+        return { command: policyCommand(optionFor(finisher, targetId)), rng };
+      }
+    }
 
     // A no-turn ability is an extra input inside this command window, not an alternative
     // to the main action. Use direct free attacks first, then a setup whose effect changes
@@ -411,17 +441,6 @@ export const intentAwarePolicy = Object.freeze({
       return { command: policyCommand(optionFor(bestFree, weakest)), rng };
     }
 
-    // 1. A kill this round is a whole enemy's declared damage removed from the fight.
-    for (const targetId of targets) {
-      const target = state.actors[targetId];
-      const finisher = offensive.find(
-        (skillState) => optionFor(skillState, targetId)
-          && projectedDamage(state, skillState, targetId) >= target.hp + target.shield,
-      );
-      if (finisher) {
-        return { command: policyCommand(optionFor(finisher, targetId)), rng };
-      }
-    }
 
     // The best attack available, and what it would be worth: press whoever is closest to
     // falling, so the group — and the damage it declares each round — shrinks fastest.
@@ -441,9 +460,6 @@ export const intentAwarePolicy = Object.freeze({
     const progress = bestAttack ? projectedDamage(state, bestAttack, weakest) : 0;
 
     // 2. Guard when guarding is worth more than attacking — measured, not assumed.
-    const player = state.actors[state.playerId];
-    const incoming = incomingDamage(state);
-
     // A multi-window defensive status is setup, not Ward. Establish it once while the
     // current declaration is survivable, then attack behind the remaining per-hit stacks.
     // This distinction keeps Guard useful without letting the one-window shield pool bank.
@@ -676,14 +692,14 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "lone-brigand",
     name: "A brigand on the road",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.72, randomWinRate: 0.07 }),
+    baseline: Object.freeze({ informedWinRate: 0.616667, randomWinRate: 0.02 }),
     enemies: Object.freeze([foe("foe-0", "Brigand", 120, 23, moveSet("foe-0", 14, 23, 36))]),
   }),
   Object.freeze({
     id: "brigand-pair",
     name: "Two brigands",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.97, randomWinRate: 0.12 }),
+    baseline: Object.freeze({ informedWinRate: 0.963333, randomWinRate: 0.06 }),
     enemies: Object.freeze([
       foe("foe-0", "Brigand", 54, 13, moveSet("foe-0", 9, 13, 20)),
       foe("foe-1", "Brigand", 54, 13, moveSet("foe-1", 9, 13, 20)),
@@ -693,7 +709,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "armoured-duelist",
     name: "An armoured duelist",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.62, randomWinRate: 0.053333 }),
+    baseline: Object.freeze({ informedWinRate: 0.483333, randomWinRate: 0.023333 }),
     enemies: Object.freeze([{
       ...foe("foe-0", "Duelist", 122, 22, moveSet("foe-0", 14, 22, 35)),
       stats: { attack: 22, defense: 6, critRate: 6, dodgeRate: 8 },
@@ -724,8 +740,8 @@ export const EQUAL_THREAT_FIXTURES = Object.freeze(
  * change that quietly relaxes its own acceptance test has not been reviewed.
  */
 export const ACCEPTANCE_TARGETS = Object.freeze({
-  // Resolve v5 measures authoritative command/target selection against recalibrated threats:
-  // informed play wins 0.77 while random legal play wins about 0.081. The 0.60–0.80 band keeps
+  // Resolve v6 measures free-basic recovery and scarce paid windows against recalibrated threats:
+  // informed play wins 0.688 while random legal play wins about 0.034. The 0.60–0.80 band keeps
   // good tactics viable without letting equal threats collapse into guaranteed victories.
   informedWinRateMin: 0.60,
   informedWinRateMax: 0.80,

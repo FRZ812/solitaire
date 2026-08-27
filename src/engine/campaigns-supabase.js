@@ -6,8 +6,13 @@ import {
   CURRENT_CAMPAIGN_SCHEMA,
   READABLE_CAMPAIGN_SCHEMAS,
   hasCurrentMechanicsState,
+  isWritableTowActiveCombat,
   isReadableCampaignSchema,
 } from "./campaign-migration.js";
+import {
+  TOW_V1_RUNTIME_IDENTITY,
+  verifyTowRuntimeSession,
+} from "../gameplay/tow/runtime.js";
 import { ATTRIBUTE_SCALE_VERSION, PROGRESSION_VERSION } from "./progression.js";
 
 // ----- Optimistic-concurrency baselines -----
@@ -28,8 +33,16 @@ const baselines = new Map();
 const saveChains = new Map();
 
 function assertWritableCampaignState(state) {
+  const activeCombat = state?.mechanics?.tow?.activeCombat;
+  const activeCombatWritable = isWritableTowActiveCombat(activeCombat);
+  const currentCombatVerified = activeCombat === null
+    || activeCombat === undefined
+    || activeCombat.rulesetId !== TOW_V1_RUNTIME_IDENTITY.rulesetId
+    || verifyTowRuntimeSession(activeCombat).ok;
   if (!state || typeof state !== "object" || Array.isArray(state)
     || !hasCurrentMechanicsState(state)
+    || !activeCombatWritable
+    || !currentCombatVerified
     || state.progressionVersion !== PROGRESSION_VERSION
     || state.attributeScaleVersion !== ATTRIBUTE_SCALE_VERSION) {
     const error = new Error(

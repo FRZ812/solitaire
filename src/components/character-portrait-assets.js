@@ -24,8 +24,7 @@ import beastWarden from "../assets/generated/character-portraits/beast-warden-gr
 import beastWardenAlternative from "../assets/generated/character-portraits/beast-warden-anime-v2.webp";
 import guildAdvocate from "../assets/generated/character-portraits/guild-advocate-grounded-v3.webp";
 import guildAdvocateAlternative from "../assets/generated/character-portraits/variants/guild-advocate-portrait-v2.png";
-import velvetCourtier from "../assets/generated/character-portraits/velvet-courtier-grounded-v3.webp";
-import velvetCourtierAlternative from "../assets/generated/character-portraits/variants/velvet-courtier-portrait-v2.png";
+import velvetCourtier from "../assets/generated/character-portraits/variants/velvet-courtier-portrait-v3.png";
 import warCaptain from "../assets/generated/character-portraits/war-captain-grounded-v3.webp";
 import warCaptainAlternative from "../assets/generated/character-portraits/war-captain-anime-v2.webp";
 import battleArchmage from "../assets/generated/character-portraits/battle-archmage-grounded-v3.webp";
@@ -78,86 +77,85 @@ import vampireAlternative from "../assets/generated/archetypes/portraits/vampire
 import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v3.png";
 import automatonAlternative from "../assets/generated/archetypes/portraits/automaton-portrait-v4.png";
 
-import cinderChapterMasterAlternative from "../assets/generated/character-portraits/codex-individual/variants/cinder-chapter-master-portrait-v2.png";
-import cinderChapterMasterTovarAlternative from "../assets/generated/character-portraits/codex-individual/variants/cinder-chapter-master-tovar-portrait-v2.png";
-import crowsmoorBaronAlternative from "../assets/generated/character-portraits/codex-individual/variants/crowsmoor-baron-portrait-v2.png";
-import crowsmoorBaronHeirAlternative from "../assets/generated/character-portraits/codex-individual/variants/crowsmoor-baron-heir-portrait-v2.png";
-import demonKingAlternative from "../assets/generated/character-portraits/codex-individual/variants/demon-king-portrait-v2.png";
-import glassSpireMasterAlternative from "../assets/generated/character-portraits/codex-individual/variants/glass-spire-master-portrait-v2.png";
-import goblinKingAlternative from "../assets/generated/character-portraits/codex-individual/variants/goblin-king-portrait-v2.png";
-import greatWyrmAlternative from "../assets/generated/character-portraits/codex-individual/variants/great-wyrm-portrait-v2.png";
-import halfbornMatriarchAlternative from "../assets/generated/character-portraits/codex-individual/variants/halfborn-matriarch-portrait-v2.png";
-import halfbornMatriarchElectAlternative from "../assets/generated/character-portraits/codex-individual/variants/halfborn-matriarch-elect-brann-portrait-v2.png";
-import hawthornLordAlternative from "../assets/generated/character-portraits/codex-individual/variants/hawthorn-lord-portrait-v2.png";
-import heronMasterAlternative from "../assets/generated/character-portraits/codex-individual/variants/heron-master-portrait-v2.png";
-import heronMasterApprenticeAlternative from "../assets/generated/character-portraits/codex-individual/variants/heron-master-apprentice-portrait-v2.png";
-import kingOfThreeAlternative from "../assets/generated/character-portraits/codex-individual/variants/king-of-three-portrait-v2.png";
-import selenyanSpeakerAlternative from "../assets/generated/character-portraits/codex-individual/variants/selenyan-speaker-portrait-v2.png";
-import stonebrookHoldFatherAlternative from "../assets/generated/character-portraits/codex-individual/variants/stonebrook-hold-father-portrait-v2.png";
-import stonebrookHoldFatherKorroAlternative from "../assets/generated/character-portraits/codex-individual/variants/stonebrook-hold-father-korro-portrait-v2.png";
-import hagAlternative from "../assets/generated/character-portraits/codex-individual/variants/the-hag-portrait-v2.png";
-import valeKingAsarAlternative from "../assets/generated/character-portraits/codex-individual/variants/vale-king-asar-portrait-v2.png";
-import valeKingAsarViAlternative from "../assets/generated/character-portraits/codex-individual/variants/vale-king-asar-vi-portrait-v2.png";
-import whitemarchTreasurerAlternative from "../assets/generated/character-portraits/codex-individual/variants/whitemarch-treasurer-portrait-v2.png";
-import whitemarchTreasurerHalenAlternative from "../assets/generated/character-portraits/codex-individual/variants/whitemarch-treasurer-halen-portrait-v2.png";
-import witchQueenAlternative from "../assets/generated/character-portraits/codex-individual/variants/witch-queen-portrait-v2.png";
+import candidateArtificerV6 from "../assets/generated/archetypes/portraits/artificer-portrait-v6.png";
+import candidateArtificerV7 from "../assets/generated/archetypes/portraits/artificer-portrait-v7.png";
+import candidateArtificerV8 from "../assets/generated/archetypes/portraits/artificer-portrait-v8.png";
+import candidateAutomatonV6 from "../assets/generated/archetypes/portraits/automaton-portrait-v6.png";
+import candidateBerserkerV6 from "../assets/generated/archetypes/portraits/berserker-portrait-v6.png";
+import candidateBlademasterV6 from "../assets/generated/archetypes/portraits/blademaster-portrait-v6.png";
+import candidateKnightV6 from "../assets/generated/archetypes/portraits/knight-portrait-v6.png";
+import candidatePaladinV6 from "../assets/generated/archetypes/portraits/paladin-portrait-v6.png";
+import candidatePaladinV7 from "../assets/generated/archetypes/portraits/paladin-portrait-v7.png";
+import candidatePaladinV8 from "../assets/generated/archetypes/portraits/paladin-portrait-v8.png";
+import candidateRangerV10 from "../assets/generated/archetypes/portraits/ranger-portrait-v10.png";
+import candidateRangerV2 from "../assets/generated/archetypes/portraits/ranger-portrait-v2.png";
+import candidateRangerV8 from "../assets/generated/archetypes/portraits/ranger-portrait-v8.png";
+import candidateRangerV9 from "../assets/generated/archetypes/portraits/ranger-portrait-v9.png";
+import candidateRogueV6 from "../assets/generated/archetypes/portraits/rogue-portrait-v6.png";
+import candidateSorcererV6 from "../assets/generated/archetypes/portraits/sorcerer-portrait-v6.png";
+import candidateSorcererV7 from "../assets/generated/archetypes/portraits/sorcerer-portrait-v7.png";
+import candidateSorcererV9 from "../assets/generated/archetypes/portraits/sorcerer-portrait-v9.png";
+import candidateVampireV6 from "../assets/generated/archetypes/portraits/vampire-portrait-v6.png";
+import candidateVampireV7 from "../assets/generated/archetypes/portraits/vampire-portrait-v7.png";
+import candidateVampireV8 from "../assets/generated/archetypes/portraits/vampire-portrait-v8.png";
+import candidateWarlockV6 from "../assets/generated/archetypes/portraits/warlock-portrait-v6.png";
+import candidateWarlockV7 from "../assets/generated/archetypes/portraits/warlock-portrait-v7.png";
+import candidateWarlockV8 from "../assets/generated/archetypes/portraits/warlock-portrait-v8.png";
+import candidateWarlockV9 from "../assets/generated/archetypes/portraits/warlock-portrait-v9.png";
+import candidateWizardV10 from "../assets/generated/archetypes/portraits/wizard-portrait-v10.png";
+import candidateWizardV6 from "../assets/generated/archetypes/portraits/wizard-portrait-v6.png";
+import candidateWizardV7 from "../assets/generated/archetypes/portraits/wizard-portrait-v7.png";
+import candidateWizardV9 from "../assets/generated/archetypes/portraits/wizard-portrait-v9.png";
+import candidateHighSorcererV3 from "../assets/generated/character-portraits/variants/high-sorcerer-portrait-v3.png";
+
+import bonemarshCharmwrightNerisPortrait from "../assets/generated/character-portraits/codex-individual/variants/the-hag-portrait-v3.png";
+import glassSpireKeyMasterIorinPortrait from "../assets/generated/character-portraits/codex-individual/variants/glass-spire-master-portrait-v3.png";
+import halfbornWatchCaptainYarraPortrait from "../assets/generated/character-portraits/codex-individual/variants/halfborn-matriarch-elect-brann-portrait-v3.png";
+import brokenholdMarshalHeskPortrait from "../assets/generated/character-portraits/codex-individual/variants/goblin-king-portrait-v3.png";
+import crowsmoorMusterReeveOrrenPortrait from "../assets/generated/character-portraits/codex-individual/variants/crowsmoor-baron-portrait-v3.png";
+import stonebrookRoadmasterDorrinPortrait from "../assets/generated/character-portraits/codex-individual/variants/stonebrook-hold-father-korro-portrait-v3.png";
+
+import whitemarchDeedKeeperIlyraPortrait from "../assets/generated/character-portraits/codex-individual/variants/whitemarch-treasurer-halen-portrait-v2.png";
+import whitemarchApothecaryTaviaVanePortrait from "../assets/generated/character-portraits/codex-individual/establishments/whitemarch-apothecary-tavia-vane-portrait-v1.png";
+import wintermereAmberCupAstridPortrait from "../assets/generated/character-portraits/codex-individual/establishments/wintermere-amber-cup-astrid-portrait-v1.png";
+import whitemarchVelvetLanternMaraPortrait from "../assets/generated/character-portraits/codex-individual/establishments/whitemarch-velvet-lantern-mara-portrait-v1.png";
+import whitemarchSilverSwanEliraPortrait from "../assets/generated/character-portraits/codex-individual/establishments/whitemarch-silver-swan-elira-portrait-v1.png";
+import tellmarRedReedKiriPortrait from "../assets/generated/character-portraits/codex-individual/establishments/tellmar-red-reed-kiri-portrait-v1.png";
+import tellmarPearlLotusYuePortrait from "../assets/generated/character-portraits/codex-individual/establishments/tellmar-pearl-lotus-yue-portrait-v1.png";
+import asalanCopperDateZahraPortrait from "../assets/generated/character-portraits/codex-individual/establishments/asalan-copper-date-zahra-portrait-v1.png";
+import asalanBlueGlassSamiraPortrait from "../assets/generated/character-portraits/codex-individual/establishments/asalan-blue-glass-samira-portrait-v1.png";
+import selenyanAshleafThaelisPortrait from "../assets/generated/character-portraits/codex-individual/establishments/selenyan-ashleaf-thaelis-portrait-v1.png";
+import selenyanMoonboughIrelwenPortrait from "../assets/generated/character-portraits/codex-individual/establishments/selenyan-moonbough-irelwen-portrait-v1.png";
 
 import bramPortrait from "../assets/generated/character-portraits/codex-individual/companions/bram-holt-portrait-v1.png";
 import bramPortraitAlternative from "../assets/generated/character-portraits/codex-individual/companions/bram-holt-portrait-v2.png";
 import sennaPortrait from "../assets/generated/character-portraits/codex-individual/companions/senna-rell-portrait-v1.png";
 import sennaPortraitAlternative from "../assets/generated/character-portraits/codex-individual/companions/senna-rell-portrait-v2.png";
-import tomkinPortrait from "../assets/generated/character-portraits/codex-individual/companions/tomkin-burr-portrait-v1.png";
 import tomkinPortraitAlternative from "../assets/generated/character-portraits/codex-individual/companions/tomkin-burr-portrait-v2.png";
 import motherCrayPortrait from "../assets/generated/character-portraits/codex-individual/companions/mother-cray-portrait-v1.png";
 import motherCrayPortraitAlternative from "../assets/generated/character-portraits/codex-individual/companions/mother-cray-portrait-v2.png";
-import doranPortrait from "../assets/generated/character-portraits/codex-individual/companions/doran-vell-portrait-v1.png";
 import doranPortraitAlternative from "../assets/generated/character-portraits/codex-individual/companions/doran-vell-portrait-v2.png";
 import harlPortrait from "../assets/generated/character-portraits/codex-individual/bonded/harl-of-the-reeds-portrait-v1.png";
-import harlPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/harl-of-the-reeds-portrait-v2.png";
 import neelaPortrait from "../assets/generated/character-portraits/codex-individual/bonded/neela-portrait-v1.png";
-import neelaPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/neela-portrait-v2.png";
-import okkPortrait from "../assets/generated/character-portraits/codex-individual/bonded/okk-portrait-v1.png";
 import okkPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/okk-portrait-v2.png";
-import miriPortrait from "../assets/generated/character-portraits/codex-individual/bonded/miri-portrait-v1.png";
 import miriPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/miri-portrait-v2.png";
 import vossPortrait from "../assets/generated/character-portraits/codex-individual/bonded/voss-portrait-v1.png";
-import vossPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/voss-portrait-v2.png";
 import tamaPortrait from "../assets/generated/character-portraits/codex-individual/bonded/tama-portrait-v1.png";
-import tamaPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/tama-portrait-v2.png";
-import oldPieterPortrait from "../assets/generated/character-portraits/codex-individual/bonded/old-pieter-portrait-v1.png";
 import oldPieterPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/old-pieter-portrait-v2.png";
-import rurikPortrait from "../assets/generated/character-portraits/codex-individual/bonded/rurik-portrait-v1.png";
-import rurikPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/rurik-portrait-v2.png";
 import marnPortrait from "../assets/generated/character-portraits/codex-individual/bonded/marn-portrait-v1.png";
-import marnPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/marn-portrait-v2.png";
 import yshkaPortrait from "../assets/generated/character-portraits/codex-individual/bonded/yshka-portrait-v1.png";
-import yshkaPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/yshka-portrait-v2.png";
-import lisPortrait from "../assets/generated/character-portraits/codex-individual/bonded/lis-portrait-v1.png";
 import lisPortraitAlternative from "../assets/generated/character-portraits/codex-individual/bonded/lis-portrait-v2.png";
 import loffPortrait from "../assets/generated/character-portraits/codex-individual/prisoners/loff-portrait-v1.png";
-import loffPortraitAlternative from "../assets/generated/character-portraits/codex-individual/prisoners/loff-portrait-v2.png";
-import minPortrait from "../assets/generated/character-portraits/codex-individual/prisoners/min-portrait-v1.png";
 import minPortraitAlternative from "../assets/generated/character-portraits/codex-individual/prisoners/min-portrait-v2.png";
-import grukkPortrait from "../assets/generated/character-portraits/codex-individual/prisoners/grukk-portrait-v1.png";
 import grukkPortraitAlternative from "../assets/generated/character-portraits/codex-individual/prisoners/grukk-portrait-v2.png";
 import pellPortrait from "../assets/generated/character-portraits/codex-individual/prisoners/pell-portrait-v1.png";
-import pellPortraitAlternative from "../assets/generated/character-portraits/codex-individual/prisoners/pell-portrait-v2.png";
 import seraPortrait from "../assets/generated/character-portraits/codex-individual/prisoners/sera-portrait-v1.png";
-import seraPortraitAlternative from "../assets/generated/character-portraits/codex-individual/prisoners/sera-portrait-v2.png";
 import goodwifeVanePortrait from "../assets/generated/character-portraits/codex-individual/wanted/goodwife-vane-portrait-v1.png";
-import goodwifeVanePortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/goodwife-vane-portrait-v2.png";
 import redHandMottPortrait from "../assets/generated/character-portraits/codex-individual/wanted/red-hand-mott-portrait-v1.png";
-import redHandMottPortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/red-hand-mott-portrait-v2.png";
-import eelPortrait from "../assets/generated/character-portraits/codex-individual/wanted/the-eel-portrait-v1.png";
-import eelPortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/the-eel-portrait-v2.png";
-import deserterCrowsPortrait from "../assets/generated/character-portraits/codex-individual/wanted/deserter-crows-portrait-v1.png";
-import deserterCrowsPortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/deserter-crows-portrait-v2.png";
+
 import hagsApprenticePortrait from "../assets/generated/character-portraits/codex-individual/wanted/hags-apprentice-portrait-v1.png";
-import hagsApprenticePortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/hags-apprentice-portrait-v2.png";
 import threeFingerSaelPortrait from "../assets/generated/character-portraits/codex-individual/wanted/three-finger-sael-portrait-v1.png";
-import threeFingerSaelPortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/three-finger-sael-portrait-v2.png";
 import maskedRiderPortrait from "../assets/generated/character-portraits/codex-individual/wanted/masked-rider-portrait-v1.png";
-import maskedRiderPortraitAlternative from "../assets/generated/character-portraits/codex-individual/wanted/masked-rider-portrait-v2.png";
 import ponyPortrait from "../assets/generated/character-portraits/codex-individual/mounts/pony-portrait-v1.png";
 import ponyPortraitAlternative from "../assets/generated/character-portraits/codex-individual/mounts/pony-portrait-v2.png";
 import horsePortrait from "../assets/generated/character-portraits/codex-individual/mounts/horse-portrait-v1.png";
@@ -207,6 +205,7 @@ import { characterPortraitIdentityKey } from "./character-portrait-roster.js";
 import { CODEX_PORTRAIT_MANIFEST } from "./codex-portrait-assets.js";
 
 const pair = (first, second) => Object.freeze([first, second]);
+const single = (portrait) => Object.freeze([portrait]);
 const EMPTY_VARIANTS = Object.freeze([]);
 const BUILTIN_TOKEN_PATTERN = /^builtin:(.+):v([1-9]\d*)$/;
 
@@ -224,7 +223,7 @@ const LEGACY_VARIANTS = Object.freeze({
   duelist: pair(duelist, duelistAlternative),
   "beast-warden": pair(beastWarden, beastWardenAlternative),
   "guild-advocate": pair(guildAdvocate, guildAdvocateAlternative),
-  "velvet-courtier": pair(velvetCourtier, velvetCourtierAlternative),
+  "velvet-courtier": single(velvetCourtier),
   "war-captain": pair(warCaptain, warCaptainAlternative),
   "battle-archmage": pair(battleArchmage, battleArchmageAlternative),
   shadowblade: pair(shadowblade, shadowbladeAlternative),
@@ -258,38 +257,41 @@ const TOW_VARIANTS = Object.freeze({
 const COMPANION_VARIANTS = Object.freeze({
   bram: pair(bramPortrait, bramPortraitAlternative),
   senna: pair(sennaPortrait, sennaPortraitAlternative),
-  tomkin: pair(tomkinPortrait, tomkinPortraitAlternative),
+  tomkin: single(tomkinPortraitAlternative),
   cray: pair(motherCrayPortrait, motherCrayPortraitAlternative),
-  doran: pair(doranPortrait, doranPortraitAlternative),
+  doran: single(doranPortraitAlternative),
+  elske: EMPTY_VARIANTS,
+  garran: EMPTY_VARIANTS,
+  linnet: EMPTY_VARIANTS,
 });
 
 const BONDED_VARIANTS = Object.freeze({
-  harl: pair(harlPortrait, harlPortraitAlternative),
-  neela: pair(neelaPortrait, neelaPortraitAlternative),
-  okk: pair(okkPortrait, okkPortraitAlternative),
-  miri: pair(miriPortrait, miriPortraitAlternative),
-  voss: pair(vossPortrait, vossPortraitAlternative),
-  tama: pair(tamaPortrait, tamaPortraitAlternative),
-  pieter: pair(oldPieterPortrait, oldPieterPortraitAlternative),
-  rurik: pair(rurikPortrait, rurikPortraitAlternative),
-  marn: pair(marnPortrait, marnPortraitAlternative),
-  yshka: pair(yshkaPortrait, yshkaPortraitAlternative),
-  lis: pair(lisPortrait, lisPortraitAlternative),
-  loff: pair(loffPortrait, loffPortraitAlternative),
-  min: pair(minPortrait, minPortraitAlternative),
-  grukk: pair(grukkPortrait, grukkPortraitAlternative),
-  pell: pair(pellPortrait, pellPortraitAlternative),
-  sera: pair(seraPortrait, seraPortraitAlternative),
+  harl: single(harlPortrait),
+  neela: single(neelaPortrait),
+  okk: single(okkPortraitAlternative),
+  miri: single(miriPortraitAlternative),
+  voss: single(vossPortrait),
+  tama: single(tamaPortrait),
+  pieter: single(oldPieterPortraitAlternative),
+  rurik: EMPTY_VARIANTS,
+  marn: single(marnPortrait),
+  yshka: single(yshkaPortrait),
+  lis: single(lisPortraitAlternative),
+  loff: single(loffPortrait),
+  min: single(minPortraitAlternative),
+  grukk: single(grukkPortraitAlternative),
+  pell: single(pellPortrait),
+  sera: single(seraPortrait),
 });
 
 const WANTED_VARIANTS = Object.freeze({
-  vane: pair(goodwifeVanePortrait, goodwifeVanePortraitAlternative),
-  redhand: pair(redHandMottPortrait, redHandMottPortraitAlternative),
-  eel: pair(eelPortrait, eelPortraitAlternative),
-  crows: pair(deserterCrowsPortrait, deserterCrowsPortraitAlternative),
-  appr: pair(hagsApprenticePortrait, hagsApprenticePortraitAlternative),
-  sael: pair(threeFingerSaelPortrait, threeFingerSaelPortraitAlternative),
-  rider: pair(maskedRiderPortrait, maskedRiderPortraitAlternative),
+  vane: single(goodwifeVanePortrait),
+  redhand: single(redHandMottPortrait),
+  eel: EMPTY_VARIANTS,
+  crows: EMPTY_VARIANTS,
+  appr: single(hagsApprenticePortrait),
+  sael: single(threeFingerSaelPortrait),
+  rider: single(maskedRiderPortrait),
 });
 
 const MOUNT_VARIANTS = Object.freeze({
@@ -320,30 +322,60 @@ const SPECIAL_VARIANTS = Object.freeze({
   "codex:threshold-voice": pair(thresholdVoicePortrait, thresholdVoicePortraitAlternative),
 });
 
-const CODEX_ALTERNATIVES = Object.freeze({
-  "demon-king": demonKingAlternative,
-  "vale-king-asar": valeKingAsarAlternative,
-  "goblin-king": goblinKingAlternative,
-  "selenyan-speaker": selenyanSpeakerAlternative,
-  "glass-spire-master": glassSpireMasterAlternative,
-  "great-wyrm": greatWyrmAlternative,
-  "hawthorn-lord": hawthornLordAlternative,
-  "witch-queen": witchQueenAlternative,
-  "crowsmoor-baron": crowsmoorBaronAlternative,
-  "whitemarch-treasurer": whitemarchTreasurerAlternative,
-  "cinder-chapter-master": cinderChapterMasterAlternative,
-  "stonebrook-hold-father": stonebrookHoldFatherAlternative,
-  "halfborn-matriarch": halfbornMatriarchAlternative,
-  "heron-master": heronMasterAlternative,
-  "the-hag": hagAlternative,
-  "king-of-three": kingOfThreeAlternative,
-  "vale-king-asar-vi": valeKingAsarViAlternative,
-  "halfborn-matriarch-elect-brann": halfbornMatriarchElectAlternative,
-  "stonebrook-hold-father-korro": stonebrookHoldFatherKorroAlternative,
-  "whitemarch-treasurer-halen": whitemarchTreasurerHalenAlternative,
-  "cinder-chapter-master-tovar": cinderChapterMasterTovarAlternative,
-  "crowsmoor-baron-heir": crowsmoorBaronHeirAlternative,
-  "heron-master-apprentice": heronMasterApprenticeAlternative,
+const REPURPOSED_CODEX_PORTRAITS = Object.freeze({
+  "bonemarsh-charmwright-neris": bonemarshCharmwrightNerisPortrait,
+  "glass-spire-key-master-iorin": glassSpireKeyMasterIorinPortrait,
+  "halfborn-watch-captain-yarra": halfbornWatchCaptainYarraPortrait,
+  "brokenhold-marshal-hesk": brokenholdMarshalHeskPortrait,
+  "crowsmoor-muster-reeve-orren": crowsmoorMusterReeveOrrenPortrait,
+  "stonebrook-roadmaster-dorrin": stonebrookRoadmasterDorrinPortrait,
+
+  "whitemarch-deed-keeper-ilyra": whitemarchDeedKeeperIlyraPortrait,
+});
+
+const REGIONAL_ESTABLISHMENT_PORTRAITS = Object.freeze({
+  "whitemarch-apothecary-tavia-vane": whitemarchApothecaryTaviaVanePortrait,
+  "wintermere-amber-cup-astrid": wintermereAmberCupAstridPortrait,
+  "whitemarch-velvet-lantern-mara": whitemarchVelvetLanternMaraPortrait,
+  "whitemarch-silver-swan-elira": whitemarchSilverSwanEliraPortrait,
+  "tellmar-red-reed-kiri": tellmarRedReedKiriPortrait,
+  "tellmar-pearl-lotus-yue": tellmarPearlLotusYuePortrait,
+  "asalan-copper-date-zahra": asalanCopperDateZahraPortrait,
+  "asalan-blue-glass-samira": asalanBlueGlassSamiraPortrait,
+  "selenyan-ashleaf-thaelis": selenyanAshleafThaelisPortrait,
+  "selenyan-moonbough-irelwen": selenyanMoonboughIrelwenPortrait,
+});
+
+const PORTRAIT_CANDIDATE_VARIANTS = Object.freeze({
+  "codex:star-forge-calibrator-oren": single(candidateArtificerV6),
+  "codex:star-forge-lenswright-pavel": single(candidateArtificerV7),
+  "codex:brasshaven-clockmaker-nadiya": single(candidateArtificerV8),
+  "codex:jade-lock-auditor-seven": single(candidateAutomatonV6),
+  "codex:red-snow-axe-thane-hroth": single(candidateBerserkerV6),
+  "codex:willowcourt-blade-tutor-saori": single(candidateBlademasterV6),
+  "codex:reedwatch-ward-captain-damari": single(candidateKnightV6),
+  "codex:sunward-votive-keeper-amara": single(candidatePaladinV6),
+  "codex:pale-shrine-bell-prior-elian": single(candidatePaladinV7),
+  "codex:greenwater-field-healer-marta": single(candidatePaladinV8),
+  "codex:wolfglass-trail-warden-torren": single(candidateRangerV10),
+  "codex:mirecross-bow-reeve-kessa": single(candidateRangerV2),
+  "codex:crane-fort-scout-nia": single(candidateRangerV8),
+  "codex:bramblewych-red-fletch-rosen": single(candidateRangerV9),
+  "codex:greenharbor-night-factor-lucan": single(candidateRogueV6),
+  "codex:duneveil-thread-mage-sahir": single(candidateSorcererV6),
+  "codex:lotusmouth-river-conjurer-meilin": single(candidateSorcererV7),
+  "codex:copperstep-ember-shaper-zuri": single(candidateSorcererV9),
+  "codex:black-tarn-courtier-severin": single(candidateVampireV6),
+  "codex:bone-citadel-blood-notary-nyra": single(candidateVampireV7),
+  "codex:black-tarn-heir-adrian": single(candidateVampireV8),
+  "codex:mossmere-seal-bearer-kadira": single(candidateWarlockV6),
+  "codex:old-root-ritualist-velisse": pair(candidateWarlockV7, candidateWarlockV8),
+  "codex:thornwatch-grimoire-warden-marek": single(candidateWarlockV9),
+  "codex:glass-dune-astrolabist-cyran": single(candidateWizardV10),
+  "codex:heron-itinerant-scholar-tomas": single(candidateWizardV6),
+  "codex:blueglass-lexicographer-elowen": single(candidateWizardV7),
+  "codex:rimeward-abbey-scrivener-odran": single(candidateWizardV9),
+  "codex:aurora-vault-crystal-archmage-vaelor": single(candidateHighSorcererV3),
 });
 
 const TOW_PORTRAIT_ALIASES = Object.freeze({
@@ -361,10 +393,23 @@ const TOW_PORTRAIT_ALIASES = Object.freeze({
   "tow:forsaken-automaton": "tow:automaton",
 });
 
-const codexVariants = Object.fromEntries(Object.entries(CODEX_ALTERNATIVES).map(([id, alternative]) => [
+const codexVariants = Object.fromEntries(Object.entries(CODEX_PORTRAIT_MANIFEST).map(([id, portrait]) => [
   `codex:${id}`,
-  pair(CODEX_PORTRAIT_MANIFEST[id].detailSrc, alternative),
+  single(portrait.detailSrc),
 ]));
+const repurposedCodexVariants = {
+  ...Object.fromEntries(Object.entries(REPURPOSED_CODEX_PORTRAITS).map(([id, portrait]) => [
+    `codex:${id}`,
+    single(portrait),
+  ])),
+  "codex:heron-archivist-isera": EMPTY_VARIANTS,
+};
+const regionalEstablishmentVariants = Object.fromEntries(
+  Object.entries(REGIONAL_ESTABLISHMENT_PORTRAITS).map(([id, portrait]) => [
+    `codex:${id}`,
+    single(portrait),
+  ]),
+);
 const legacyVariants = Object.fromEntries(Object.entries(LEGACY_VARIANTS).map(([id, variants]) => [`template:${id}`, variants]));
 const towVariants = Object.fromEntries(Object.entries(TOW_VARIANTS).map(([id, variants]) => [`tow:${id}`, variants]));
 const companionVariants = Object.fromEntries(Object.entries(COMPANION_VARIANTS).map(([id, variants]) => [`companion:${id}`, variants]));
@@ -376,6 +421,9 @@ const mountVariants = Object.fromEntries(Object.entries(MOUNT_VARIANTS).map(([id
 // authored assets land; callers and save tokens need no changes.
 export const CHARACTER_PORTRAIT_VARIANTS = Object.freeze({
   ...codexVariants,
+  ...repurposedCodexVariants,
+  ...regionalEstablishmentVariants,
+  ...PORTRAIT_CANDIDATE_VARIANTS,
   ...SPECIAL_VARIANTS,
   ...legacyVariants,
   ...towVariants,

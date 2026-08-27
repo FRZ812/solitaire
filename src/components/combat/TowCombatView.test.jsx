@@ -250,7 +250,8 @@ describe("compact combat HUD", () => {
     expect(resolve).toBeTruthy();
     expect(resolve.getAttribute("aria-label")).toMatch(/Resolve$/);
     expect(resolve.getAttribute("aria-valuenow")).toBe(resolve.getAttribute("aria-valuemax"));
-    expect(resolve.querySelector(".tow-formation-unit__meter-value")?.textContent).toContain("+1/r");
+    expect(resolve.querySelector(".tow-formation-unit__meter-value")?.textContent).toContain("+1/basic");
+    expect(resolve.querySelector(".tow-formation-unit__meter-value")?.textContent).not.toContain("/r");
   });
 
   it("shows captured charges only while resuming a legacy encounter", async () => {

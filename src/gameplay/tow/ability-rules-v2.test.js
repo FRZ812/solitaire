@@ -658,7 +658,7 @@ describe("opt-in Tower ability rules v2 schema", () => {
   });
 
   it("does not reinterpret or silently route the current replay profile", () => {
-    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.3");
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.4");
     expect(TOW_ABILITY_RULESET_V2_ID).not.toBe(TOW_RULESET_ID);
     expect(abilityProfile("arctic-strike").rulesetId).toBe(TOW_RULESET_ID);
     expect(() => abilityProfile("arctic-strike", 1, {

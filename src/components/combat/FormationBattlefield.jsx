@@ -269,7 +269,7 @@ function UnitVitals({ actor, enemy, presented }) {
           <span className="tow-formation-unit__meter-label" aria-hidden="true">RP</span>
           <span className="tow-formation-unit__meter-value" aria-hidden="true">
             <strong>{vitalText(resolve)}</strong>/{vitalText(resolveMax)}
-            {resolveRegen > 0 ? <em>+{vitalText(resolveRegen)}/r</em> : null}
+            {resolveRegen > 0 ? <em>+{vitalText(resolveRegen)}/basic</em> : null}
           </span>
         </span>
       ) : null}

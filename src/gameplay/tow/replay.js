@@ -18,9 +18,14 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng } from "../kernel/rng.js";
-import { resolveTowCommandOnEncounter, towCommand } from "./commands.js";
+import {
+  resolveTowCommandOnEncounter,
+  towCommand,
+} from "./commands.js";
+import { replayRetiredV13TowEncounter } from "./encounter.js";
 import { encounterFromGenesis } from "./session.js";
 import { resolveTowTerminalReceipt } from "./outcomes.js";
+import { decodeRetiredTowV13Session } from "./persistence.js";
 
 export const MAX_TOW_REPLAY_COMMANDS = 4096;
 
@@ -67,7 +72,7 @@ function divergence(commandSeq, commandId, path, expected, actual, reason) {
  * @returns {{ok: boolean, reason: string|null, encounter: object|null,
  *   divergence: object|null, replayedCommands: number}}
  */
-export function replayTowCombatSession(genesis, commands) {
+function replayTowCombatSessionWithResolver(genesis, commands, resolveCommand) {
   let log;
   try {
     log = cloneJsonData(commands, "invalid-replay-commands");
@@ -97,7 +102,7 @@ export function replayTowCombatSession(genesis, commands) {
   for (let index = 0; index < log.length; index += 1) {
     const command = log[index];
     const eventsFrom = encounter.sequence;
-    const resolved = resolveTowCommandOnEncounter(encounter, towCommand(command));
+    const resolved = resolveCommand(encounter, towCommand(command));
     if (!resolved.ok) {
       // A command the log says was accepted but the reducer now refuses means the rules
       // changed underneath a saved fight. That is a ruleset-pinning failure, not a corrupt
@@ -149,6 +154,10 @@ export function replayTowCombatSession(genesis, commands) {
   return { ok: true, reason: null, encounter, divergence: null, replayedCommands: log.length };
 }
 
+export function replayTowCombatSession(genesis, commands) {
+  return replayTowCombatSessionWithResolver(genesis, commands, resolveTowCommandOnEncounter);
+}
+
 /**
  * Verify a live session against a replay of its own genesis and commands.
  *
@@ -156,12 +165,12 @@ export function replayTowCombatSession(genesis, commands) {
  * The saved session is never mutated — verification that could alter what it verifies is
  * not verification.
  */
-export function verifyTowSession(session) {
+function verifyTowSessionWithReplay(session, replay) {
   if (!session || typeof session !== "object") {
     return { ok: false, reason: "invalid-session", divergence: null };
   }
 
-  const replayed = replayTowCombatSession(session.genesis, session.commands);
+  const replayed = replay(session.genesis, session.commands);
   if (!replayed.ok) return { ok: false, reason: replayed.reason, divergence: replayed.divergence };
 
   const lastSeq = session.commands.length - 1;
@@ -237,6 +246,16 @@ export function verifyTowSession(session) {
   }
 
   return { ok: true, reason: null, divergence: null };
+}
+
+export function verifyTowSession(session) {
+  return verifyTowSessionWithReplay(session, replayTowCombatSession);
+}
+
+export function verifyRetiredTowV13Session(session) {
+  const decoded = decodeRetiredTowV13Session(session);
+  if (!decoded.ok) return { ok: false, reason: decoded.reason, divergence: null };
+  return verifyTowSessionWithReplay(session, () => replayRetiredV13TowEncounter(session));
 }
 
 // Where a stream sits when nothing has spent it: derived from genesis, never copied from

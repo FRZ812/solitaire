@@ -27,6 +27,10 @@ function modulesOnDisk() {
       found.push(`${dir}/${file}`);
     }
   }
+  for (const file of readdirSync(join(ROOT, "tow"))) {
+    if (!file.endsWith("-v12.js")) continue;
+    found.push(`tow/${file}`);
+  }
   return found.sort();
 }
 

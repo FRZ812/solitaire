@@ -74,9 +74,10 @@ export function applyCompiledNarratorTurn(
   // makes a refusal an actual refusal and not a note attached to a change that happened.
   const governed = resolveNarratorIntents(state, turn, {
     stateRevision: revision,
-    // The route decides what may even be asked for. A presentation route whose outcome the
-    // engine already committed has nothing left to raise.
+    // The exact compiler-bound capability is the single route authority. Route remains
+    // only as receipt context and a legacy fallback for older direct gateway callers.
     route: policy?.id ?? null,
+    turnPolicy: policy,
   });
   const admitted = governed.turn;
 
@@ -129,7 +130,13 @@ export function applyCompiledNarratorStoryPresentation(
       truncated: index === story.length - 1 && !!turn._truncated,
     };
     return item.type === "beat"
-      ? { id: `n${stamp}-${index}`, type: "narration", content: item.text, ...shared }
+      ? {
+        id: `n${stamp}-${index}`,
+        type: "narration",
+        ...(item.actor_id ? { actorId: item.actor_id } : {}),
+        content: item.text,
+        ...shared,
+      }
       : {
         id: `d${stamp}-${index}`,
         type: "dialogue",

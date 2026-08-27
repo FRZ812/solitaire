@@ -34,6 +34,7 @@ describe("OpenRouter narrator registry", () => {
       "openai/gpt-5.6-luna",
       "x-ai/grok-4.5",
       "openai/gpt-5.6-terra",
+      "z-ai/glm-5.3-flash",
       "moonshotai/kimi-k3",
     ]);
   });
@@ -48,13 +49,13 @@ describe("OpenRouter narrator registry", () => {
       "name-asc",
     ]);
     expect(sortNarratorModels(NARRATOR_MODELS, "intelligence-asc").map((model) => model.label)).toEqual([
-      "Laguna S 2.1", "MiniMax M3", "DeepSeek V4 Flash", "GLM 5.2", "GPT-5.6 Luna", "Grok 4.5", "GPT-5.6 Terra", "Kimi K3",
+      "Laguna S 2.1", "MiniMax M3", "DeepSeek V4 Flash", "GLM 5.2", "GPT-5.6 Luna", "Grok 4.5", "GPT-5.6 Terra", "Kimi K3", "GLM 5.3 Flash",
     ]);
     expect(sortNarratorModels(NARRATOR_MODELS, "intelligence-desc").map((model) => model.label)).toEqual([
-      "Kimi K3", "GPT-5.6 Terra", "Grok 4.5", "GPT-5.6 Luna", "GLM 5.2", "DeepSeek V4 Flash", "MiniMax M3", "Laguna S 2.1",
+      "GLM 5.3 Flash", "Kimi K3", "GPT-5.6 Terra", "Grok 4.5", "GPT-5.6 Luna", "GLM 5.2", "DeepSeek V4 Flash", "MiniMax M3", "Laguna S 2.1",
     ]);
     expect(sortNarratorModels(NARRATOR_MODELS, "price-asc").map((model) => model.label)).toEqual([
-      "Laguna S 2.1", "DeepSeek V4 Flash", "GPT-5.6 Luna", "MiniMax M3", "GLM 5.2", "GPT-5.6 Terra", "Grok 4.5", "Kimi K3",
+      "Laguna S 2.1", "DeepSeek V4 Flash", "GLM 5.3 Flash", "GPT-5.6 Luna", "MiniMax M3", "GLM 5.2", "GPT-5.6 Terra", "Grok 4.5", "Kimi K3",
     ]);
     expect(sortNarratorModels(NARRATOR_MODELS, "name-asc").map((model) => model.label)[0]).toBe("DeepSeek V4 Flash");
     expect(NARRATOR_MODELS.map((model) => model.id)).toEqual(original);
@@ -112,6 +113,22 @@ describe("OpenRouter narrator registry", () => {
     expect(NARRATOR_MODELS.some((entry) => entry.id === "qwen/qwen3.7-flash")).toBe(false);
   });
 
+  it("adds GLM 5.3 Flash as the exact low-cost default", () => {
+    const model = NARRATOR_MODELS.find((entry) => entry.id === "z-ai/glm-5.3-flash");
+
+    expect(model).toMatchObject({
+      label: "GLM 5.3 Flash",
+      note: "Z.ai reasoning",
+      provider: "OpenRouter floor",
+      price: { input: 0.075, output: 0.25, cachedInput: 0.015 },
+      intelligence: 57.5,
+    });
+    expect(DEFAULT_NARRATOR_MODEL).toBe("z-ai/glm-5.3-flash");
+    expect(narratorModelPriceLabel(model)).toBe("$0.075 / $0.25");
+    expect(narratorModelCachePriceLabel(model)).toBe("$0.015 cached input");
+    expect(narratorModelIntelligenceLabel(model)).toBe("57.5");
+  });
+
   it("offers one universal effort scale and defaults every model to Max", () => {
     expect(NARRATOR_EFFORTS.map((entry) => entry.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(DEFAULT_NARRATOR_EFFORT).toBe("max");
@@ -125,6 +142,8 @@ describe("OpenRouter narrator registry", () => {
     expect(narratorEffortDisplayLabel("x-ai/grok-4.5", "max")).toBe("Max → High");
     expect(narratorTransportEffort("z-ai/glm-5.2", "max")).toBe("xhigh");
     expect(narratorEffortDisplayLabel("z-ai/glm-5.2", "max")).toBe("Max → XHigh");
+    expect(narratorTransportEffort("z-ai/glm-5.3-flash", "low")).toBe("low");
+    expect(narratorTransportEffort("z-ai/glm-5.3-flash", "max")).toBe("max");
     expect(narratorEffortDisplayLabel("openai/gpt-5.6-luna", "max")).toBe("Max");
     expect(normalizeNarratorEffort("x-ai/grok-4.5", "max")).toBe("max");
   });
@@ -152,6 +171,7 @@ describe("OpenRouter narrator registry", () => {
       "minimax/minimax-m3": "$0.30 / $1.20",
       "deepseek/deepseek-v4-flash-0731": "$0.09 / $0.18",
       "z-ai/glm-5.2": "$0.72 / $1.80",
+      "z-ai/glm-5.3-flash": "$0.075 / $0.25",
       "x-ai/grok-4.5": "$2.00 / $6.00",
       "openai/gpt-5.6-luna": "$0.10 / $0.60",
       "openai/gpt-5.6-terra": "$1.00 / $6.00",
@@ -162,6 +182,7 @@ describe("OpenRouter narrator registry", () => {
       "minimax/minimax-m3": "$0.06 cached input",
       "deepseek/deepseek-v4-flash-0731": "$0.018 cached input",
       "z-ai/glm-5.2": "$0.12 cached input",
+      "z-ai/glm-5.3-flash": "$0.015 cached input",
       "x-ai/grok-4.5": "$0.30 cached input",
       "openai/gpt-5.6-luna": "$0.01 cached input",
       "openai/gpt-5.6-terra": "$0.10 cached input",
@@ -170,6 +191,7 @@ describe("OpenRouter narrator registry", () => {
     expect(narratorModelIntelligenceLabel(byId["poolside/laguna-s-2.1:free"])).toBe("Unrated");
     expect(narratorModelIntelligenceLabel(byId["deepseek/deepseek-v4-flash-0731"])).toBe("49.9");
     expect(narratorModelIntelligenceLabel(byId["openai/gpt-5.6-terra"])).toBe("55.0");
+    expect(narratorModelIntelligenceLabel(byId["z-ai/glm-5.3-flash"])).toBe("57.5");
     expect(narratorModelIntelligenceLabel(byId["moonshotai/kimi-k3"])).toBe("57.1");
     expect(narratorModelPricingNote(byId["openai/gpt-5.6-luna"])).toBe(
       "$0.01 cached input · $0.125 cache write · 272K+ $0.20 / $0.90 · $0.02 cached input · $0.25 cache write",
@@ -183,7 +205,7 @@ describe("OpenRouter narrator registry", () => {
   });
 
   it("defaults to a selectable OpenRouter model", () => {
-    expect(DEFAULT_NARRATOR_MODEL).toBe("deepseek/deepseek-v4-flash-0731");
+    expect(DEFAULT_NARRATOR_MODEL).toBe("z-ai/glm-5.3-flash");
     expect(NARRATOR_MODELS.some((model) => model.id === DEFAULT_NARRATOR_MODEL)).toBe(true);
   });
 
@@ -194,7 +216,7 @@ describe("OpenRouter narrator registry", () => {
     expect(getItem).toHaveBeenCalledWith("solitaire-narrator-effort-v3");
   });
 
-  it("migrates every retired fast narrator selection to the current DeepSeek V4 Flash", () => {
+  it("migrates every retired fast narrator selection to the current default", () => {
     for (const retired of [
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
@@ -203,7 +225,7 @@ describe("OpenRouter narrator registry", () => {
       "tencent/hy3:free",
     ]) {
       vi.stubGlobal("localStorage", { getItem: () => retired });
-      expect(getNarratorModel()).toBe("deepseek/deepseek-v4-flash-0731");
+      expect(getNarratorModel()).toBe("z-ai/glm-5.3-flash");
     }
   });
 

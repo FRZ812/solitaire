@@ -180,6 +180,7 @@ describe("App narrator result integration", () => {
     const result = App.applyNarratorTurnResult(base, "attempt", compiled.turn, base);
 
     expect(result.world.codex.characters.mark).not.toHaveProperty("deathDay");
+    expect(result).not.toHaveProperty("lastIntentRefusals");
     expect(App.narratorCombatHandoff(compiled.turn)).toEqual({
       mode: "immediate",
       directive: compiled.turn.start_combat,

@@ -1,0 +1,299 @@
+{
+  "version": 2,
+  "sourceCommit": "d925c35220a17827a32ba5de1f330efd483ce505",
+  "purpose": "verifier-only Tower v1.2 replay graph",
+  "files": [
+    {
+      "sourcePath": "src/config.js",
+      "runtimePath": "src/config.js"
+    },
+    {
+      "sourcePath": "src/data/abilities.js",
+      "runtimePath": "src/data/abilities.js"
+    },
+    {
+      "sourcePath": "src/data/attribute-tiers.js",
+      "runtimePath": "src/data/attribute-tiers-v12.js"
+    },
+    {
+      "sourcePath": "src/data/buff-spells.js",
+      "runtimePath": "src/data/buff-spells.js"
+    },
+    {
+      "sourcePath": "src/data/catalog.js",
+      "runtimePath": "src/data/catalog-v12.js"
+    },
+    {
+      "sourcePath": "src/data/equipment.js",
+      "runtimePath": "src/data/equipment-v12.js"
+    },
+    {
+      "sourcePath": "src/data/goods.js",
+      "runtimePath": "src/data/goods.js"
+    },
+    {
+      "sourcePath": "src/data/passives.js",
+      "runtimePath": "src/data/passives-v12.js"
+    },
+    {
+      "sourcePath": "src/data/profession-branches.js",
+      "runtimePath": "src/data/profession-branches.js"
+    },
+    {
+      "sourcePath": "src/data/profession-level-tables.js",
+      "runtimePath": "src/data/profession-level-tables.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/artificer.js",
+      "runtimePath": "src/data/profession-levels/artificer.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/barbarian.js",
+      "runtimePath": "src/data/profession-levels/barbarian.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/bard.js",
+      "runtimePath": "src/data/profession-levels/bard.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/cleric.js",
+      "runtimePath": "src/data/profession-levels/cleric.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/druid.js",
+      "runtimePath": "src/data/profession-levels/druid.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/farmer.js",
+      "runtimePath": "src/data/profession-levels/farmer.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/innkeeper.js",
+      "runtimePath": "src/data/profession-levels/innkeeper.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/merchant.js",
+      "runtimePath": "src/data/profession-levels/merchant.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/monk.js",
+      "runtimePath": "src/data/profession-levels/monk.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/paladin.js",
+      "runtimePath": "src/data/profession-levels/paladin.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/ranger.js",
+      "runtimePath": "src/data/profession-levels/ranger.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/rogue.js",
+      "runtimePath": "src/data/profession-levels/rogue.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/sorcerer.js",
+      "runtimePath": "src/data/profession-levels/sorcerer.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/warlock.js",
+      "runtimePath": "src/data/profession-levels/warlock.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/warrior.js",
+      "runtimePath": "src/data/profession-levels/warrior.js"
+    },
+    {
+      "sourcePath": "src/data/profession-levels/wizard.js",
+      "runtimePath": "src/data/profession-levels/wizard.js"
+    },
+    {
+      "sourcePath": "src/data/profession-progressions.js",
+      "runtimePath": "src/data/profession-progressions.js"
+    },
+    {
+      "sourcePath": "src/data/proficiencies.js",
+      "runtimePath": "src/data/proficiencies.js"
+    },
+    {
+      "sourcePath": "src/data/progression-features.js",
+      "runtimePath": "src/data/progression-features.js"
+    },
+    {
+      "sourcePath": "src/data/progression-paths.js",
+      "runtimePath": "src/data/progression-paths.js"
+    },
+    {
+      "sourcePath": "src/data/racial-branches.js",
+      "runtimePath": "src/data/racial-branches.js"
+    },
+    {
+      "sourcePath": "src/data/racial-progressions.js",
+      "runtimePath": "src/data/racial-progressions.js"
+    },
+    {
+      "sourcePath": "src/data/tiers.js",
+      "runtimePath": "src/data/tiers.js"
+    },
+    {
+      "sourcePath": "src/data/tools.js",
+      "runtimePath": "src/data/tools.js"
+    },
+    {
+      "sourcePath": "src/data/travel-spells.js",
+      "runtimePath": "src/data/travel-spells.js"
+    },
+    {
+      "sourcePath": "src/data/uniques.js",
+      "runtimePath": "src/data/uniques.js"
+    },
+    {
+      "sourcePath": "src/engine/combat-stats.js",
+      "runtimePath": "src/engine/combat-stats-v12.js"
+    },
+    {
+      "sourcePath": "src/engine/progression-abilities.js",
+      "runtimePath": "src/engine/progression-abilities.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/intent.js",
+      "runtimePath": "src/gameplay/kernel/intent.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/json-data.js",
+      "runtimePath": "src/gameplay/kernel/json-data.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/model.js",
+      "runtimePath": "src/gameplay/kernel/model.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/replay.js",
+      "runtimePath": "src/gameplay/kernel/replay.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/resolve.js",
+      "runtimePath": "src/gameplay/kernel/resolve.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/rng.js",
+      "runtimePath": "src/gameplay/kernel/rng.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/rules.js",
+      "runtimePath": "src/gameplay/kernel/rules.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/status-stack.js",
+      "runtimePath": "src/gameplay/kernel/status-stack.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/statuses.js",
+      "runtimePath": "src/gameplay/kernel/statuses.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/tow-actor.js",
+      "runtimePath": "src/gameplay/kernel/tow-actor-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/kernel/tow-damage.js",
+      "runtimePath": "src/gameplay/kernel/tow-damage.js"
+    },
+    {
+      "sourcePath": "src/gameplay/reference/actions.js",
+      "runtimePath": "src/gameplay/reference/actions.js"
+    },
+    {
+      "sourcePath": "src/gameplay/reference/enemies.js",
+      "runtimePath": "src/gameplay/reference/enemies.js"
+    },
+    {
+      "sourcePath": "src/gameplay/reference/policy.js",
+      "runtimePath": "src/gameplay/reference/policy.js"
+    },
+    {
+      "sourcePath": "src/gameplay/reference/skills.js",
+      "runtimePath": "src/gameplay/reference/skills.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/ability-targeting.js",
+      "runtimePath": "src/gameplay/tow/ability-targeting-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/archetype-identities.js",
+      "runtimePath": "src/gameplay/tow/archetype-identities.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/character-abilities.js",
+      "runtimePath": "src/gameplay/tow/character-abilities-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/character-ability-source-data.js",
+      "runtimePath": "src/gameplay/tow/character-ability-source-data.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/combat-items.js",
+      "runtimePath": "src/gameplay/tow/combat-items-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/combat-policy.js",
+      "runtimePath": "src/gameplay/tow/combat-policy-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/commands.js",
+      "runtimePath": "src/gameplay/tow/commands-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/encounter.js",
+      "runtimePath": "src/gameplay/tow/encounter-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/formation.js",
+      "runtimePath": "src/gameplay/tow/formation.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/general-ability-source-data.js",
+      "runtimePath": "src/gameplay/tow/general-ability-source-data.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/intent.js",
+      "runtimePath": "src/gameplay/tow/intent.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/movement.js",
+      "runtimePath": "src/gameplay/tow/movement-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/outcomes.js",
+      "runtimePath": "src/gameplay/tow/outcomes-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/replay.js",
+      "runtimePath": "src/gameplay/tow/replay-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/ruleset.js",
+      "runtimePath": "src/gameplay/tow/ruleset-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/session.js",
+      "runtimePath": "src/gameplay/tow/session-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/skills.js",
+      "runtimePath": "src/gameplay/tow/skills-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/targeting.js",
+      "runtimePath": "src/gameplay/tow/targeting-v12.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/traits.js",
+      "runtimePath": "src/gameplay/tow/traits.js"
+    },
+    {
+      "sourcePath": "src/gameplay/tow/weapon-techniques.js",
+      "runtimePath": "src/gameplay/tow/weapon-techniques-v12.js"
+    }
+  ]
+}

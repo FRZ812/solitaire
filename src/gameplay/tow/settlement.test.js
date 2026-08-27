@@ -111,7 +111,7 @@ describe("settling a victory", () => {
     before.character.inventory.carried.push({ itemId: "fire-pot", quantity: 1 });
 
     const result = settleTowEncounter(before, encounter, { encounterId: "fight-item" });
-    expect(encounter.actors.wanderer.resolve).toBe(7);
+    expect(encounter.actors.wanderer.resolve).toBe(6);
     expect(result.state.character.resolve).toBe(encounter.actors.wanderer.resolve);
     expect(result.receipt.playerResolve).toBe(encounter.actors.wanderer.resolve);
     expect(result.state.character.inventory.carried).not.toContainEqual(

@@ -24,4 +24,12 @@ describe("narrator story sequence", () => {
       { type: "dialogue", name: "Mira", line: "Inside. Now." },
     ]);
   });
+
+  it("preserves a canonical actor id on a closed character-action beat", () => {
+    expect(storyFromResponse({
+      story: [{ type: "beat", text: "Mara Vale waits.", actorId: "mara" }],
+    })).toEqual([
+      { type: "beat", text: "Mara Vale waits.", actor_id: "mara" },
+    ]);
+  });
 });

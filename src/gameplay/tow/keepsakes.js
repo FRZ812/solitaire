@@ -91,7 +91,7 @@ export const PERMANENT_STARTING_KEEPSAKES = Object.freeze([
       "Defeat the Tower's final guardian.",
     ),
   }),
-  relic("heart-of-still-winter", "mythical", "+8 ATK · +8 DEF · +20 max HP · +6 max Resolve · +2 Resolve/round · +8% Critical · +8% Dodge", {
+  relic("heart-of-still-winter", "mythical", "+8 ATK · +8 DEF · +20 max HP · +6 max Resolve · +2 Resolve after a free basic · +8% Critical · +8% Dodge", {
     stats: {
       attack: 8,
       defense: 8,

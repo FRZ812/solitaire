@@ -39,6 +39,7 @@ import {
   sealTowSession,
 } from "./session.js";
 
+
 export const TOW_COMMAND_VERSION = 1;
 
 /**
@@ -243,7 +244,7 @@ export function resolveTowCommand(session, command) {
  * verified session is verified against the code that will actually run it — a second
  * implementation could agree with the recording and still disagree with production.
  */
-export function resolveTowCommandOnEncounter(before, command) {
+function resolveTowCommandOnEncounterInternal(before, command) {
   const actorId = command.actorId ?? before.playerId;
   let result;
   if (command.type === "use-skill") {
@@ -275,6 +276,10 @@ export function resolveTowCommandOnEncounter(before, command) {
   if (after.rng.state !== before.rng.state) streams.combat = { ...after.rng };
   if (after.intentRng.state !== before.intentRng.state) streams.intent = { ...after.intentRng };
   return { ok: true, reason: null, encounter: after, streams };
+}
+
+export function resolveTowCommandOnEncounter(before, command) {
+  return resolveTowCommandOnEncounterInternal(before, command);
 }
 
 /**

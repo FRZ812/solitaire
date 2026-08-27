@@ -198,7 +198,10 @@ describe("callNarrator lifecycle deadline", () => {
       contractVersion: 2,
       stateRevision: "captured-revision",
       playerId: "wanderer",
-      characters: { wanderer: { id: "wanderer", name: "Quendar Voss" } },
+      characters: {
+        wanderer: { id: "wanderer", name: "Quendar Voss" },
+        mara: { id: "mara", kind: "npc", name: "Mara Vale" },
+      },
       presentSpeakerIds: [],
       currentTile: { x: 0, y: 0, day: 1 },
       context: "captured projection",
@@ -207,7 +210,10 @@ describe("callNarrator lifecycle deadline", () => {
       id: "captured-policy",
       requiredSkillIds: ["narrative-craft"],
       allowedSkillIds: ["narrative-craft"],
-      allowedEffects: [],
+      allowedEffects: ["buy_mount"],
+      effectConstraints: { buy_mount: { fields: { id: "ash-runner" } } },
+      continuation: { terminalEffect: "buy_mount" },
+      storyCharacterIds: ["mara"],
     };
 
     const result = await callNarrator(narratorState(), "look around", vi.fn(), {
@@ -220,6 +226,11 @@ describe("callNarrator lifecycle deadline", () => {
     expect(Object.isFrozen(result)).toBe(true);
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(requestBody.state_context).toContain("captured projection");
+    expect(requestBody.state_context).toContain('"allowed_effects":["buy_mount"]');
+    expect(requestBody.state_context).toContain('"effect_constraints":{"buy_mount":{"fields":{"id":"ash-runner"}}}');
+    expect(requestBody.state_context).toContain('"terminal_effect":"buy_mount"');
+    expect(requestBody.state_context).toContain('"story_character_ids":["mara"]');
+    expect(requestBody.state_context).toContain("All other effect fields must remain neutral");
     expect(requestBody.required_narrator_skills).toEqual(["narrative-craft"]);
     expect(requestBody).not.toHaveProperty("turn_policy_id");
   });

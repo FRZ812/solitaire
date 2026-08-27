@@ -640,7 +640,7 @@ export function describeCharacterAbilityEffect(effect, rank = 1) {
       : `Gain ${amount} for ${effect.turns} turns, then suffer ${effect.expirationDamage} damage`;
   }
   if (effect.type === "restore-skill-uses") return `Restore ${value} Resolve`;
-  if (effect.type === "resolve-regen") return `Raise Resolve recovery to ${value} per round`;
+  if (effect.type === "resolve-regen") return `Raise free-basic Resolve recovery to ${value}`;
   return effect.type.replace(/-/g, " ");
 }
 

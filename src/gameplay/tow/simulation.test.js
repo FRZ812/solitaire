@@ -4,6 +4,7 @@ import {
   ACCEPTANCE_TARGETS,
   EQUAL_THREAT_FIXTURES,
   STANDARD_FIXTURES,
+  TOW_SIMULATION_VERSION,
   classifySkill,
   incomingDamage,
   intentAwarePolicy,
@@ -51,6 +52,10 @@ function firstTurnSpendingDecision(opened) {
 }
 
 describe("the harness is deterministic", () => {
+  it("versions the free-basic recovery policy", () => {
+    expect(TOW_SIMULATION_VERSION).toBe(6);
+  });
+
   it("measures the current shared Resolve economy", () => {
     const player = standardPlayer();
     expect(player.resolve).toBe(8);
@@ -247,7 +252,8 @@ describe("recovery cannot stall the fight", () => {
 
     expect(result.outcome).not.toBe("draw");
     expect(result.rounds).toBeLessThanOrEqual(60);
-    expect(result.skillUses["automaton-bombardment"] || 0).toBeGreaterThan(1);
+    expect(result.skillUses["automaton-bombardment"] || 0).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(result.skillUses)).toHaveLength(3);
     expect(result.skillUses["automaton-repair"] || 0).toBeLessThan(30);
   });
 });
@@ -350,18 +356,19 @@ describe("the informed policy actually reads the declarations", () => {
 
   it("uses source-authored lethal self-Paralyzing damage as a finisher", () => {
     const wolf = STANDARD_FIXTURES.find((fixture) => fixture.id === "wolf-pack").enemies[0];
+    const attack = Math.ceil(wolf.maxHp * 0.75);
     const opened = createTowEncounter({
       seed: "mortal-cap-restraint",
-      player: standardPlayer(),
+      player: standardPlayer({
+        stats: { attack, defense: 8, critRate: 0, dodgeRate: 0 },
+      }),
       enemies: [{ ...wolf }],
       build: towBuildForCharacter({ profession: "barbarian" }),
     });
-    const primed = useSkill(opened, "elixir-of-wrath", wolf.id);
-    expect(primed.ok).toBe(true);
 
     // Mortal Blow's source-authored coefficient exceeds the wolf's full health, so the
     // informed policy may correctly spend the self-Paralyzing command window as a finisher.
-    expect(firstTurnSpendingDecision(primed.state))
+    expect(firstTurnSpendingDecision(opened))
       .toMatchObject({ type: "use-skill", skillId: "mortal-blow" });
   });
 });

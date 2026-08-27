@@ -10,17 +10,40 @@
 // migrated payload is verified against its original before anything is written back. If
 // verification fails the old payload stands.
 
-import { cloneJsonData, equalJsonData } from "../gameplay/kernel/json-data.js";
+import {
+  canonicalJsonData,
+  cloneJsonData,
+  equalJsonData,
+} from "../gameplay/kernel/json-data.js";
 import {
   isLegacyTowBuild,
   isTowBuild,
   migrateLegacyTowBuild,
 } from "../gameplay/tow/build.js";
 import {
-  compileRewardOffer,
   isDeterministicRewardOffer,
+  MAX_REWARD_REROLLS,
+  migrateRewardOfferToCurrentRuleset,
+  recompileRetiredRewardOffer,
+  rewardOfferIdFor,
+  rewardSeedFor,
 } from "../gameplay/tow/rewards.js";
+import {
+  verifyRetiredTowV13Session,
+  verifyTowSession,
+} from "../gameplay/tow/replay.js";
+import { verifyRetiredTowV12Session } from "../gameplay/tow/legacy-v12-verifier.js";
+import {
+  decodeRetiredTowV13Session,
+  decodeTowSession,
+} from "../gameplay/tow/persistence.js";
 import { TOW_RULESET_ID } from "../gameplay/tow/ruleset.js";
+import { deriveTowSettlementReceipt } from "../gameplay/tow/settlement.js";
+import {
+  MAX_TOW_COMMANDS,
+  towSettlementContextForSession,
+  towSessionChecksum,
+} from "../gameplay/tow/session.js";
 
 export const CAMPAIGN_SCHEMA_V12 = "v12";
 export const CAMPAIGN_SCHEMA_V13 = "v13";
@@ -33,6 +56,7 @@ export const CURRENT_CAMPAIGN_SCHEMA = CAMPAIGN_SCHEMA_V13;
 
 /** The sidecar's own version, independent of the campaign row's. */
 export const MECHANICS_SIDECAR_VERSION = 1;
+export const MAX_RETIRED_TOW_SESSION_ENCODED_BYTES = 2_000_000;
 
 export function isReadableCampaignSchema(version) {
   return READABLE_CAMPAIGN_SCHEMAS.includes(version);
@@ -63,6 +87,7 @@ export function emptyTowMechanics() {
     activeCombat: null,
     readiness: {},
     companionReadiness: {},
+    rewardClaims: [],
     formation: {
       version: 1,
       cells: [null, "wanderer", null, null, null, null, null, null, null],
@@ -88,13 +113,241 @@ function owns(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function hasVictorySettlementReceipt(state, sourceReceiptId) {
-  return Array.isArray(state?.combatSettlementReceipts)
-    && state.combatSettlementReceipts.some((receipt) => (
-      isPlainRecord(receipt)
-      && receipt.sessionId === sourceReceiptId
-      && receipt.outcome === "victory"
-    ));
+function ownDataProperty(value, key) {
+  if (!isPlainRecord(value)) return { ok: false, present: false, value: undefined };
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (!descriptor) return { ok: true, present: false, value: undefined };
+  if (!("value" in descriptor)) return { ok: false, present: true, value: undefined };
+  return { ok: true, present: true, value: descriptor.value };
+}
+
+const RETIRED_REWARD_KEYS = Object.freeze([
+  "candidates",
+  "claimedId",
+  "id",
+  "ineligible",
+  "rerolled",
+  "rerollsRemaining",
+  "rulesetId",
+  "seed",
+  "sourceReceiptId",
+  "version",
+].sort());
+
+const SETTLEMENT_RECEIPT_KEYS = Object.freeze([
+  "combatItemsSpent",
+  "fallen",
+  "outcome",
+  "playerHp",
+  "playerResolve",
+  "proficiencyGains",
+  "rounds",
+  "sequence",
+  "sessionId",
+  "version",
+].sort());
+
+function exactKeys(value, expected) {
+  if (!isPlainRecord(value)) return false;
+  const keys = Object.keys(value).sort();
+  return keys.length === expected.length
+    && keys.every((key, index) => key === expected[index]);
+}
+
+function validRetiredRewardShape(reward) {
+  return exactKeys(reward, RETIRED_REWARD_KEYS)
+    && reward.version === 1
+    && reward.rulesetId === "solitaire-tow-v1.2"
+    && typeof reward.id === "string"
+    && typeof reward.sourceReceiptId === "string"
+    && typeof reward.seed === "string"
+    && Array.isArray(reward.candidates)
+    && reward.candidates.length > 0
+    && reward.candidates.every((candidate) => (
+      isPlainRecord(candidate)
+      && ["skill", "trait"].includes(candidate.kind)
+      && typeof candidate.id === "string"
+      && typeof candidate.name === "string"
+      && typeof candidate.detail === "string"
+      && (candidate.kind === "trait"
+        ? exactKeys(candidate, ["detail", "id", "kind", "name"])
+        : exactKeys(candidate, ["detail", "id", "kind", "name", "requiresReplacement"])
+          && typeof candidate.requiresReplacement === "boolean")
+    ))
+    && Array.isArray(reward.ineligible)
+    && Number.isSafeInteger(reward.rerollsRemaining)
+    && reward.rerollsRemaining >= 0
+    && reward.rerollsRemaining <= MAX_REWARD_REROLLS
+    && typeof reward.rerolled === "boolean"
+    && reward.claimedId === null;
+}
+
+function validNonnegativeCounters(value) {
+  return isPlainRecord(value) && Object.entries(value).every(([id, amount]) => (
+    typeof id === "string"
+    && id.length > 0
+    && Number.isSafeInteger(amount)
+    && amount >= 0
+  ));
+}
+
+function validSettlementReceipt(receipt, sourceReceiptId) {
+  return exactKeys(receipt, SETTLEMENT_RECEIPT_KEYS)
+    && receipt.version === 1
+    && receipt.sessionId === sourceReceiptId
+    && receipt.outcome === "victory"
+    && Number.isSafeInteger(receipt.rounds)
+    && receipt.rounds > 0
+    && Number.isSafeInteger(receipt.sequence)
+    && receipt.sequence >= 0
+    && Number.isFinite(receipt.playerHp)
+    && receipt.playerHp >= 0
+    && (receipt.playerResolve === null
+      || (Number.isFinite(receipt.playerResolve) && receipt.playerResolve >= 0))
+    && Number.isSafeInteger(receipt.fallen)
+    && receipt.fallen >= 0
+    && validNonnegativeCounters(receipt.combatItemsSpent)
+    && validNonnegativeCounters(receipt.proficiencyGains);
+}
+
+function validSettlementLedger(state) {
+  const receipts = state?.combatSettlementReceipts;
+  if (receipts === undefined) return true;
+  if (!Array.isArray(receipts) || receipts.length > 256) return false;
+  const ids = new Set();
+  return receipts.every((receipt) => {
+    if (!validSettlementReceipt(receipt, receipt?.sessionId)
+      || ids.has(receipt.sessionId)) return false;
+    ids.add(receipt.sessionId);
+    return true;
+  });
+}
+
+function validRewardClaims(value) {
+  if (!Array.isArray(value) || value.length > 256) return false;
+  const sourceIds = new Set();
+  return value.every((claim) => {
+    if (!exactKeys(claim, ["claimedId", "offerId", "sourceReceiptId"])
+      || typeof claim.sourceReceiptId !== "string"
+      || claim.sourceReceiptId.length === 0
+      || typeof claim.offerId !== "string"
+      || claim.offerId.length === 0
+      || typeof claim.claimedId !== "string"
+      || claim.claimedId.length === 0
+      || sourceIds.has(claim.sourceReceiptId)) return false;
+    sourceIds.add(claim.sourceReceiptId);
+    return true;
+  });
+}
+
+function rewardSourceWasClaimed(state, sourceReceiptId) {
+  return (state?.mechanics?.tow?.rewardClaims || []).some(
+    (claim) => claim.sourceReceiptId === sourceReceiptId,
+  );
+}
+
+function verifiesRetiredSessionUnderCurrentRules(session) {
+  try {
+    if (session?.terminalReceipt !== null
+      && (!isPlainRecord(session.terminalReceipt)
+        || session.terminalReceipt.rulesetId !== session.rulesetId)) return false;
+    if (session.rulesetId === "solitaire-tow-v1.2") {
+      return verifyRetiredTowV12Session(session).ok;
+    }
+    if (session.rulesetId !== "solitaire-tow-v1.3") return false;
+    return decodeRetiredTowV13Session(session).ok
+      && verifyRetiredTowV13Session(session).ok;
+  } catch {
+    return false;
+  }
+}
+
+function rewardSeedDescendsFrom(baseSeed, reward, openingBudget = null) {
+  if (Number.isSafeInteger(openingBudget)) {
+    if (!reward.rerolled) {
+      return reward.seed === baseSeed && reward.rerollsRemaining === openingBudget;
+    }
+    if (reward.rerollsRemaining < 0 || reward.rerollsRemaining >= openingBudget) return false;
+    let derived = baseSeed;
+    for (let remaining = openingBudget;
+      remaining > reward.rerollsRemaining;
+      remaining -= 1) {
+      derived = `${derived}::reroll::${remaining}`;
+    }
+    return reward.seed === derived;
+  }
+  if (!reward.rerolled) return reward.seed === baseSeed;
+  for (let opening = reward.rerollsRemaining + 1;
+    opening <= MAX_REWARD_REROLLS;
+    opening += 1) {
+    let derived = baseSeed;
+    for (let remaining = opening; remaining > reward.rerollsRemaining; remaining -= 1) {
+      derived = `${derived}::reroll::${remaining}`;
+    }
+    if (reward.seed === derived) return true;
+  }
+  return false;
+}
+
+function hasRewardProvenance(state, reward, rulesetId) {
+  if (rewardSourceWasClaimed(state, reward.sourceReceiptId)) return false;
+  const receipt = Array.isArray(state?.combatSettlementReceipts)
+    ? state.combatSettlementReceipts.find((entry) => entry?.sessionId === reward.sourceReceiptId)
+    : null;
+  if (!validSettlementReceipt(receipt, reward.sourceReceiptId)) return false;
+  const session = state?.mechanics?.tow?.activeCombat;
+  const stream = session?.terminalReceipt?.streamEndpoints?.rewards;
+  const encounter = session?.encounter;
+  const player = encounter?.actors?.[encounter?.playerId];
+  if (!isPlainRecord(session)
+    || session.version !== 1
+    || session.rulesetId !== rulesetId
+    || session.mode !== "campaign"
+    || session.sessionId !== reward.sourceReceiptId
+    || session.status !== "settled"
+    || session.settlementId !== reward.sourceReceiptId
+    || !isPlainRecord(stream)
+    || stream.algorithm !== "mulberry32"
+    || !Number.isSafeInteger(stream.state)
+    || stream.state < 0
+    || stream.state > 0xffff_ffff
+    || reward.id !== rewardOfferIdFor(
+      session.sessionId,
+      rewardSeedFor(session.sessionId, stream),
+    )
+    || !rewardSeedDescendsFrom(
+      rewardSeedFor(session.sessionId, stream),
+      reward,
+      rulesetId === TOW_RULESET_ID ? session.context.rewardPolicy.rerolls : null,
+    )
+    || encounter?.phase !== "victory"
+    || encounter.round !== receipt.rounds
+    || encounter.sequence !== receipt.sequence
+    || player?.hp !== receipt.playerHp
+    || (Number.isFinite(player?.resolve) ? player.resolve : null) !== receipt.playerResolve) {
+    return false;
+  }
+  try {
+    if (session.checksum !== towSessionChecksum(session)) return false;
+    const verified = rulesetId === TOW_RULESET_ID
+      ? verifyTowSession(session).ok
+      : verifiesRetiredSessionUnderCurrentRules(session);
+    if (!verified) return false;
+    const expectedReceipt = deriveTowSettlementReceipt(
+      state,
+      encounter,
+      towSettlementContextForSession(session),
+    );
+    return equalJsonData(receipt, expectedReceipt);
+  } catch {
+    return false;
+  }
+}
+
+function hasCurrentRewardProvenance(state, reward) {
+  return hasRewardProvenance(state, reward, TOW_RULESET_ID)
+    || hasRewardProvenance(state, reward, "solitaire-tow-v1.2")
+    || hasRewardProvenance(state, reward, "solitaire-tow-v1.3");
 }
 
 function hasValidCurrentPendingReward(state) {
@@ -102,7 +355,70 @@ function hasValidCurrentPendingReward(state) {
   return isTowBuild(state.mechanics?.build)
     && isDeterministicRewardOffer(state.mechanics.build, state.pendingReward)
     && state.pendingReward.claimedId === null
-    && hasVictorySettlementReceipt(state, state.pendingReward.sourceReceiptId);
+    && hasCurrentRewardProvenance(state, state.pendingReward);
+}
+
+const RETIRED_RULESET_IDS = new Set([
+  "solitaire-tow-v1",
+  "solitaire-tow-v1.1",
+  "solitaire-tow-v1.2",
+  "solitaire-tow-v1.3",
+]);
+
+function retiredTowSessionPreflight(session) {
+  if (!isPlainRecord(session)) {
+    return { ok: true, reason: null };
+  }
+  const ruleset = ownDataProperty(session, "rulesetId");
+  if (!ruleset.ok) return { ok: false, reason: "invalid-retired-active-combat" };
+  if (!RETIRED_RULESET_IDS.has(ruleset.value)) return { ok: true, reason: null };
+  const commands = ownDataProperty(session, "commands");
+  if (!commands.ok
+    || !Array.isArray(commands.value)
+    || commands.value.length > MAX_TOW_COMMANDS) {
+    return { ok: false, reason: "invalid-retired-active-combat" };
+  }
+  try {
+    const serialized = canonicalJsonData(session, "invalid-retired-active-combat");
+    if (new TextEncoder().encode(serialized).byteLength
+      > MAX_RETIRED_TOW_SESSION_ENCODED_BYTES) {
+      return { ok: false, reason: "invalid-retired-active-combat" };
+    }
+  } catch {
+    return { ok: false, reason: "invalid-retired-active-combat" };
+  }
+  return { ok: true, reason: null };
+}
+
+function retiredActiveCombatPreflight(state) {
+  if (!isPlainRecord(state)) return { ok: true, reason: null };
+  const mechanics = ownDataProperty(state, "mechanics");
+  if (!mechanics.ok) return { ok: false, reason: "invalid-retired-active-combat" };
+  if (!mechanics.present || !isPlainRecord(mechanics.value)) return { ok: true, reason: null };
+  const tow = ownDataProperty(mechanics.value, "tow");
+  if (!tow.ok) return { ok: false, reason: "invalid-retired-active-combat" };
+  if (!tow.present || !isPlainRecord(tow.value)) return { ok: true, reason: null };
+  const activeCombat = ownDataProperty(tow.value, "activeCombat");
+  if (!activeCombat.ok) return { ok: false, reason: "invalid-retired-active-combat" };
+  return retiredTowSessionPreflight(activeCombat.value);
+}
+
+export function isWritableTowActiveCombat(value) {
+  if (value === null) return true;
+  if (!isPlainRecord(value)) return false;
+  const ruleset = ownDataProperty(value, "rulesetId");
+  if (!ruleset.ok || !ruleset.present) return false;
+  if (ruleset.value === TOW_RULESET_ID) {
+    try {
+      return decodeTowSession(value).ok
+        && verifyTowSession(value).ok;
+    } catch {
+      return false;
+    }
+  }
+  if (!RETIRED_RULESET_IDS.has(ruleset.value)
+    || !retiredTowSessionPreflight(value).ok) return false;
+  return verifiesRetiredSessionUnderCurrentRules(value);
 }
 
 function migrateRetiredPendingReward(pendingReward, build, state) {
@@ -113,38 +429,35 @@ function migrateRetiredPendingReward(pendingReward, build, state) {
     if (!isDeterministicRewardOffer(build, pendingReward) || pendingReward.claimedId !== null) {
       return { ok: false, reason: "invalid-current-pending-reward", reward: null };
     }
-    return hasVictorySettlementReceipt(state, pendingReward.sourceReceiptId)
+    return hasCurrentRewardProvenance(state, pendingReward)
       ? { ok: true, reason: null, reward: pendingReward }
       : { ok: false, reason: "unearned-pending-reward", reward: null };
   }
   if (pendingReward.rulesetId !== "solitaire-tow-v1.2") {
-    return { ok: false, reason: "unsupported-pending-reward-ruleset", reward: null };
+    if (pendingReward.rulesetId !== "solitaire-tow-v1.3") {
+      return { ok: false, reason: "unsupported-pending-reward-ruleset", reward: null };
+    }
+    if (!isTowBuild(build)) {
+      return { ok: false, reason: "invalid-retired-pending-reward", reward: null };
+    }
+    if (!hasRewardProvenance(state, pendingReward, "solitaire-tow-v1.3")) {
+      return { ok: false, reason: "unearned-pending-reward", reward: null };
+    }
+    const migrated = migrateRewardOfferToCurrentRuleset(build, pendingReward);
+    return migrated.ok
+      ? { ok: true, reason: null, reward: migrated.offer }
+      : { ok: false, reason: "invalid-retired-pending-reward", reward: null };
   }
-  if (!isTowBuild(build)
-    || typeof pendingReward.sourceReceiptId !== "string"
-    || typeof pendingReward.seed !== "string"
-    || !Number.isSafeInteger(pendingReward.rerollsRemaining)
-    || pendingReward.rerollsRemaining < 0
-    || pendingReward.rerollsRemaining > 4
-    || pendingReward.claimedId !== null) {
+  if (!isTowBuild(build) || !validRetiredRewardShape(pendingReward)) {
     return { ok: false, reason: "invalid-retired-pending-reward", reward: null };
   }
-  if (!hasVictorySettlementReceipt(state, pendingReward.sourceReceiptId)) {
+  if (!hasRewardProvenance(state, pendingReward, "solitaire-tow-v1.2")) {
     return { ok: false, reason: "unearned-pending-reward", reward: null };
   }
-  const compiled = compileRewardOffer(build, {
-    sourceReceiptId: pendingReward.sourceReceiptId,
-    seed: pendingReward.seed,
-    rerolls: pendingReward.rerollsRemaining,
-  });
-  if (!compiled.ok) {
-    return { ok: false, reason: "invalid-retired-pending-reward", reward: null };
-  }
-  return {
-    ok: true,
-    reason: null,
-    reward: compiled.offer,
-  };
+  const recompiled = recompileRetiredRewardOffer(build, pendingReward);
+  return recompiled.ok
+    ? { ok: true, reason: null, reward: recompiled.offer }
+    : { ok: false, reason: "invalid-retired-pending-reward", reward: null };
 }
 
 function validSavedFormation(value) {
@@ -155,10 +468,7 @@ function validSavedFormation(value) {
     && value.cells.every((cell) => cell === null || typeof cell === "string");
 }
 
-// Cheap, non-mutating write-time check. Hydration performs the expensive clone +
-// read-back proof once; autosave only needs to prove that the required current
-// sidecar shape is present before stamping the database schema version.
-export function hasCurrentMechanicsState(state) {
+function hasMechanicsStateShape(state, activeCombatIsAccepted) {
   const sidecar = state?.mechanics;
   const tow = sidecar?.tow;
   return isPlainRecord(sidecar)
@@ -169,11 +479,48 @@ export function hasCurrentMechanicsState(state) {
     && (sidecar.build === null || isTowBuild(sidecar.build))
     && isPlainRecord(tow)
     && owns(tow, "activeCombat")
-    && (tow.activeCombat === null || isPlainRecord(tow.activeCombat))
+    && activeCombatIsAccepted(tow.activeCombat)
     && isPlainRecord(tow.readiness)
     && isPlainRecord(tow.companionReadiness)
+    && validRewardClaims(tow.rewardClaims)
     && validSavedFormation(tow.formation)
+    && validSettlementLedger(state)
     && hasValidCurrentPendingReward(state);
+}
+
+// Cheap, non-mutating write-time check. Hydration performs the expensive clone +
+// read-back proof once; autosave only needs to prove that the required current
+// sidecar shape is present before stamping the database schema version.
+export function hasCurrentMechanicsState(state) {
+  return hasMechanicsStateShape(state, isWritableTowActiveCombat);
+}
+
+export function canCommitTowSession(state, session) {
+  const sourceReceiptId = state?.pendingReward?.sourceReceiptId;
+  return typeof sourceReceiptId !== "string"
+    || sourceReceiptId.length === 0
+    || session?.sessionId === sourceReceiptId;
+}
+
+function hasRecoverableMechanicsState(state) {
+  return hasMechanicsStateShape(
+    state,
+    (activeCombat) => {
+      if (activeCombat === null) return true;
+      if (!isPlainRecord(activeCombat)) return false;
+      if (RETIRED_RULESET_IDS.has(activeCombat.rulesetId)) return true;
+      if (activeCombat.rulesetId !== TOW_RULESET_ID
+        || typeof activeCombat.checksum !== "string") return false;
+      try {
+        // A damaged current record must remain visible so the player can discard it.
+        // A checksum-valid but replay-invalid current record is a semantic forgery, not
+        // recoverable legacy data, and stays behind the fail-closed hydration gate.
+        return activeCombat.checksum !== towSessionChecksum(activeCombat);
+      } catch {
+        return false;
+      }
+    },
+  );
 }
 
 /**
@@ -189,6 +536,10 @@ export function hasCurrentMechanicsState(state) {
 export function migrateCampaignState(state) {
   if (!state || typeof state !== "object" || Array.isArray(state)) {
     return { ok: false, reason: "invalid-campaign-state", state: null };
+  }
+  const retiredPreflight = retiredActiveCombatPreflight(state);
+  if (!retiredPreflight.ok) {
+    return { ok: false, reason: retiredPreflight.reason, state: null };
   }
   let next;
   try {
@@ -362,7 +713,22 @@ export function upgradeCampaignPayload(state) {
     return { ok: false, reason: verified.reason, state, writable: false };
   }
   if (!hasCurrentMechanicsState(migrated.state)) {
+    if (hasRecoverableMechanicsState(migrated.state)) {
+      return {
+        ok: true,
+        reason: "unwritable-active-combat",
+        state: migrated.state,
+        writable: false,
+        recoverable: true,
+      };
+    }
     return { ok: false, reason: "invalid-current-mechanics-state", state, writable: false };
   }
-  return { ok: true, reason: null, state: migrated.state, writable: true };
+  return {
+    ok: true,
+    reason: null,
+    state: migrated.state,
+    writable: true,
+    recoverable: false,
+  };
 }

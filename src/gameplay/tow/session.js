@@ -67,6 +67,7 @@ export const TOW_RETREAT_POLICIES = Object.freeze(["forbidden", "allowed"]);
 
 export const MAX_TOW_COMMANDS = 4096;
 export const MAX_TOW_PARTICIPANTS = 32;
+export const MAX_TOW_REWARD_REROLLS = 4;
 
 const SESSION_KEYS = Object.freeze([
   "checksum",
@@ -107,6 +108,7 @@ const GENESIS_KEYS = Object.freeze([
   "enemySnapshots",
   "formations",
   "intentSchedules",
+  "mode",
   "playerSnapshot",
   "rngVersion",
   "seedManifest",
@@ -234,8 +236,11 @@ function isContext(value) {
     && Array.isArray(value.lootPolicy.ownedUniqueIds)
     && value.lootPolicy.ownedUniqueIds.every((id) => typeof id === "string")
     && isLootSources(value.lootPolicy.sources)
-    && exactKeys(value.rewardPolicy, ["proficiencyId"])
+    && exactKeys(value.rewardPolicy, ["proficiencyId", "rerolls"])
     && optionalIdentifier(value.rewardPolicy.proficiencyId)
+    && Number.isSafeInteger(value.rewardPolicy.rerolls)
+    && value.rewardPolicy.rerolls >= 0
+    && value.rewardPolicy.rerolls <= MAX_TOW_REWARD_REROLLS
     && exactKeys(value.admission, ["notes", "version"])
     && Number.isSafeInteger(value.admission.version)
     && Array.isArray(value.admission.notes)
@@ -299,7 +304,14 @@ export function towCombatContext(input = {}) {
         }]),
       ),
     },
-    rewardPolicy: { proficiencyId: input.rewardPolicy?.proficiencyId ?? null },
+    rewardPolicy: {
+      proficiencyId: input.rewardPolicy?.proficiencyId ?? null,
+      rerolls: Number.isSafeInteger(input.rewardPolicy?.rerolls)
+        && input.rewardPolicy.rerolls >= 0
+        && input.rewardPolicy.rerolls <= MAX_TOW_REWARD_REROLLS
+        ? input.rewardPolicy.rerolls
+        : 0,
+    },
     // What this fight decided not to carry, and why. Durable so that "the companion held
     // back" and "the ability was superseded by the package" survive a reload as recorded
     // facts rather than as things nobody wrote down.
@@ -322,6 +334,25 @@ export function participantIsLethal(context, actorId) {
   return context?.lethalPolicy === "lethal";
 }
 
+export function towSettlementContextForSession(session) {
+  return {
+    encounterId: session.sessionId,
+    proficiencyId: session.context.rewardPolicy.proficiencyId,
+    npcIds: Object.fromEntries(
+      Object.entries(session.context.participantBindings)
+        .filter(([, binding]) => binding.campaignEntityId)
+        .map(([actorId, binding]) => [actorId, binding.campaignEntityId]),
+    ),
+    lethal: session.context.lethalPolicy !== "nonlethal",
+    worldFates: Object.fromEntries(
+      (session.terminalReceipt?.participants || []).map((outcome) => [
+        outcome.participantId,
+        outcome.worldFate,
+      ]),
+    ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Genesis — the immutable opening
 // ---------------------------------------------------------------------------
@@ -331,6 +362,7 @@ function isGenesis(value) {
   if (!current && !exactKeys(value, LEGACY_GENESIS_KEYS)) return false;
   return isSeedManifest(value.seedManifest)
     && value.rngVersion === TOW_RNG_VERSION
+    && TOW_SESSION_MODES.includes(value.mode)
     && Boolean(value.playerSnapshot)
     && typeof value.playerSnapshot === "object"
     && !Array.isArray(value.playerSnapshot)
@@ -502,6 +534,7 @@ export function isTowSession(value) {
   if (!Number.isSafeInteger(value.revision) || value.revision < 0) return false;
   if (!isContext(value.context)) return false;
   if (!isGenesis(value.genesis)) return false;
+  if (value.genesis.mode !== value.mode) return false;
   if (!Array.isArray(value.commands) || value.commands.length > MAX_TOW_COMMANDS) return false;
   // The revision *is* the accepted-command count. Keeping them equal by construction means a
   // forged revision cannot make a stale command look current.
@@ -570,6 +603,7 @@ export function createTowSession(input = {}) {
     genesis = cloneJsonData({
       seedManifest: deriveSeedManifest(rootSeed),
       rngVersion: TOW_RNG_VERSION,
+      mode,
       playerSnapshot: player,
       // Each ally carries their own actor line and their own build. Holding them in genesis
       // is what lets a party fight replay exactly, down to which companion was already hurt

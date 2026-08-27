@@ -106,7 +106,7 @@ export function describeCombatItemEffect(itemOrId) {
   if (effect.type === "heal-max-percent") return `Restore ${effect.percent}% max HP`;
   if (effect.type === "restore-resolve") {
     const recovery = effect.regenMinimum
-      ? ` · raise recovery to ${effect.regenMinimum} Resolve/round`
+      ? ` · raise free-basic recovery to ${effect.regenMinimum} Resolve`
       : "";
     return `Restore ${effect.amount} Resolve${recovery}`;
   }

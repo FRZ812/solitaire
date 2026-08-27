@@ -7,6 +7,7 @@ import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY, readResumeSnapshot } from "./engine/campaign-resume.js";
 import { buildNarratorProjection, narratorTurnPolicy } from "./engine/narrator-projection.js";
 import { compileNarratorCandidate, NARRATOR_RESPONSE_KEYS } from "./engine/narrator-turn-compiler.js";
+import { callNarrator } from "./engine/api-supabase.js";
 import { startProductionCombatSession } from "./gameplay/production/combat-session.js";
 import { createPendingTravelCombat } from "./gameplay/production/pending-travel-combat.js";
 import { Solitaire } from "./App.jsx";
@@ -314,6 +315,50 @@ describe("production combat at the real App browser boundary", () => {
     expect(harness.serverState.activeCombatSession ?? null).toBe(null);
     expect(harness.serverState.pendingCombatDirective ?? null).toBe(null);
     expect(harness.serverState.productionCombatSequence).toBe(0);
+  }, 45_000);
+
+  it("turns an exact player attack into a pending engine handoff without asking the narrator to author combat", async () => {
+    const state = makeInitialState();
+    state.created = true;
+    const current = state.world.currentTile;
+    state.world.codex.characters["road-brigand"] = {
+      id: "road-brigand",
+      name: "Road brigand",
+      kind: "npc",
+      tier: "common",
+      at: { x: current.x, y: current.y, day: state.time.day },
+      attributes: { body: 1, reflex: 1, vigor: 1, mind: 1, wit: 1, presence: 1 },
+      proficiencies: {},
+      vitality: 5,
+      vitalityMax: 5,
+      resolve: 1,
+      resolveMax: 1,
+      worn: [],
+      abilities: [],
+      conditions: [],
+      combatState: { health: 5, maxHealth: 5, status: "ok" },
+    };
+    harness.serverState = state;
+    callNarrator.mockClear();
+
+    const mounted = await mountCampaign();
+    const field = await waitFor(() => mounted.querySelector(".story-input__field"));
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+    await act(async () => {
+      setValue.call(field, "I attack Road brigand.");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(await waitFor(() => mounted.querySelector('button[aria-label="Queue message"]')));
+    await click(await waitFor(() => mounted.querySelector(
+      'button[aria-label="Run narrator with 1 queued message"]',
+    )));
+
+    await waitFor(() => callNarrator.mock.calls.length > 0 || [...mounted.querySelectorAll("button")]
+      .some((button) => button.textContent === "Engage"));
+    expect(callNarrator).not.toHaveBeenCalled();
+    expect(mounted.textContent).toContain("You commit to combat with Road brigand.");
+    expect([...mounted.querySelectorAll("button")].some((button) => button.textContent === "Engage")).toBe(true);
+    await waitFor(() => harness.serverState.pendingCombatDirective?.directive?.foes?.[0]?.npc_id === "road-brigand");
   }, 45_000);
 
   it("fails closed on an invalid persisted pending combat directive", async () => {

@@ -22,6 +22,9 @@ import { migrateProgressionState } from "../engine/progression.js";
 import { normalizeMemoryBank } from "../engine/memory.js";
 import { DEFAULT_NARRATOR_SETTINGS, normalizeNarratorSettings } from "../engine/narrator-settings.js";
 import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
+import { makeRepurposedPortraitCharacters } from "./repurposed-portrait-characters.js";
+import { makePortraitCandidateCharacters } from "./portrait-candidate-characters.js";
+import { makeRegionalEstablishmentCharacters } from "./regional-establishment-characters.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -351,6 +354,8 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
           "glass-spire-master": {
             id: "glass-spire-master", kind: "npc",
             name: "The High Master of the Glass Spire", race: "human", gender: "male", profession: "sorcerer",
+            title: "Mystic Archmage",
+            magicDiscipline: "mystic-astral",
             origin: "east",
             age: 140, agingMode: "power-extended", lifespanMultiplier: 3.0,
             attractiveness: 5,
@@ -363,13 +368,14 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "ink-stains the cleaning never quite removes",
             },
             base_appearance: "Small and light. Ivory-pale skin, white hair cut close. Dark, slow-attentive eyes. Ink-stains at the fingertips.",
-            description: "The High Master sits at the top of the Glass Spire, far east. Trained the masters who trained most of the continent's working sorcerers. Said to write letters that change kingdoms.",
+            description: "The mystic archmage at the top of the Glass Spire, far east. He reads astral conjunctions, trains the masters who train a continent's working sorcerers, and writes letters that change kingdoms. His near-identical twin Iorin studies the tower's shadows instead.",
             attributes: { body: 2, reflex: 4, vigor: 4, mind: 22, wit: 18, presence: 12 },
             worn: ["spire-staff", "spire-grey-robe", "scrying-bowl-pendant", "iron-key-ring"],
             knows: [
               "The Spire admits by invitation only; my letters are the invitations.",
               "I have not left the tower in forty-one years.",
             ],
+            at: { x: 525, y: 20, day: 0 }, home: { x: 525, y: 20 },
           },
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
@@ -860,6 +866,12 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             at: { x: 40, y: 25, day: 0 }, home: { x: 40, y: 25 },
             activeAsLeader: false, successor_id: null,
           },
+
+          // Accepted portrait lookalikes are separate people, not alternate
+          // faces for the named figures above.
+          ...makeRepurposedPortraitCharacters(),
+          ...makePortraitCandidateCharacters(),
+          ...makeRegionalEstablishmentCharacters(),
         },
         races: {
           "human":     { id: "human",     name: "Human",     appearance: "Variable. Cardinal cultures shape build, complexion, hair, and dress — northerners are tall and fair; easterners pale and lean; southerners deep-skinned; westerners weathered olive; central folk mixed.", description: "The dominant folk of the region. Visually distinct by cardinal origin (north, east, south, west, central).", common: true },

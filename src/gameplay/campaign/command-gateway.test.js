@@ -296,16 +296,20 @@ describe("the owners promoted from pass-through", () => {
   });
 
   it("bounds how much of the memory bank one beat may claim", () => {
-    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ memory_updates: ["A thing happened."] })), "memory_updates").status)
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({
+      memory_updates: [{ id: "hale", adds: ["A thing happened."] }],
+    })), "memory_updates").status)
       .toBe(INTENT_STATUS.APPLIED);
     const flood = resolveNarratorIntents(
-      campaign(), turnWith({ memory_updates: ["a", "b", "c", "d", "e", "f"] }),
+      campaign(), turnWith({ memory_updates: [{ id: "hale", adds: ["a", "b", "c", "d", "e"] }] }),
     );
     expect(receiptFor(flood, "memory_updates").reason).toBe("too-many-memories");
   });
 
   it("refuses an empty memory rather than storing a blank", () => {
-    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ memory_updates: ["   "] })), "memory_updates").reason)
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({
+      memory_updates: [{ id: "hale", adds: ["   "] }],
+    })), "memory_updates").reason)
       .toBe("empty-memory");
   });
 
@@ -389,6 +393,80 @@ describe("purchases, party and items", () => {
     expect(receiptFor(result, "inventory_changes").status).toBe(INTENT_STATUS.APPLIED);
   });
 
+  it("allows a carried generated codex item to be handed to a companion", () => {
+    const handoff = rich();
+    handoff.world.codex.items = {
+      "loot-forged-blade": {
+        id: "loot-forged-blade",
+        name: "Forge-Flecked Blade",
+        kind: "weapon",
+      },
+    };
+    handoff.character.inventory.carried = [{ itemId: "loot-forged-blade", quantity: 1 }];
+
+    const result = resolveNarratorIntents(handoff, turnWith({
+      inventory_changes: {
+        added: [],
+        removed: [{ itemId: "loot-forged-blade", quantity: 1 }],
+      },
+      companion_gear: [{ id: "hale", add: ["loot-forged-blade"], remove: [] }],
+    }));
+
+    expect(receiptFor(result, "inventory_changes").status).toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(result, "companion_gear").status).toBe(INTENT_STATUS.APPLIED);
+    expect(result.turn.inventory_changes).not.toBeNull();
+    expect(result.turn.companion_gear).not.toBeNull();
+  });
+
+  it("accepts only atomic companion gear transfers paired with the player inventory", () => {
+    const handoff = rich();
+    handoff.character.inventory.carried = [{ itemId: "iron-dagger", quantity: 1 }];
+    const equipped = resolveNarratorIntents(handoff, turnWith({
+      inventory_changes: { added: [], removed: [{ itemId: "iron-dagger", quantity: 1 }] },
+      companion_gear: [{ id: "hale", add: ["iron-dagger"], remove: [] }],
+    }));
+    expect(receiptFor(equipped, "inventory_changes").status).toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(equipped, "companion_gear").status).toBe(INTENT_STATUS.APPLIED);
+
+    const returned = rich();
+    returned.world.codex.characters.hale.worn = ["iron-dagger"];
+    const unequipped = resolveNarratorIntents(returned, turnWith({
+      inventory_changes: { added: [{ itemId: "iron-dagger", quantity: 1 }], removed: [] },
+      companion_gear: [{ id: "hale", add: [], remove: ["iron-dagger"] }],
+    }));
+    expect(receiptFor(unequipped, "inventory_changes").status).toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(unequipped, "companion_gear").status).toBe(INTENT_STATUS.APPLIED);
+
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({
+      companion_gear: [{ id: "hale", add: ["sword-of-plot-convenience"], remove: [] }],
+    })), "companion_gear").reason).toBe("uncatalogued-item");
+  });
+
+  it("refuses both sides when a companion gear transfer is unpaired or unowned", () => {
+    const unpaired = resolveNarratorIntents(rich(), turnWith({
+      companion_gear: [{ id: "hale", add: ["iron-dagger"], remove: [] }],
+    }));
+    expect(receiptFor(unpaired, "companion_gear").reason).toBe("companion-gear-transfer-unpaired");
+    expect(unpaired.turn.companion_gear).toBeNull();
+
+    const missing = resolveNarratorIntents(rich(), turnWith({
+      inventory_changes: { added: [], removed: [{ itemId: "iron-dagger", quantity: 1 }] },
+      companion_gear: [{ id: "hale", add: ["iron-dagger"], remove: [] }],
+    }));
+    expect(receiptFor(missing, "inventory_changes").reason).toBe("companion-gear-not-in-player-inventory");
+    expect(receiptFor(missing, "companion_gear").reason).toBe("companion-gear-not-in-player-inventory");
+    expect(missing.turn.inventory_changes).toBeNull();
+    expect(missing.turn.companion_gear).toBeNull();
+
+    const notWorn = rich();
+    const forgedReturn = resolveNarratorIntents(notWorn, turnWith({
+      inventory_changes: { added: [{ itemId: "iron-dagger", quantity: 1 }], removed: [] },
+      companion_gear: [{ id: "hale", add: [], remove: ["iron-dagger"] }],
+    }));
+    expect(receiptFor(forgedReturn, "inventory_changes").reason).toBe("companion-gear-not-worn");
+    expect(receiptFor(forgedReturn, "companion_gear").reason).toBe("companion-gear-not-worn");
+  });
+
   it("bounds the spendable pool like the health one", () => {
     expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ resolve_change: 2 })), "resolve_change").status)
       .toBe(INTENT_STATUS.APPLIED);
@@ -396,11 +474,11 @@ describe("purchases, party and items", () => {
       .toBe("resolve-above-maximum");
   });
 
-  it("refuses a growth steer the progression system does not understand", () => {
-    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "martial" })), "progression_focus").reason)
-      .toBe("unknown-progression-focus");
-    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "racial" })), "progression_focus").status)
-      .toBe(INTENT_STATUS.APPLIED);
+  it("refuses every growth steer because no production reducer consumes it", () => {
+    for (const focus of ["martial", "racial"]) {
+      expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: focus })), "progression_focus").reason)
+        .toBe("progression-no-consumer");
+    }
   });
 
   it("refuses every legacy growth steer for an archetype character", () => {
@@ -415,7 +493,7 @@ describe("purchases, party and items", () => {
 
     expect(receiptFor(result, "progression_focus")).toMatchObject({
       status: INTENT_STATUS.REFUSED,
-      reason: "progression-retired-for-archetype",
+      reason: "progression-no-consumer",
     });
     expect(result.turn.progression_focus).toBeNull();
   });
@@ -436,17 +514,16 @@ describe("the map", () => {
     expect(result.turn.tile_move).toBe(null);
   });
 
-  it("refuses revealing a place that does not exist", () => {
-    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ tile_discovery: { x: -99_999, y: 0 } })), "tile_discovery").reason)
-      .toBe("off-the-map");
+  it("refuses narrator-authored tile discovery because travel owns materialization", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({
+      tile_discovery: { name: "Glass Ford", poi_type: "landmark", description: "A bright crossing." },
+    })), "tile_discovery").reason).toBe("tile-discovery-engine-owned");
   });
 
-  it("refuses a location update with no name", () => {
-    // A named place becomes fact for every later prompt; an unnamed one says nothing while
-    // still overwriting where the player is.
-    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ location_update: { note: "somewhere" } })), "location_update").reason)
-      .toBe("location-without-a-name");
-    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ location_update: { name: "The Broken Wheel" } })), "location_update").status)
+  it("accepts the fresh location status shape rather than requiring retired name/place fields", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({
+      location_update: { status: "razed", depopulated: true, note: "The settlement stands empty." },
+    })), "location_update").status)
       .toBe(INTENT_STATUS.APPLIED);
   });
 });
@@ -493,6 +570,33 @@ describe("what becomes fact for every later prompt", () => {
 });
 
 describe("what a route is even allowed to ask for", () => {
+  it("treats required neutral numeric zeroes as absent on a presentation-only route", () => {
+    const turn = turnWith({ minutes_passed: 0, vitality_change: 0, resolve_change: 0 });
+    const result = resolveNarratorIntents(campaign(), turn, {
+      turnPolicy: { id: "trade-presentation", allowedEffects: [] },
+    });
+
+    expect(result.refused).toBe(false);
+    expect(result.turn).toBe(turn);
+    for (const field of ["minutes_passed", "vitality_change", "resolve_change"]) {
+      expect(receiptFor(result, field).status).toBe(INTENT_STATUS.ABSENT);
+    }
+  });
+
+  it("uses the compiler-bound policy instead of a second stale route allowlist", () => {
+    const result = resolveNarratorIntents(campaign(), turnWith({
+      location_update: { name: "Old shape" },
+      discoveries: { races: [{ id: "river-folk", name: "River Folk" }] },
+    }), {
+      route: "loot-fallout",
+      turnPolicy: { id: "loot-fallout", allowedEffects: ["discoveries"] },
+    });
+
+    expect(receiptFor(result, "location_update"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "not-allowed-on-route" });
+    expect(receiptFor(result, "discoveries").status).toBe(INTENT_STATUS.APPLIED);
+  });
+
   it("lets an aftermath narrator tell the story and change nothing", () => {
     // The exit gate this exists for. The fight is settled, the Chronicle is written, and the
     // prompt says not to apply mechanics — but saying it is instruction, and instruction is

@@ -4,6 +4,13 @@
 // advancement, and per-id save serialization — without a network or database.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
+import {
+  applyCharacterBootstrap,
+  compileCharacterBootstrap,
+} from "../gameplay/tow/character-bootstrap.js";
+import { dispatchTowCommand } from "../gameplay/tow/commands.js";
+import { compileRewardOffer } from "../gameplay/tow/rewards.js";
+import { createTowSession, towSessionChecksum } from "../gameplay/tow/session.js";
 import { emptyMechanicsSidecar } from "./campaign-migration.js";
 import { ATTRIBUTE_SCALE_VERSION, PROGRESSION_VERSION } from "./progression.js";
 
@@ -256,10 +263,69 @@ describe("campaigns optimistic-concurrency guard", () => {
 
     const malformedReward = writableState(5);
     malformedReward.pendingReward = {
-      rulesetId: "solitaire-tow-v1.3",
+      rulesetId: "solitaire-tow-v1.4",
       candidates: null,
     };
     await expect(saveCampaign("malformed-reward", malformedReward)).rejects.toMatchObject({
+      code: "CAMPAIGN_MIGRATION_REQUIRED",
+    });
+
+    const malformedCombat = writableState(6);
+    malformedCombat.mechanics.tow.activeCombat = {};
+    await expect(saveCampaign("malformed-combat", malformedCombat)).rejects.toMatchObject({
+      code: "CAMPAIGN_MIGRATION_REQUIRED",
+    });
+
+    const opened = createTowSession({
+      sessionId: "divergent-current-fight",
+      rootSeed: "divergent-current-root",
+      player: {
+        id: "wanderer",
+        name: "Wanderer",
+        maxHp: 80,
+        stats: { attack: 4, defense: 5, critRate: 0, dodgeRate: 0 },
+      },
+      enemies: [{
+        id: "brigand",
+        name: "Brigand",
+        maxHp: 80,
+        stats: { attack: 2, defense: 0, critRate: 0, dodgeRate: 0 },
+        attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 2 }],
+      }],
+      build: { traits: {}, skills: ["strike", "block"] },
+    });
+    const acted = dispatchTowCommand(opened.session, {
+      id: "divergent-block",
+      expectedRevision: 0,
+      type: "use-skill",
+      actorId: "wanderer",
+      skillId: "block",
+      targetId: "wanderer",
+    });
+    const tampered = JSON.parse(JSON.stringify(acted.session));
+    tampered.encounter.actors.wanderer.hp -= 1;
+    tampered.checksum = towSessionChecksum(tampered);
+    const divergentCombat = writableState(7);
+    divergentCombat.mechanics.tow.activeCombat = tampered;
+    await expect(saveCampaign("divergent-combat", divergentCombat)).rejects.toMatchObject({
+      code: "CAMPAIGN_MIGRATION_REQUIRED",
+    });
+
+    const stubbedReward = writableState(8);
+    const bootstrap = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
+    stubbedReward.mechanics = applyCharacterBootstrap(
+      stubbedReward.mechanics,
+      bootstrap,
+    ).mechanics;
+    stubbedReward.pendingReward = compileRewardOffer(stubbedReward.mechanics.build, {
+      sourceReceiptId: "stubbed-current-fight",
+      seed: "caller-chosen-current-seed",
+    }).offer;
+    stubbedReward.combatSettlementReceipts = [{
+      sessionId: "stubbed-current-fight",
+      outcome: "victory",
+    }];
+    await expect(saveCampaign("stubbed-current-reward", stubbedReward)).rejects.toMatchObject({
       code: "CAMPAIGN_MIGRATION_REQUIRED",
     });
     expect(h.state.recorded).toEqual([]);

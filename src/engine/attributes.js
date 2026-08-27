@@ -68,7 +68,7 @@ export function resolvePoolForMind(mind) {
   return Math.round(legacyPool(LEGACY_ATTRIBUTE_CAP) + (m - LEGACY_ATTRIBUTE_CAP) * 2.2);
 }
 
-/** Per-round Tower recovery: a universal baseline plus authored Presence milestones. */
+/** Tower recovery earned by a free/basic ability: baseline plus Presence milestones. */
 export function resolveRegenForAttributes(attrs = {}) {
   const threshold = attributeThresholdMods(attrs).triggers.resolveRegen || 0;
   return BASE_RESOLVE_REGEN + Math.max(0, Math.round(threshold));

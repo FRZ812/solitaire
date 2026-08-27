@@ -7,23 +7,15 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createPortraitVariantToken } from "./character-portrait-assets.js";
 import { CharacterPortraitEditor } from "./CodexView.jsx";
 
-const entry = { id: "demon-king", name: "The Demon King" };
+const entry = { id: "knight", portraitKey: "tow:knight", name: "Knight" };
+const fixedEntry = { id: "whitemarch-treasurer-halen", name: "Halen Vossane" };
 const runtimePortraitCases = [
   {
     label: "companion",
     entry: { id: "senna", kind: "companion", portraitKey: "companion:senna", name: "Senna Rell" },
     token: "builtin:companion:senna:v2",
   },
-  {
-    label: "day-stamped bonded character",
-    entry: { id: "bonded-harl-17", kind: "bonded", portraitKey: "bonded:harl", name: "Harl" },
-    token: "builtin:bonded:harl:v2",
-  },
-  {
-    label: "wanted character",
-    entry: { id: "wanted-vane", kind: "wanted", portraitKey: "wanted:vane", name: "Goodwife Vane" },
-    token: "builtin:wanted:vane:v2",
-  },
+
   {
     label: "mount",
     entry: { id: "dragon", kind: "mount", portraitKey: "mount:dragon", name: "Dragon" },
@@ -57,12 +49,27 @@ describe("Codex portrait choices", () => {
     );
 
     expect(html.match(/data-portrait-choice=/g)).toHaveLength(2);
-    expect(html).toContain('role="group" aria-label="Portrait choice for The Demon King"');
-    expect(html).toContain('aria-label="The Demon King portrait 1" aria-pressed="false"');
-    expect(html).toContain('aria-label="The Demon King portrait 2" aria-pressed="true"');
-    expect(html).toContain('data-portrait-variant-token="builtin:codex:demon-king:v2"');
+    expect(html).toContain('role="group" aria-label="Portrait choice for Knight"');
+    expect(html).toContain('aria-label="Knight portrait 1" aria-pressed="false"');
+    expect(html).toContain('aria-label="Knight portrait 2" aria-pressed="true"');
+    expect(html).toContain('data-portrait-variant-token="builtin:tow:knight:v2"');
     expect(html).toContain("Upload portrait");
     expect(html).toContain("Use original");
+  });
+
+  it("does not present alternate faces for named characters with one canonical portrait", () => {
+    for (const singlePortraitEntry of [
+      fixedEntry,
+      { id: "wanted-vane", kind: "wanted", portraitKey: "wanted:vane", name: "Goodwife Vane" },
+      { id: "whitemarch-apothecary-tavia-vane", name: "Tavia Vane" },
+    ]) {
+      const html = renderToStaticMarkup(
+        <CharacterPortraitEditor entry={singlePortraitEntry} onPortraitChange={() => {}} />,
+      );
+
+      expect(html).not.toContain("data-portrait-choice");
+      expect(html).toContain("Upload portrait");
+    }
   });
 
   it("keeps uploaded portraits separate from authored selection for a canonicalized TOW alias", () => {
@@ -123,6 +130,6 @@ describe("Codex portrait choices", () => {
     await act(async () => host.querySelector('[data-portrait-choice="2"]').click());
 
     expect(onPortraitChange).toHaveBeenCalledOnce();
-    expect(onPortraitChange).toHaveBeenCalledWith("demon-king", "builtin:codex:demon-king:v2");
+    expect(onPortraitChange).toHaveBeenCalledWith("knight", "builtin:tow:knight:v2");
   });
 });

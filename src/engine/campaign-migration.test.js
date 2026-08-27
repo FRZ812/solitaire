@@ -1,21 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
+import { gameplayChecksum } from "../gameplay/kernel/replay.js";
 import {
   compileCharacterBootstrap,
   applyCharacterBootstrap,
 } from "../gameplay/tow/character-bootstrap.js";
 import { isTowBuild } from "../gameplay/tow/build.js";
-import { claimReward, compileRewardOffer } from "../gameplay/tow/rewards.js";
-import { TOW_RULESET_ID } from "../gameplay/tow/session.js";
+import { dispatchTowCommand } from "../gameplay/tow/commands.js";
+import { sealTowTerminalReceipt } from "../gameplay/tow/outcomes.js";
+import {
+  claimReward,
+  compileRewardOffer,
+  rerollRewardOffer,
+  rewardSeedFor,
+} from "../gameplay/tow/rewards.js";
+import {
+  MAX_TOW_COMMANDS,
+  TOW_RULESET_ID,
+  createTowSession,
+  markTowSessionSettled,
+  towSessionChecksum,
+} from "../gameplay/tow/session.js";
+import { settleTowEncounter } from "../gameplay/tow/settlement.js";
+import v13ResolveCadenceSession from "../gameplay/tow/fixtures/v13-resolve-cadence-session.json";
+import v12AuthenticRewardCampaign from "../gameplay/tow/fixtures/v12-authentic-reward-campaign.json";
+import { towSessionChecksum as frozenTowV12SessionChecksum } from "../gameplay/tow/session-v12.js";
 import {
   CAMPAIGN_SCHEMA_V12,
   CAMPAIGN_SCHEMA_V13,
+  canCommitTowSession,
   CURRENT_CAMPAIGN_SCHEMA,
   emptyMechanicsSidecar,
   hasMechanicsSidecar,
   hasCurrentMechanicsState,
+  isWritableTowActiveCombat,
   isReadableCampaignSchema,
   migrateCampaignState,
+  MAX_RETIRED_TOW_SESSION_ENCODED_BYTES,
   READABLE_CAMPAIGN_SCHEMAS,
   upgradeCampaignPayload,
   verifyMigrationReadBack,
@@ -28,6 +49,93 @@ function legacyCampaign() {
   state.created = true;
   delete state.mechanics;
   return JSON.parse(JSON.stringify(state));
+}
+
+function settledRewardCampaign({ retired = false, rerolls = 0 } = {}) {
+  const bootstrap = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
+  let state = migrateCampaignState(legacyCampaign()).state;
+  state.mechanics = applyCharacterBootstrap(state.mechanics, bootstrap).mechanics;
+  const sessionId = "settled-reward-fight";
+  const opened = createTowSession({
+    sessionId,
+    rootSeed: "settled-reward-root",
+    player: {
+      id: "wanderer",
+      name: "Wanderer",
+      maxHp: 80,
+      resolve: 8,
+      resolveMax: 8,
+      resolveRegen: 1,
+      stats: { attack: 250, defense: 5, critRate: 0, dodgeRate: 0 },
+    },
+    enemies: [{
+      id: "brigand",
+      name: "Brigand",
+      maxHp: 10,
+      stats: { attack: 2, defense: 0, critRate: 0, dodgeRate: 0 },
+      attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 2 }],
+    }],
+    build: { traits: {}, skills: ["strike"] },
+    context: { rewardPolicy: { rerolls } },
+  });
+  const terminal = dispatchTowCommand(opened.session, {
+    id: "settled-reward-finisher",
+    expectedRevision: 0,
+    type: "use-skill",
+    actorId: "wanderer",
+    skillId: "strike",
+    targetId: "brigand",
+  }).session;
+  state = settleTowEncounter(state, terminal.encounter, { encounterId: sessionId }).state;
+  const sealed = sealTowTerminalReceipt(terminal).session;
+  const marked = markTowSessionSettled(sealed, sessionId).session;
+  const sourceSession = JSON.parse(JSON.stringify(marked));
+  if (retired) {
+    sourceSession.rulesetId = "solitaire-tow-v1.2";
+    sourceSession.terminalReceipt.rulesetId = "solitaire-tow-v1.2";
+    sourceSession.checksum = towSessionChecksum(sourceSession);
+  }
+  state.mechanics.tow.activeCombat = sourceSession;
+  const seed = rewardSeedFor(sessionId, sourceSession.streams.rewards);
+  const compiled = compileRewardOffer(state.mechanics.build, {
+    sourceReceiptId: sessionId,
+    seed,
+    rerolls,
+  }).offer;
+  if (retired) {
+    const { checksum: _checksum, replacedSkill: _replacedSkill, ...legacyOffer } = compiled;
+    state.pendingReward = { ...legacyOffer, rulesetId: "solitaire-tow-v1.2" };
+  } else {
+    state.pendingReward = compiled;
+  }
+  return { seed, state };
+}
+
+function v13RewardCampaign() {
+  const bootstrap = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
+  let state = migrateCampaignState(legacyCampaign()).state;
+  state.mechanics = applyCharacterBootstrap(state.mechanics, bootstrap).mechanics;
+  const source = JSON.parse(JSON.stringify(v13ResolveCadenceSession));
+  const settlement = settleTowEncounter(state, source.encounter, {
+    encounterId: source.sessionId,
+  });
+  if (!settlement.ok) throw new Error(settlement.reason);
+  state = settlement.state;
+  state.mechanics.tow.activeCombat = source;
+  const seed = rewardSeedFor(
+    source.sessionId,
+    source.terminalReceipt.streamEndpoints.rewards,
+  );
+  const compiled = compileRewardOffer(state.mechanics.build, {
+    sourceReceiptId: source.sessionId,
+    seed,
+  });
+  if (!compiled.ok) throw new Error(compiled.reason);
+  const retired = { ...compiled.offer, rulesetId: "solitaire-tow-v1.3", checksum: null };
+  const { checksum: _checksum, ...payload } = retired;
+  retired.checksum = gameplayChecksum(payload);
+  state.pendingReward = retired;
+  return state;
 }
 
 describe("readers accept every known schema", () => {
@@ -181,11 +289,11 @@ describe("migration is pure and idempotent", () => {
     const receipt = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
     const state = migrateCampaignState(legacyCampaign()).state;
     state.mechanics = applyCharacterBootstrap(state.mechanics, receipt).mechanics;
-    const oldOffer = compileRewardOffer(state.mechanics.build, {
+    const compiledOldOffer = compileRewardOffer(state.mechanics.build, {
       sourceReceiptId: "invented-v12-fight",
       seed: "caller-chosen-seed",
-      rerolls: 1,
     }).offer;
+    const { checksum: _checksum, replacedSkill: _replacedSkill, ...oldOffer } = compiledOldOffer;
     state.pendingReward = { ...oldOffer, rulesetId: "solitaire-tow-v1.2" };
     const before = JSON.parse(JSON.stringify(state));
 
@@ -197,36 +305,530 @@ describe("migration is pure and idempotent", () => {
     });
   });
 
-  it("recompiles an owed v1.2 reward under the current ruleset", () => {
+  it("refuses a retired pending reward backed only by a receipt stub", () => {
     const receipt = compileCharacterBootstrap({ professionId: "fighter" }).receipt;
     const state = migrateCampaignState(legacyCampaign()).state;
     state.mechanics = applyCharacterBootstrap(state.mechanics, receipt).mechanics;
     state.combatSettlementReceipts = [{
-      version: 1,
-      sessionId: "settled-v12-fight",
+      sessionId: "stubbed-v12-fight",
       outcome: "victory",
     }];
-    const oldOffer = compileRewardOffer(state.mechanics.build, {
-      sourceReceiptId: "settled-v12-fight",
-      seed: "retired-reward-seed",
-      rerolls: 1,
+    const compiledOldOffer = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: "stubbed-v12-fight",
+      seed: "caller-chosen-seed",
     }).offer;
+    const { checksum: _checksum, replacedSkill: _replacedSkill, ...oldOffer } = compiledOldOffer;
     state.pendingReward = { ...oldOffer, rulesetId: "solitaire-tow-v1.2" };
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("refuses current semantics relabeled as a v1.2 entitlement", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("rejects retired-session accessors without executing them", () => {
+    const state = JSON.parse(JSON.stringify(v12AuthenticRewardCampaign));
+    const session = state.mechanics.tow.activeCombat;
+    let reads = 0;
+    Object.defineProperty(session, "rulesetId", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        reads += 1;
+        return "solitaire-tow-v1.2";
+      },
+    });
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(reads).toBe(0);
+    expect(upgraded.ok).toBe(false);
+    expect(upgraded.reason).toBe("invalid-retired-active-combat");
+    expect(upgraded.writable).toBe(false);
+  });
+
+  it("migrates an authentic deployed-v1.2 owed reward", () => {
+    const state = JSON.parse(JSON.stringify(v12AuthenticRewardCampaign));
+    const source = state.mechanics.tow.activeCombat;
+    expect(source).toMatchObject({
+      version: 1,
+      rulesetId: "solitaire-tow-v1.2",
+      mode: "campaign",
+      status: "settled",
+      checksum: "integrity-v1:0b6880aa59763eaf",
+    });
+    expect(source.commands).toHaveLength(1);
+    expect(state.pendingReward).toMatchObject({
+      rulesetId: "solitaire-tow-v1.2",
+      sourceReceiptId: source.sessionId,
+      claimedId: null,
+    });
 
     const upgraded = upgradeCampaignPayload(state);
 
     expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(upgraded.state.mechanics.build.version).toBe(2);
     expect(upgraded.state.pendingReward).toMatchObject({
-      sourceReceiptId: "settled-v12-fight",
-      seed: "retired-reward-seed",
       rulesetId: TOW_RULESET_ID,
-      rerollsRemaining: 1,
+      sourceReceiptId: source.sessionId,
+      seed: state.pendingReward.seed,
+      claimedId: null,
     });
     expect(claimReward(
       upgraded.state.mechanics.build,
       upgraded.state.pendingReward,
       upgraded.state.pendingReward.candidates[0].id,
     ).ok).toBe(true);
+  });
+
+  it.each([
+    ["four unspent rerolls", 4, false, ""],
+    ["one spent reroll", 3, true, "::reroll::4"],
+    ["maximum-depth reroll", 0, true, "::reroll::4::reroll::3::reroll::2::reroll::1"],
+  ])("migrates an authentic v1.2 reward with %s", (_label, remaining, rerolled, suffix) => {
+    const state = JSON.parse(JSON.stringify(v12AuthenticRewardCampaign));
+    const baseSeed = state.pendingReward.seed;
+    state.pendingReward.seed = `${baseSeed}${suffix}`;
+    state.pendingReward.rerollsRemaining = remaining;
+    state.pendingReward.rerolled = rerolled;
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(upgraded.state.pendingReward).toMatchObject({
+      rulesetId: TOW_RULESET_ID,
+      sourceReceiptId: state.pendingReward.sourceReceiptId,
+      seed: `${baseSeed}${suffix}`,
+      rerollsRemaining: remaining,
+      rerolled,
+      claimedId: null,
+    });
+  });
+
+  it("keeps an exact verified v1.2 source writable without a pending reward", () => {
+    const state = JSON.parse(JSON.stringify(v12AuthenticRewardCampaign));
+    state.pendingReward = null;
+
+    expect(isWritableTowActiveCombat(state.mechanics.tow.activeCombat)).toBe(true);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: true,
+      writable: true,
+      recoverable: false,
+    });
+  });
+
+  it.each([
+    ["unknown field", (session) => { session.futureAuthority = { accepted: true }; }],
+    ["unknown command field", (session) => { session.commands[0].futureAuthority = true; }],
+    ["replay divergence", (session) => { session.encounter.actors.wanderer.hp -= 1; }],
+  ])("quarantines a rechecksummed v1.2 %s without a pending reward", (_label, mutate) => {
+    const state = JSON.parse(JSON.stringify(v12AuthenticRewardCampaign));
+    state.pendingReward = null;
+    const session = state.mechanics.tow.activeCombat;
+    mutate(session);
+    session.checksum = frozenTowV12SessionChecksum(session);
+
+    expect(isWritableTowActiveCombat(session)).toBe(false);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: true,
+      reason: "unwritable-active-combat",
+      writable: false,
+      recoverable: true,
+    });
+  });
+
+  it("keeps an exact verified v1.3 source writable without a pending reward", () => {
+    const state = v13RewardCampaign();
+    state.pendingReward = null;
+
+    expect(isWritableTowActiveCombat(state.mechanics.tow.activeCombat)).toBe(true);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: true,
+      writable: true,
+      recoverable: false,
+    });
+  });
+
+  it.each([
+    ["unknown field", (session) => { session.futureAuthority = { accepted: true }; }],
+    ["unknown command field", (session) => { session.commands[0].futureAuthority = true; }],
+    ["replay divergence", (session) => { session.encounter.actors.wanderer.hp -= 1; }],
+  ])("quarantines a rechecksummed v1.3 %s without a pending reward", (_label, mutate) => {
+    const state = v13RewardCampaign();
+    state.pendingReward = null;
+    const session = state.mechanics.tow.activeCombat;
+    mutate(session);
+    session.checksum = towSessionChecksum(session);
+
+    expect(isWritableTowActiveCombat(session)).toBe(false);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: true,
+      reason: "unwritable-active-combat",
+      writable: false,
+      recoverable: true,
+    });
+  });
+
+  it("quarantines a v1.3 source whose original checksum is invalid", () => {
+    const state = v13RewardCampaign();
+    state.pendingReward = null;
+    const session = state.mechanics.tow.activeCombat;
+    session.checksum = "integrity-v1:0000000000000000";
+
+    expect(isWritableTowActiveCombat(session)).toBe(false);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: true,
+      reason: "unwritable-active-combat",
+      writable: false,
+      recoverable: true,
+    });
+  });
+
+  it("rejects a rechecksummed current session with an unknown command field", () => {
+    const { state } = settledRewardCampaign();
+    state.pendingReward = null;
+    const session = state.mechanics.tow.activeCombat;
+    session.commands[0].futureAuthority = true;
+    session.checksum = towSessionChecksum(session);
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(isWritableTowActiveCombat(session)).toBe(false);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("migrates an owed v1.3 reward through the pinned historical cadence", () => {
+    const state = v13RewardCampaign();
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(TOW_RULESET_ID).toBe("solitaire-tow-v1.4");
+    expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(upgraded.state.pendingReward).toMatchObject({
+      sourceReceiptId: v13ResolveCadenceSession.sessionId,
+      rulesetId: TOW_RULESET_ID,
+      claimedId: null,
+    });
+    expect(claimReward(
+      upgraded.state.mechanics.build,
+      upgraded.state.pendingReward,
+      upgraded.state.pendingReward.candidates[0].id,
+    ).ok).toBe(true);
+  });
+
+  it("rejects historical events relabeled as a current writable session", () => {
+    const disguised = JSON.parse(JSON.stringify(v13ResolveCadenceSession));
+    disguised.rulesetId = TOW_RULESET_ID;
+    disguised.terminalReceipt.rulesetId = TOW_RULESET_ID;
+    disguised.checksum = towSessionChecksum(disguised);
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics.tow.activeCombat = disguised;
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(isWritableTowActiveCombat(disguised)).toBe(false);
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("rejects a current reward whose source session is practice", () => {
+    const { state } = settledRewardCampaign();
+    const forged = JSON.parse(JSON.stringify(state));
+    const session = forged.mechanics.tow.activeCombat;
+    session.mode = "practice";
+    session.checksum = towSessionChecksum(session);
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it.each([
+    ["fallen count", (receipt) => { receipt.fallen = 1000; }],
+    ["combat item spend", (receipt) => { receipt.combatItemsSpent = { "fire-pot": 999 }; }],
+    ["proficiency gain", (receipt) => { receipt.proficiencyGains = { "mastery-sword": 999999 }; }],
+  ])("rejects a current reward whose settlement %s was forged", (_label, mutate) => {
+    const { state } = settledRewardCampaign();
+    const forged = JSON.parse(JSON.stringify(state));
+    const receipt = forged.combatSettlementReceipts.find((entry) => (
+      entry.sessionId === forged.pendingReward.sourceReceiptId
+    ));
+    mutate(receipt);
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it.each([
+    ["malformed unrelated receipt", (receipts) => {
+      receipts.push({ sessionId: "invented", outcome: "victory" });
+    }],
+    ["duplicate receipt ID", (receipts) => {
+      receipts.push(JSON.parse(JSON.stringify(receipts[0])));
+    }],
+  ])("rejects a settlement ledger with a %s", (_label, mutate) => {
+    const { state } = settledRewardCampaign();
+    const forged = JSON.parse(JSON.stringify(state));
+    mutate(forged.combatSettlementReceipts);
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("rejects a checksum-valid reroll budget not granted by admission", () => {
+    const { seed, state } = settledRewardCampaign();
+    state.pendingReward = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: state.pendingReward.sourceReceiptId,
+      seed,
+      rerolls: 4,
+    }).offer;
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("rejects a new offer after the source receipt was durably consumed", () => {
+    const { state } = settledRewardCampaign();
+    const offer = state.pendingReward;
+    state.mechanics.tow.rewardClaims = [{
+      sourceReceiptId: offer.sourceReceiptId,
+      offerId: offer.id,
+      claimedId: offer.candidates[0].id,
+    }];
+    const before = JSON.parse(JSON.stringify(state));
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("blocks replacing the sole source session of an unclaimed reward", () => {
+    const { state } = settledRewardCampaign();
+    const source = state.mechanics.tow.activeCombat;
+    const replacement = createTowSession({
+      sessionId: "different-fight",
+      rootSeed: "different-root",
+      player: source.genesis.playerSnapshot,
+      enemies: source.genesis.enemySnapshots,
+      build: source.genesis.effectiveBuild,
+    }).session;
+
+    expect(canCommitTowSession(state, source)).toBe(true);
+    expect(canCommitTowSession(state, replacement)).toBe(false);
+  });
+
+  it("preserves a valid endpoint-derived rerolled reward", () => {
+    const { seed, state } = settledRewardCampaign({ rerolls: 1 });
+    const initial = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: state.pendingReward.sourceReceiptId,
+      seed,
+      rerolls: 1,
+    });
+    expect(initial.ok).toBe(true);
+    const rerolled = rerollRewardOffer(state.mechanics.build, initial.offer);
+    expect(rerolled.ok).toBe(true);
+    state.pendingReward = rerolled.offer;
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(upgraded.state.pendingReward).toMatchObject({
+      seed: `${seed}::reroll::1`,
+      rerolled: true,
+      rerollsRemaining: 0,
+    });
+    expect(claimReward(
+      upgraded.state.mechanics.build,
+      upgraded.state.pendingReward,
+      upgraded.state.pendingReward.candidates[0].id,
+    ).ok).toBe(true);
+  });
+
+  it("preserves the complete bounded reroll seed chain", () => {
+    const { seed, state } = settledRewardCampaign({ rerolls: 4 });
+    const initial = compileRewardOffer(state.mechanics.build, {
+      sourceReceiptId: state.pendingReward.sourceReceiptId,
+      seed,
+      rerolls: 4,
+    });
+    expect(initial.ok).toBe(true);
+    let offer = initial.offer;
+    for (let remaining = 4; remaining > 0; remaining -= 1) {
+      const rerolled = rerollRewardOffer(state.mechanics.build, offer);
+      expect(rerolled.ok).toBe(true);
+      offer = rerolled.offer;
+    }
+    state.pendingReward = offer;
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({ ok: true, writable: true });
+    expect(upgraded.state.pendingReward).toMatchObject({
+      rerolled: true,
+      rerollsRemaining: 0,
+    });
+  });
+
+  it("refuses a current reward whose source session diverges from replay", () => {
+    const { state } = settledRewardCampaign();
+    const forged = JSON.parse(JSON.stringify(state));
+    const session = forged.mechanics.tow.activeCombat;
+    session.encounter.actors.wanderer.resolve -= 1;
+    session.checksum = towSessionChecksum(session);
+    const receipt = forged.combatSettlementReceipts.find((entry) => (
+      entry.sessionId === session.sessionId
+    ));
+    receipt.playerResolve = session.encounter.actors.wanderer.resolve;
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("refuses a retired reward whose source endpoint diverges from replay", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    const forged = JSON.parse(JSON.stringify(state));
+    const session = forged.mechanics.tow.activeCombat;
+    session.encounter.actors.wanderer.resolve -= 1;
+    session.checksum = towSessionChecksum(session);
+    const receipt = forged.combatSettlementReceipts.find((entry) => (
+      entry.sessionId === session.sessionId
+    ));
+    receipt.playerResolve = session.encounter.actors.wanderer.resolve;
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("refuses a retired reward with a substituted reward-stream endpoint", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    const forged = JSON.parse(JSON.stringify(state));
+    const session = forged.mechanics.tow.activeCombat;
+    session.streams.rewards.state = (session.streams.rewards.state + 1) >>> 0;
+    session.checksum = towSessionChecksum(session);
+    const seed = rewardSeedFor(session.sessionId, session.streams.rewards);
+    const compiled = compileRewardOffer(forged.mechanics.build, {
+      sourceReceiptId: session.sessionId,
+      seed,
+    }).offer;
+    const { checksum: _checksum, replacedSkill: _replacedSkill, ...legacyOffer } = compiled;
+    forged.pendingReward = { ...legacyOffer, rulesetId: "solitaire-tow-v1.2" };
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("refuses a retired reward whose settled source lacks its terminal receipt", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    const forged = JSON.parse(JSON.stringify(state));
+    const session = forged.mechanics.tow.activeCombat;
+    session.terminalReceipt = null;
+    session.checksum = towSessionChecksum(session);
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("refuses a retired reward whose source session has an unknown structural field", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    const forged = JSON.parse(JSON.stringify(state));
+    const session = forged.mechanics.tow.activeCombat;
+    session.unverifiedExtension = { authority: "forged" };
+    session.checksum = towSessionChecksum(session);
+    const before = JSON.parse(JSON.stringify(forged));
+
+    expect(upgradeCampaignPayload(forged)).toMatchObject({
+      ok: false,
+      reason: "unearned-pending-reward",
+      state: before,
+      writable: false,
+    });
+  });
+
+  it("rejects an oversized retired command log before migration cloning", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    state.mechanics.tow.activeCombat.commands = Array(MAX_TOW_COMMANDS + 1).fill(null);
+    state.mechanics.tow.activeCombat.revision = MAX_TOW_COMMANDS + 1;
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "invalid-retired-active-combat",
+      state,
+      writable: false,
+    });
+  });
+
+  it("rejects an oversized retired payload before checksum or migration cloning", () => {
+    const { state } = settledRewardCampaign({ retired: true });
+    state.mechanics.tow.activeCombat.context.source.note = "x"
+      .repeat(MAX_RETIRED_TOW_SESSION_ENCODED_BYTES + 1);
+
+    expect(upgradeCampaignPayload(state)).toMatchObject({
+      ok: false,
+      reason: "invalid-retired-active-combat",
+      state,
+      writable: false,
+    });
   });
 
   it("adds only absent Tower defaults to a partial v1 sidecar", () => {
@@ -378,6 +980,26 @@ describe("the safe upgrade path", () => {
     // Preserve evidence for diagnostics/recovery, but never authorize hydration or a write.
     expect(upgraded).toMatchObject({ ok: false, writable: false });
     expect(upgraded.state).toBe(bad);
+  });
+
+  it("hydrates a bounded unreadable fight for explicit recovery without authorizing a write", () => {
+    const state = migrateCampaignState(legacyCampaign()).state;
+    state.mechanics.tow.activeCombat = {
+      version: 1,
+      rulesetId: "solitaire-tow-v1",
+      sessionId: "old-fight",
+      commands: [],
+    };
+
+    const upgraded = upgradeCampaignPayload(state);
+
+    expect(upgraded).toMatchObject({
+      ok: true,
+      reason: "unwritable-active-combat",
+      state,
+      writable: false,
+      recoverable: true,
+    });
   });
 
   it("never reports writable without a verified sidecar", () => {

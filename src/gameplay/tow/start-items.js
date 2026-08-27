@@ -158,7 +158,7 @@ const START_ITEM_GRANTS = Object.freeze(Object.fromEntries([
   grant("scholars-circlet", {
     stats: { attack: 3, critRate: 5, resolveMax: 3, resolveRegen: 1 },
     traits: { ignition: 2 },
-    passive: "A focused mind feeds Ignition, adds +3 max Resolve, and restores +1 Resolve each round.",
+    passive: "A focused mind feeds Ignition, adds +3 max Resolve, and restores +1 more Resolve after a free basic ability.",
   }),
   grant("oak-staff", {
     stats: { attack: 4 },
