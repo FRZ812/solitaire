@@ -9,7 +9,7 @@
 export const ATTRACTIVENESS_ANCHORS = [
   { min: 1, max: 2, label: "grotesque",  examples: "the Hag, a leper, a wyrm-burned ruin" },
   { min: 3, max: 4, label: "marked",     examples: "Old Pieter, a war-veteran" },
-  { min: 5, max: 6, label: "plain",      examples: "Bram, Tomkin, Loff the Debtor" },
+  { min: 5, max: 6, label: "plain",      examples: "Tomkin, Loff the Debtor" },
   { min: 7, max: 8, label: "comely",     examples: "Lis, Tama, Voss" },
   { min: 9, max: 10, label: "breathtaking", examples: "Lirilin, a demonborn courtier" },
 ];

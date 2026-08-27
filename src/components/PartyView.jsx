@@ -129,7 +129,7 @@ export function PartyView({
             { id: "wanderer", name: wanderer?.name || "You" },
             ...people.map((member) => ({ id: member.id, name: member.name })),
           ]}
-          formation={state.mechanics?.tow?.formation?.cells || []}
+          formation={state.mechanics?.combat?.formation?.cells || []}
           onChange={onSetFormation}
         />
 

@@ -216,7 +216,7 @@ const POI_SPECS = Object.freeze([
   poi("inner-gate", "Citadel Inner Gate", "citadel-ward", "A steep defended gate where palace warrants are checked beneath murder holes."),
   poi("muster-court", "Royal Muster Court", "citadel-ward", "A broad drill court marked for companies, cavalry files, baggage, and inspection.", { type: "barracks" }),
   poi("iron-palace", "The Iron Palace", "citadel-ward", "The black-and-white seat of Whitemarch's crown, austere above the crowded wards.", { type: "palace" }),
-  poi("dragon-watch", "Dragon Watch Tower", "citadel-ward", "A high signal tower maintaining smoke, mirror, bell, and night-fire watches.", { type: "watchtower" }),
+  poi("dragon-watch", "Dragon Watch Archetype", "citadel-ward", "A high signal combat maintaining smoke, mirror, bell, and night-fire watches.", { type: "watchtower" }),
   poi("citadel-sutler", "Citadel Sutler", "citadel-ward", "A licensed counter selling campaign necessities to guards, messengers, and departing patrols.", { type: "market", service: "sutler", marketTier: "premium" }),
   poi("royal-armoury-shop", "The King's Warrant Armoury", "citadel-ward", "A palace-contracted armoury selling presentation arms, command-grade armour, and certified field equipment beneath the king's stamped warrant.", { type: "smithy", service: "blacksmith", marketTier: "premium" }),
 

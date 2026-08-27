@@ -28,7 +28,6 @@ import {
   selectedPortraitVariantNumber,
 } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
-import { characterDossierBackground } from "./character-dossier-background.js";
 import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
 import {
@@ -39,10 +38,6 @@ import {
 } from "../data/progression-paths.js";
 import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
 import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
-import {
-  REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES,
-  REPURPOSED_CODEX_PORTRAIT_IDENTITIES,
-} from "./character-portrait-roster.js";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 
 const progressionLevel = progressionEngine.progressionLevel;
@@ -83,11 +78,7 @@ const CODEX_TABS = [
   { key: "glossary",    label: "Glossary",    group: "reference",  column: 1, row: 2 },
 ];
 
-const IMPORTANT_CHARACTER_IDS = new Set([
-  ...CODEX_PORTRAIT_IDS,
-  ...REPURPOSED_CODEX_PORTRAIT_IDENTITIES.map(({ id }) => id),
-  ...REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES.map(({ id }) => id),
-]);
+const IMPORTANT_CHARACTER_IDS = new Set(CODEX_PORTRAIT_IDS);
 
 // Reusable styles inside this view.
 const subtleMeta = {
@@ -128,10 +119,6 @@ function CharacterPortrait({ entry, portraitOverride, detail = false }) {
   const atlasPortrait = !portrait ? resolveCodexPortrait(entry) : null;
   const detailPortrait = detail && !imageFailed ? atlasPortrait?.detailSrc : null;
   const resolvedImage = portrait || detailPortrait;
-  const backdrop = characterDossierBackground(entry);
-  const customPortrait = typeof portraitOverride === "string"
-    && portraitOverride.trim()
-    && !isPortraitVariantToken(portraitOverride);
   return (
     <div
       className={`codex-entry__portrait${resolvedImage ? " has-image" : atlasPortrait ? " has-atlas" : " is-placeholder"}`}
@@ -142,18 +129,8 @@ function CharacterPortrait({ entry, portraitOverride, detail = false }) {
       role={!resolvedImage && !atlasPortrait ? "img" : undefined}
       aria-label={!resolvedImage && !atlasPortrait ? `${entry.name} portrait placeholder` : undefined}
     >
-      <img
-        className="codex-entry__portrait-backdrop"
-        src={backdrop}
-        alt=""
-        aria-hidden="true"
-        draggable="false"
-        loading={detail ? "eager" : "lazy"}
-        decoding="async"
-        data-dossier-background-for={entry.id}
-      />
       {resolvedImage
-        ? <img className={`codex-entry__portrait-figure${customPortrait ? " is-custom" : ""}`} src={resolvedImage} alt={`${entry.name} portrait`} draggable="false" loading={detail ? "eager" : "lazy"} decoding="async" onError={() => setImageFailed(true)} />
+        ? <img src={resolvedImage} alt={`${entry.name} portrait`} draggable="false" loading={detail ? "eager" : "lazy"} decoding="async" onError={() => setImageFailed(true)} />
         : atlasPortrait
           ? <AtlasIcon src={atlasPortrait.atlas} columns={atlasPortrait.grid.columns} rows={atlasPortrait.grid.rows} column={atlasPortrait.cell.column} row={atlasPortrait.cell.row} size="100%" shape="portrait" label={`${entry.name} portrait`} iconKey={`codex-portrait:${entry.id}`} className="codex-entry__portrait-sprite" />
           : <><Icon name={entry.kind === "mount" ? "compass" : "user"} size={25} strokeWidth={1.25} /><strong>{portraitInitials(entry.name)}</strong></>}
@@ -690,12 +667,12 @@ function AbilityRow({ def, known, tier, owned }) {
   );
 }
 
-// Tower archetypes use their separate five-action combat kit. The legacy
+// Archetype archetypes use their separate five-action combat kit. The legacy
 // ability catalog remains useful as a rules reference, but residue in an old
 // save must never make those cards look equipped or learned. This also keeps a
 // world-layer Haste boon from claiming the distinct legacy Haste combat card.
 export function abilityCatalogOwnership(character, codex) {
-  if (character?.progressionModel === "tow-archetype") {
+  if (character?.progressionModel === "archetype") {
     return { known: new Set(), ownedTier: {} };
   }
 
@@ -1401,8 +1378,8 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
   const raceLabel = isCharacter ? (codex.races?.[entry.race]?.name || entry.race) : null;
   const callingLabel = archetype?.label || broadProfessionName;
   const identityCallingLabel = entry.kind === "mount" ? entry.species : callingLabel;
-  const towArchetype = isCharacter && entry.progressionModel === "tow-archetype";
-  const totalProgressionLevel = isCharacter && !towArchetype ? progressionLevel(entry) : 0;
+  const combatArchetype = isCharacter && entry.progressionModel === "archetype";
+  const totalProgressionLevel = isCharacter && !combatArchetype ? progressionLevel(entry) : 0;
 
   const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
   const summaryText = trunc(entry.description || narrativeAppearance || "", isCharacter ? 138 : 100);
@@ -1495,7 +1472,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
             />
 
             <div className="codex-entry__detail-grid">
-              <CharacterDetailSection label="Profile" title={towArchetype ? "Identity and combat build" : "Identity and progression"} className="is-wide">
+              <CharacterDetailSection label="Profile" title={combatArchetype ? "Identity and combat build" : "Identity and progression"} className="is-wide">
                 <div className="codex-entry__identity-values">
                   <strong>{raceLabel}</strong>
                   {identityCallingLabel && <strong>{identityCallingLabel}</strong>}
@@ -1504,7 +1481,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
                   <CharacterFact label="Origin" value={originLabel(entry.origin)} />
                   <CharacterFact label="Age" value={entry.age} />
                   <CharacterFact label="Gender" value={entry.gender} />
-                  {towArchetype
+                  {combatArchetype
                     ? <CharacterFact label="Power" value={entry.profile?.power || "Chosen"} />
                     : <CharacterFact label="Level" value={totalProgressionLevel > 0 ? `${totalProgressionLevel}` : null} />}
                   <CharacterFact label="Bond" value={bondTier ? `${bondTier.label} ${(entry.relationship || 0) > 0 ? "+" : ""}${entry.relationship || 0}` : null} />

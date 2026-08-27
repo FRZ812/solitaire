@@ -4,8 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getTowArchetypeIdentity } from "../src/gameplay/tow/archetype-identities.js";
-import { getSkill } from "../src/gameplay/tow/skills.js";
+import { getCombatArchetypeIdentity } from "../src/gameplay/combat/archetype-identities.js";
+import { getSkill } from "../src/gameplay/combat/skills.js";
 import { buildManifest as buildAnimationManifest } from "./build-combat-vfx-prompt-manifest.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,7 +22,7 @@ const GENERAL_STYLE = Object.freeze({
 
 function styleFor(animation) {
   const skill = getSkill(animation.id);
-  return getTowArchetypeIdentity(skill?.archetypeId || skill?.exclusiveTo) || GENERAL_STYLE;
+  return getCombatArchetypeIdentity(skill?.archetypeId || skill?.exclusiveTo) || GENERAL_STYLE;
 }
 
 function concise(value, length = 360) {

@@ -54,7 +54,7 @@ export const TILES = {
       part: "quay-edge",
       partName: "Quay Edge",
       description:
-        "The quay stands above brown water on stone piles dark with tar. Barges crowd the cranes; customs officers work beneath armed awnings while dock-gangs haul sacks in rhythm, each man watching the tally-stick more closely than the river. The chain-tower shows downstream, and the smuggler-stairs are never far. The customs counter sits at the landward end of the planking, a tall desk with a ledger, a wax-stick, and an officer who has heard every story a barge can carry.",
+        "The quay stands above brown water on stone piles dark with tar. Barges crowd the cranes; customs officers work beneath armed awnings while dock-gangs haul sacks in rhythm, each man watching the tally-stick more closely than the river. The chain-combat shows downstream, and the smuggler-stairs are never far. The customs counter sits at the landward end of the planking, a tall desk with a ledger, a wax-stick, and an officer who has heard every story a barge can carry.",
     },
     // Preserve original outbound door to (3,-2) Customs Awning; extend
     // into the new Crane Line (4,-1) and River Stairs (3,-1) sub-tiles.

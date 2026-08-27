@@ -12,10 +12,16 @@ import {
 } from "./continent.js";
 import { PROFESSIONS } from "./professions.js";
 import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
+import {
+  emptyMechanicsSidecar,
+  emptyCombatMechanics,
+  hasMechanicsSidecar,
+} from "../engine/campaign-migration.js";
 import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./playable-roster.js";
 import { migrateProgressionState } from "../engine/progression.js";
 import { normalizeMemoryBank } from "../engine/memory.js";
 import { DEFAULT_NARRATOR_SETTINGS, normalizeNarratorSettings } from "../engine/narrator-settings.js";
+import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -87,7 +93,7 @@ function migrateLegacyWorldLocation(world) {
 
 // The player starts at the actual Grain Square POI on the unified world map.
 // Whitemarch is their home city — they grew up here,
-// every lane is known, every wall-tower is named — so the WHOLE biome rect
+// every lane is known, every wall-combat is named — so the WHOLE biome rect
 // is revealed on start (and re-revealed on load via the migrator below).
 // That covers the interior, the 3-hex Great Wall band (so the wall is
 // visible, not fogged), the gate complex, the Approach, the river, and the
@@ -196,6 +202,18 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             worn: [],
             knows: [],
             bodyWeight: 14, ridingOn: null, riders: [],
+          },
+          "threshold-voice": {
+            id: "threshold-voice",
+            kind: "npc",
+            name: "The Threshold Voice",
+            race: null,
+            profession: "limbo-guide",
+            age: null,
+            agingMode: "out-of-time",
+            description: "The patient, disembodied interviewer at the threshold between unbeing and Avarra.",
+            worn: [],
+            knows: [],
           },
 
           // Every ready-made creation character also lives somewhere in Avarra.
@@ -350,7 +368,7 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             worn: ["spire-staff", "spire-grey-robe", "scrying-bowl-pendant", "iron-key-ring"],
             knows: [
               "The Spire admits by invitation only; my letters are the invitations.",
-              "I have not left the tower in forty-one years.",
+              "I have not left the combat in forty-one years.",
             ],
           },
           "great-wyrm": {
@@ -587,11 +605,11 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "a thin white scar across the back of the left hand from an old binding",
             },
             base_appearance: "Thin and upright. Lined pale-tan skin. Grey hair gathered loose. Slow blue eyes. Hands ink-stained. A thin scar on the back of the left hand.",
-            description: "Master of the Heron Tower in the Spine Foothills. Heron-trained; took the tower thirty-one years ago. One apprentice at a time. Rejects most applicants; has accepted three in three decades.",
+            description: "Master of the Heron Archetype in the Spine Foothills. Heron-trained; took the combat thirty-one years ago. One apprentice at a time. Rejects most applicants; has accepted three in three decades.",
             attributes: { body: 3, reflex: 4, vigor: 5, mind: 15, wit: 13, presence: 9 },
             worn: ["heron-grey-robe", "ink-and-quill-belt", "sealed-letter-of-the-master"],
             knows: [
-              "Apprenticeship at this tower is seven years, minimum. Six have left in the first year. One stayed.",
+              "Apprenticeship at this combat is seven years, minimum. Six have left in the first year. One stayed.",
               "I write to the Spire's High Master four times a year. He writes back twice.",
             ],
             successor_id: "heron-master-apprentice",
@@ -831,7 +849,7 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "ink-stains down the side of the right hand from heel to little finger — seven years of copy-work",
             },
             base_appearance: "Thin and upright, narrow-shouldered. Pale-tan smooth skin. Dark brown hair plaited tight to the skull, plait to the small of the back. Slow dark-grey eyes. Ink-stains down the side of the right hand.",
-            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron Tower is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya took the tower at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
+            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron Archetype is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya took the combat at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
             attributes: { body: 3, reflex: 5, vigor: 5, mind: 13, wit: 11, presence: 7 },
             worn: ["heron-grey-half-robe", "ink-and-quill-belt", "apprentice's-bound-grimoire"],
             knows: [
@@ -898,6 +916,22 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
       },
     },
     party: [], // recruited companion ids (full people in world.codex.characters)
+    // The production deterministic combat sidecar is campaign-owned so an
+    // accepted encounter survives autosave, reload, and device handoff.
+    activeCombatSession: null,
+    pendingCombatDirective: null,
+    pendingTravelCombat: null,
+    productionCombatSequence: 0,
+    combatSettlementReceipts: [],
+    // The Solitaire combat sidecar: the durable build, and the fight in progress. A fight
+    // used to live in component state, so it lasted exactly as long as the tab did.
+    mechanics: emptyMechanicsSidecar(),
+    // Prose the campaign owes and has not yet paid: settlement records the debt in the same
+    // commit as its receipt, so a crash between the two costs the scene and not the outcome.
+    presentationJobs: [],
+    // A reward earned and not yet chosen. Durable, so a win survives a reload with its
+    // offer intact rather than quietly evaporating.
+    pendingReward: null,
     portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
@@ -979,6 +1013,41 @@ function migrateWorldVersions(world) {
   };
 }
 
+const WANTED_BY_KEY = new Map(WANTED_POOL.map((person) => [person.key, person]));
+
+function wantedPersonForActiveBounty(quest) {
+  if (quest?.type !== "bounty" || quest.status !== "active") return null;
+  if (WANTED_BY_KEY.has(quest.targetKey)) return WANTED_BY_KEY.get(quest.targetKey);
+  const characterKey = typeof quest.targetCharacterId === "string"
+    ? quest.targetCharacterId.replace(/^wanted-/, "")
+    : null;
+  if (WANTED_BY_KEY.has(characterKey)) return WANTED_BY_KEY.get(characterKey);
+  return WANTED_POOL.find((person) => (
+    String(quest.id || "").endsWith(`-${person.key}`) || quest.target === person.name
+  )) || null;
+}
+
+function backfillActiveBountyTargets(world) {
+  const characters = world.codex?.characters;
+  if (!characters || !Array.isArray(world.quests)) return;
+  for (const quest of world.quests) {
+    const person = wantedPersonForActiveBounty(quest);
+    if (!person) continue;
+    const targetCharacterId = `wanted-${person.key}`;
+    if (!quest.targetKey) quest.targetKey = person.key;
+    if (!quest.targetCharacterId) quest.targetCharacterId = targetCharacterId;
+    const existing = characters[targetCharacterId];
+    if (!existing) {
+      characters[targetCharacterId] = wantedCodexEntry(person);
+      continue;
+    }
+    if (!existing.kind) existing.kind = "wanted";
+    if (typeof existing.portraitKey !== "string" || !existing.portraitKey.trim()) {
+      existing.portraitKey = `wanted:${person.key}`;
+    }
+  }
+}
+
 // Merge any codex entries that exist in the fresh initial state but are
 // missing from a loaded campaign — races, professions, named NPCs, etc.
 // added to initial-state.js after the campaign was created. The player's
@@ -987,6 +1056,24 @@ function migrateWorldVersions(world) {
 export function migrateCodex(state) {
   if (!state?.world) return state;
   const next = JSON.parse(JSON.stringify(state));
+  if (next.activeCombatSession === undefined) next.activeCombatSession = null;
+  if (next.pendingCombatDirective === undefined) next.pendingCombatDirective = null;
+  if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
+  if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
+  if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
+  if (!Array.isArray(next.presentationJobs)) next.presentationJobs = [];
+  if (next.pendingReward === undefined) next.pendingReward = null;
+  // Backfilled in two steps because a campaign can predate either the sidecar or just its
+  // combat slot: the build migration shipped first and left the slot for this one.
+  if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
+  if (!next.mechanics.combat) next.mechanics = { ...next.mechanics, archetype: emptyCombatMechanics() };
+  if (
+    !Number.isSafeInteger(next.productionCombatSequence)
+    || next.productionCombatSequence < 0
+    || !Array.isArray(next.combatSettlementReceipts)
+  ) {
+    throw new RangeError("Invalid production combat campaign lineage.");
+  }
   migratePortraitOverrides(next);
   next.world = migrateLegacyWorldLocation(next.world);
   if (Array.isArray(next.turns)) {
@@ -1034,6 +1121,7 @@ export function migrateCodex(state) {
       if (!ownCodex[sub][k]) ownCodex[sub][k] = v;
     }
   }
+  backfillActiveBountyTargets(next.world);
   // One-time cleanup for saves made before the creation dedup fix: a self-fact
   // could be filed twice. Collapse every character's knowledge to unique facts.
   for (const ch of Object.values(ownCodex.characters || {})) {

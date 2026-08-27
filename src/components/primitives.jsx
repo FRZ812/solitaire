@@ -781,7 +781,6 @@ function NarratorPicker() {
 
 export function InputBar({
   value, onChange, onSubmit, onRun, queuedCount = 0, loading,
-  advancementCount = 0, advancementNeedsChoice = false, onOpenProgression,
   contextPreview = null, contextOpen = false, activeModel = "", onToggleContext, onContextOpenChange,
 }) {
   const hasDraft = Boolean(value.trim());
@@ -832,28 +831,13 @@ export function InputBar({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
-  const showAdvancement = Boolean(onOpenProgression && (advancementCount > 0 || advancementNeedsChoice));
-  const advancementLabel = advancementNeedsChoice
-    ? "Finish advancement"
-    : `${advancementCount} advancement${advancementCount === 1 ? "" : "s"} ready`;
   return (
     <div ref={rootRef} className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${queuedCount ? " has-queued" : ""}${loading ? " is-sending" : ""}`} style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(7,25,40,0) 0%, rgba(7,25,40,0.48) 20%, rgba(7,25,40,0.84) 100%)",
       display: "block",
     }}>
-      {showAdvancement && (
-        <button
-          type="button"
-          className="story-input__advancement"
-          onClick={onOpenProgression}
-          aria-label={`${advancementLabel}. Open Progression.`}
-        >
-          <Icon name="progression" size={25} />
-          <span><strong>{advancementLabel}</strong><small>Open Progression</small></span>
-          {advancementCount > 0 && <b aria-hidden="true">{advancementCount}</b>}
-        </button>
-      )}
+
       <div className={`story-input__surface${contextOpen ? " is-context-open" : ""}`}>
         {(onContextOpenChange || onToggleContext) && contextPreview && (
           <button

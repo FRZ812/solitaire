@@ -75,14 +75,14 @@ function yard() {
 
 // ----------------------------------------------------------------------------
 // Helper: a wall tile. Walls get doors:undefined so the auto-seal computes
-// them. Corner-tower walls carry a partName for flavour; the rest are plain
+// them. Corner-combat walls carry a partName for flavour; the rest are plain
 // curtain-wall hexes.
 // ----------------------------------------------------------------------------
 function wall(part, partName, description) {
   return {
     terrain: "wall",
     poi: {
-      type: part === "tower" ? "tower" : "site",
+      type: part === "combat" ? "combat" : "site",
       name: PARENT_NAME + " Wall",
       access: "restricted",
       parent: PARENT,
@@ -98,7 +98,7 @@ function wall(part, partName, description) {
 const CURTAIN_DESC =
   "A run of mud-brick wall raised on a knee-high stone footing. Shorter and rougher than Whitemarch's white curtain — caravan-money paid for it, not the Treasury — but high enough to keep bandits and stray beasts out, with a parapet walk the warden's men pace at night with a horn and a lamp.";
 
-const TOWER_DESC =
+const ARCHETYPE_DESC =
   "A squat stone watchtower at the corner of the wall — the only stone on this whole perimeter, paid for after a bad season of horse-thieves. A single brazier burns at the top, watched by one of the warden's men, with a horn on a thong and a tally-stick for the wagons coming up the road.";
 
 export const TILES = {
@@ -110,22 +110,22 @@ export const TILES = {
   // ========================================================================
 
   // North wall (y=-3), with NW and NE corner-towers
-  "-15,-3": wall("tower", "Northwest Watchtower", TOWER_DESC),
+  "-15,-3": wall("combat", "Northwest Watchtower", ARCHETYPE_DESC),
   "-14,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-13,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-12,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-11,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-10,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
-  "-9,-3":  wall("tower", "Northeast Watchtower", TOWER_DESC),
+  "-9,-3":  wall("combat", "Northeast Watchtower", ARCHETYPE_DESC),
 
   // South wall (y=3), with SW and SE corner-towers
-  "-15,3": wall("tower", "Southwest Watchtower", TOWER_DESC),
+  "-15,3": wall("combat", "Southwest Watchtower", ARCHETYPE_DESC),
   "-14,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-13,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-12,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-11,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-10,3": wall("curtain", "South Curtain", CURTAIN_DESC),
-  "-9,3":  wall("tower", "Southeast Watchtower", TOWER_DESC),
+  "-9,3":  wall("combat", "Southeast Watchtower", ARCHETYPE_DESC),
 
   // West wall (x=-15), y in -2..2
   "-15,-2": wall("curtain", "West Curtain", CURTAIN_DESC),

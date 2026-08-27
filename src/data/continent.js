@@ -312,7 +312,7 @@ export const REGION_DEFINITIONS = {
     climate: { temperature: -0.02, moisture: -0.05, elevation: 0.10 },
     terrain: { forest: -0.05, marsh: -0.12, hills: 0.14 }, poiChance: 0.024,
     areas: { prefixes: ["Chalk", "Iron", "North", "Milestone", "Ram"], nouns: ["March", "Downs", "Ridge", "Sheepwalk", "Border"] },
-    features: ["toll-fort", "quarry", "signal-tower", "fairground"],
+    features: ["toll-fort", "quarry", "signal-combat", "fairground"],
   },
   "spine-foothills": {
     id: "spine-foothills", label: "The Spine Foothills", faction: "spine-confederation", parentRealmIds: ["central"], ecologyId: "upland",
@@ -360,7 +360,7 @@ export const REGION_DEFINITIONS = {
     climate: { temperature: 0.02, moisture: -0.18, elevation: 0.20 },
     terrain: { forest: -0.20, marsh: -0.28, hills: 0.22 }, poiChance: 0.022,
     areas: { prefixes: ["Iron", "Horse", "Mirror", "Baron", "High"], nouns: ["Plateau", "Table", "Grasslands", "March", "Escarpment"] },
-    features: ["manor-fort", "horse-fair", "signal-tower", "stone-village"],
+    features: ["manor-fort", "horse-fair", "signal-combat", "stone-village"],
   },
   "tellmar-road": {
     id: "tellmar-road", label: "The Sea of Reeds", faction: "tellmar-banners", parentRealmIds: ["east"], ecologyId: "reed-sea",
@@ -654,7 +654,7 @@ export const SITE_MOTIFS = Object.freeze({
 
   // Abandoned works
   "root-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["forest"]), description: "Walls stand only where roots have gripped them, and the trees have taken the rest apart stone by stone." }),
-  "fortress-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["hills", "plains", "mountains"]), description: "A curtain wall and one broken tower remain of a fortress that commanded this ground for someone." }),
+  "fortress-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["hills", "plains", "mountains"]), description: "A curtain wall and one broken combat remain of a fortress that commanded this ground for someone." }),
   "moss-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["forest"]), description: "Every surface is under moss so deep the building reads as a set of green mounds until you touch it." }),
   "drowned-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["marsh", "plains"]), description: "Roof ridges and chimney stacks stand above still water where the ground gave way and the settlement went under." }),
   "unknown-ruin": Object.freeze({ family: "ruin", description: "Worked stone in a plan nobody local can account for, in a style that matches nothing standing nearby." }),
@@ -686,10 +686,10 @@ export const SITE_MOTIFS = Object.freeze({
   // Small defended works
   "toll-fort": Object.freeze({ family: "fortification", terrains: Object.freeze(["road", "plains"]), description: "A small fort astride the road with a lowered bar, a tariff board, and a garrison that collects." }),
   "watch-post": Object.freeze({ family: "fortification", terrains: Object.freeze(["hills", "plains"]), description: "A walled post on high ground holding a handful of soldiers whose work is to see and report." }),
-  "signal-tower": Object.freeze({ family: "fortification", terrains: Object.freeze(["hills", "plains", "mountains"]), description: "A tower built for line of sight to the next tower, with a beacon on the roof and fuel stacked below." }),
+  "signal-combat": Object.freeze({ family: "fortification", terrains: Object.freeze(["hills", "plains", "mountains"]), description: "A combat built for line of sight to the next combat, with a beacon on the roof and fuel stacked below." }),
   "manor-fort": Object.freeze({ family: "fortification", terrains: Object.freeze(["plains", "hills"]), description: "A fortified manor with a hall inside a curtain wall, farmed and defended by the same household." }),
   "winter-watch": Object.freeze({ family: "fortification", terrains: Object.freeze(["plains", "hills"]), description: "A garrison built for the cold season, stocked to hold out until thaw and shuttered the rest of the year." }),
-  "watch-pagoda": Object.freeze({ family: "fortification", terrains: Object.freeze(["reedfield", "marsh"]), description: "A tiered timber tower on piles, each storey stepping in, giving sight over reed too tall to see across." }),
+  "watch-pagoda": Object.freeze({ family: "fortification", terrains: Object.freeze(["reedfield", "marsh"]), description: "A tiered timber combat on piles, each storey stepping in, giving sight over reed too tall to see across." }),
   "dwarven-relay": Object.freeze({ family: "fortification", terrains: Object.freeze(["mountains", "hills"]), description: "A cut-stone relay station keyed into the mountainside, holding a road crew, a forge, and a sealed door." }),
 
   // Standing curiosities
@@ -712,7 +712,7 @@ export const CAMPAIGN_MINOR_SITE_FEATURES = Object.freeze([
   Object.freeze({ kind: "roadside-inn", family: "roadside-inn", routeOnly: true, description: "An inn on the road with stabling, a common room, and beds let by the mattress rather than the room." }),
   Object.freeze({ kind: "wayward-shrine", family: "shrine", description: "A small shrine kept by no one in particular and maintained anyway, its offerings replaced by passing strangers." }),
   Object.freeze({ kind: "forgotten-ruin", family: "ruin", description: "Standing walls with the roof long gone, cleared of anything portable and left to the weather." }),
-  Object.freeze({ kind: "frontier-fort", family: "fortification", description: "A timber and earth fort holding a stretch of border, with a ditch, a gate tower, and a small garrison." }),
+  Object.freeze({ kind: "frontier-fort", family: "fortification", description: "A timber and earth fort holding a stretch of border, with a ditch, a gate combat, and a small garrison." }),
 ]);
 
 export const BORDER_CHECKPOINTS = Object.freeze([
@@ -774,7 +774,7 @@ export const LANDMARKS = [
   { id: "pale-shrine", name: "Shrine of the Pale God", knowledge: "rumor", kind: "shrine", coord: { x: 42, y: 22 }, regionId: "mire", realmId: "central", direction: "east", description: "A quiet hospice beside a cold spring where seven-day servants keep watch." },
   { id: "greenshaw", name: "Greenshaw", knowledge: "rumor", kind: "village", coord: { x: -70, y: 75 }, regionId: "bramblewych-reach", realmId: "central", direction: "south-west", description: "Garden plots, bee-skeps, and turf-roofed homes hidden inside a patient hedge maze." },
   { id: "stonebrook", name: "Stonebrook Hold", knowledge: "rumor", kind: "town", coord: { x: 105, y: 75 }, regionId: "spine-foothills", realmId: "central", direction: "south-east", description: "A dwarven mining hold around a fast stream, known for fair weights and excellent steel." },
-  { id: "heron-tower", name: "The Heron Tower", knowledge: "rumor", kind: "tower", coord: { x: 135, y: 40 }, regionId: "spine-foothills", realmId: "central", direction: "east", description: "A white-heralded sorcerer's tower watching the roads that converge on Reedwatch." },
+  { id: "heron-combat", name: "The Heron Archetype", knowledge: "rumor", kind: "combat", coord: { x: 135, y: 40 }, regionId: "spine-foothills", realmId: "central", direction: "east", description: "A white-heralded sorcerer's combat watching the roads that converge on Reedwatch." },
   { id: "black-tarn", name: "Black Tarn", knowledge: "rumor", kind: "lake", coord: { x: -115, y: -105 }, regionId: "bonemarsh", realmId: "central", direction: "north-west", description: "A cold inland tarn whose wind smells of peat cellars and rain." },
   { id: "bramblewych", name: "Bramblewych", knowledge: "rumor", kind: "town", coord: { x: -105, y: 75 }, regionId: "bramblewych-reach", realmId: "central", direction: "south-west", description: "A hedge-court market town on the long road to the western forest." },
   ...CHECKPOINT_LANDMARKS,
@@ -795,7 +795,7 @@ export const LANDMARKS = [
   { id: "star-forge", name: "The Star-Forge", knowledge: "legend", kind: "temple", coord: { x: 325, y: -110 }, regionId: "iron-plateau", realmId: "east", provinceId: "starfall-uplands", factionId: "iron-plateau-marches", routeIds: ["spine-road", "star-road", "starfall-road"], direction: "far north-east", description: "A pilgrim forge raised around the first iron said to have fallen burning from the sky." },
   { id: "mole-halls", name: "The Mole-Halls", knowledge: "legend", kind: "ruin", coord: { x: 150, y: 115 }, regionId: "spine-foothills", realmId: "central", direction: "south-east", description: "Vast abandoned delvings beneath the continental road, with doors tall enough for forgotten kings." },
   { id: "asalan", name: "Asalan", knowledge: "legend", kind: "city", coord: { x: 104, y: 294 }, regionId: "hollow-coast", realmId: "south", provinceId: "nine-wells", factionId: "asalan-sun-court", routeIds: ["south-road", "low-tide-way", "nine-wells-road", "saffron-coast-road"], direction: "far south", capitalOfRealmId: "south", description: "The red-walled desert capital around the Nine Wells, ruled by Sultana Maraset al-Azur." },
-  { id: "glass-dune-observatory", name: "Glass Dune Observatory", knowledge: "legend", kind: "tower", coord: { x: -30, y: 280 }, regionId: "hollow-coast", realmId: "south", provinceId: "glass-desert", factionId: "asalan-sun-court", routeIds: ["south-road", "dune-circuit"], direction: "far south", description: "A brass-domed observatory standing where lightning fused a dune into dark glass." },
+  { id: "glass-dune-observatory", name: "Glass Dune Observatory", knowledge: "legend", kind: "combat", coord: { x: -30, y: 280 }, regionId: "hollow-coast", realmId: "south", provinceId: "glass-desert", factionId: "asalan-sun-court", routeIds: ["south-road", "dune-circuit"], direction: "far south", description: "A brass-domed observatory standing where lightning fused a dune into dark glass." },
   { id: "qamarat", name: "Qamarat", knowledge: "legend", kind: "port", coord: { x: 134, y: 387 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["south-road", "low-tide-way", "nine-wells-road", "saffron-coast-road"], direction: "far south", coastalFeatureId: "nine-wells-bay", description: "A sandstone port of spice warehouses and blue sails on the Saffron Sea." },
   { id: "sunken-crown", name: "The Sunken Crown", knowledge: "legend", kind: "ruin", coord: { x: 24, y: 338 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["low-tide-way"], direction: "far south", description: "Drowned towers visible beneath Nine Wells Bay at the lowest turning of the year." },
 

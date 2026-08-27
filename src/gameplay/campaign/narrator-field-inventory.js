@@ -62,7 +62,7 @@ export const NARRATOR_FIELD_INVENTORY = Object.freeze([
   entry("roll", FIELD_DISPOSITION.PROJECTION, "engine/narrator-projection.js",
     "The engine's own roll, shown to the narrator so prose can honour it. A narrator that "
     + "could author this could author its own successes."),
-  entry("encounter", FIELD_DISPOSITION.PROJECTION, "engine/encounters.js",
+  entry("encounter", FIELD_DISPOSITION.PROJECTION, "gameplay/production/pending-directive.js",
     "The engine-selected encounter offered for narration. Selection is already engine-owned; "
     + "this field is the projection of that choice."),
 
@@ -74,7 +74,7 @@ export const NARRATOR_FIELD_INVENTORY = Object.freeze([
     "Health outside combat. Must be bounded by the same rules combat settlement obeys, or a "
     + "story beat becomes a heal button."),
   entry("resolve_change", FIELD_DISPOSITION.INTENT, "campaign/resolve-owner",
-    "The spendable pool shared by world actions and combat. Same argument as vitality: "
+    "The spendable pool shared by world actions and Archetype combat. Same argument as vitality: "
     + "only the campaign owner may author or restore it."),
   entry("new_conditions", FIELD_DISPOSITION.INTENT, "campaign/condition-owner",
     "Conditions now have real combat expression through admission, so authoring one is "
@@ -85,7 +85,7 @@ export const NARRATOR_FIELD_INVENTORY = Object.freeze([
   entry("tile_move", FIELD_DISPOSITION.INTENT, "campaign/travel-owner",
     "Position is the input to encounters, travel time and region difficulty; moving without "
     + "paying the journey is the oldest exploit in the game."),
-  entry("start_combat", FIELD_DISPOSITION.INTENT, "engine/combat.js",
+  entry("start_combat", FIELD_DISPOSITION.INTENT, "gameplay/combat/admission.js",
     "Already the closest to done: admission projects and can refuse it. The remaining work "
     + "is routing it as an intent rather than a directive the engine reads back out."),
   entry("assassination", FIELD_DISPOSITION.INTENT, "campaign/death-owner",
@@ -129,7 +129,7 @@ export const NARRATOR_FIELD_INVENTORY = Object.freeze([
     + "refusal rather than a filter."),
   entry("progression_focus", FIELD_DISPOSITION.INTENT, "campaign/progression-owner",
     "Steers where growth lands. Narrow, but it is growth."),
-  entry("character_setup", FIELD_DISPOSITION.INTENT, "engine/beat.js",
+  entry("character_setup", FIELD_DISPOSITION.INTENT, "gameplay/combat/character-bootstrap.js",
     "Creation. The bootstrap compiler is already the sole applicator; this field has to "
     + "become a request into it rather than a parallel path."),
   entry("player_update", FIELD_DISPOSITION.INTENT, "campaign/identity-owner",

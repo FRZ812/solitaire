@@ -53,12 +53,6 @@ export function buildNarratorProjection(state) {
   }
 
   const presentSpeakerIds = [...present].sort();
-  const partyIds = new Set(state?.party || []);
-  const combatTargetIds = presentSpeakerIds.filter((id) => (
-    id !== "threshold-voice"
-    && !partyIds.has(id)
-    && characters[id]?.kind !== "mount"
-  ));
   const assassinationAttempts = narratorAssassinationAttemptCapabilities(state, presentSpeakerIds);
   const assassinationTargets = narratorAssassinationCapabilities(state, presentSpeakerIds);
   const stateRevision = narratorStateRevision(state);
@@ -79,7 +73,6 @@ export function buildNarratorProjection(state) {
     playerId,
     characters,
     partyIds: [...(state?.party || [])],
-    combatTargetIds,
     availableCopper: coinsToCopper(state?.character?.inventory?.coins),
     presentSpeakerIds,
     assassinationAttempts,
@@ -116,7 +109,8 @@ const SCOPED_ROUTE_POLICIES = Object.freeze({
   "scry-presentation": {
     requiredSkillIds: ["magic-and-mounts", "world-and-travel", "narrative-craft"],
     allowedSkillIds: ["magic-and-mounts", "world-and-travel", "narrative-craft", "codex-and-npcs"],
-    allowedEffects: [],
+    allowedEffects: ["minutes_passed", "discoveries"],
+    effectConstraints: { minutes_passed: { equals: 10 } },
   },
   "rights-negotiation": {
     requiredSkillIds: ["economy-and-survival", "relationships-and-party", "codex-and-npcs"],
@@ -143,7 +137,7 @@ const SCOPED_ROUTE_POLICIES = Object.freeze({
   "loot-fallout": {
     requiredSkillIds: ["combat-and-consequences", "economy-and-survival", "narrative-craft"],
     allowedSkillIds: ["combat-and-consequences", "economy-and-survival", "narrative-craft", "codex-and-npcs"],
-    allowedEffects: ["new_conditions", "discoveries"],
+    allowedEffects: ["location_update", "new_conditions", "start_combat", "tile_move", "discoveries"],
   },
 });
 
@@ -182,7 +176,11 @@ export function narratorTurnPolicy(_userMessage, state, routeOptions = {}) {
       "combat-and-consequences",
     ],
     allowedEffects: [
-      "assassination",
+      "minutes_passed", "roll", "encounter", "vitality_change", "resolve_change", "new_conditions",
+      "tile_discovery", "location_update", "discoveries", "assassination",
+      "inventory_changes", "knowledge_updates", "attribute_changes", "needs_changes",
+      "companion_gear", "relationship_changes", "memory_updates",
+      "progression_focus",
       ...(state?.created === false ? ["character_setup", "player_update"] : []),
     ],
   };

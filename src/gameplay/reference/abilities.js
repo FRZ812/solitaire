@@ -3,8 +3,8 @@ const TRAIT_SOURCE = Object.freeze({
   captured: "2026-08-09",
   version: "1.4.16-public-evidence",
   urls: Object.freeze([
-    "https://play.google.com/store/apps/details?id=com.tailormadegames.tow&hl=en&gl=US",
-    "https://gall.dcinside.com/mgallery/board/view/?id=tow&no=5666",
+    "https://play.google.com/store/apps/details?id=com.tailormadegames.combat&hl=en&gl=US",
+    "https://gall.dcinside.com/mgallery/board/view/?id=combat&no=5666",
   ]),
 });
 

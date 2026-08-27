@@ -59,7 +59,7 @@ S1's town.js BUILDINGS audit.
   references.
 - Access values: `"public"`, `"guarded"`, `"conditional"`, `"restricted"`,
   `"hidden"`.
-- POI types in use: `plaza, hall, market, stair, gate, tower, barracks,
+- POI types in use: `plaza, hall, market, stair, gate, combat, barracks,
   dock, yard, court, prison, smithy, temple, town, river, sewer,
   slavemarket, hidden, site, bldg, asylum`.
 

@@ -28,9 +28,9 @@ try {
     waitUntil: "networkidle0",
     timeout: 60_000,
   });
-  await page.waitForSelector(".tow-combat", { timeout: 30_000 });
+  await page.waitForSelector(".archetype-combat", { timeout: 30_000 });
   const standDown = await page.evaluate(() => {
-    const button = document.querySelector(".tow-combat__hold");
+    const button = document.querySelector(".archetype-combat__hold");
     if (!button) return { present: false, visible: false, height: 0 };
     const rect = button.getBoundingClientRect();
     return {
@@ -40,12 +40,12 @@ try {
     };
   });
   const statusIcon = await page.evaluate(() => {
-    const icon = document.querySelector(".tow-formation-status");
+    const icon = document.querySelector(".combat-formation-status");
     if (!icon) return null;
     const rect = icon.getBoundingClientRect();
     return { width: Math.round(rect.width), height: Math.round(rect.height) };
   });
-  const initialCommandRect = await page.$eval(".tow-combat__command", (node) => {
+  const initialCommandRect = await page.$eval(".archetype-combat__command", (node) => {
     const rect = node.getBoundingClientRect();
     return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
   });
@@ -53,22 +53,22 @@ try {
   let confirmationButtons = null;
   async function commitStrike() {
     await page.evaluate(() => {
-      const strike = [...document.querySelectorAll(".tow-combat__action")]
+      const strike = [...document.querySelectorAll(".archetype-combat__action")]
         .find((button) => button.dataset.skillId === "strike" && !button.disabled);
       if (!strike) throw new Error("available-strike-not-found");
       strike.click();
     });
-    await page.waitForSelector("[data-testid='tow-target-confirmation']", { timeout: 5_000 });
+    await page.waitForSelector("[data-testid='combat-target-confirmation']", { timeout: 5_000 });
     if (confirmationButtons === null) {
       await new Promise((resolve) => setTimeout(resolve, 220));
       confirmationButtons = await page.evaluate(() => Object.fromEntries(
-        [...document.querySelectorAll("[data-testid='tow-target-confirmation'] button")]
+        [...document.querySelectorAll("[data-testid='combat-target-confirmation'] button")]
           .map((button) => [button.textContent.trim(), Math.round(button.getBoundingClientRect().height)]),
       ));
 
     }
     await page.evaluate(() => {
-      const target = document.querySelector(".tow-formation-cell.is-valid-anchor:not(:disabled)");
+      const target = document.querySelector(".combat-formation-cell.is-valid-anchor:not(:disabled)");
       if (!target) throw new Error("valid-target-not-found");
       target.click();
     });
@@ -80,17 +80,17 @@ try {
     { timeout: 5_000 },
   );
   await page.waitForFunction(
-    () => document.querySelector(".tow-combat")?.dataset.presentationPhase === "resolve",
+    () => document.querySelector(".archetype-combat")?.dataset.presentationPhase === "resolve",
     { timeout: 5_000 },
   );
 
   const beforeSecond = await page.evaluate(() => ({
-    busy: document.querySelector(".tow-combat")?.getAttribute("aria-busy"),
-    phase: document.querySelector(".tow-combat")?.dataset.presentationPhase,
-    actor: document.querySelector(".tow-formation-unit.is-active .tow-formation-unit__active-label")
+    busy: document.querySelector(".archetype-combat")?.getAttribute("aria-busy"),
+    phase: document.querySelector(".archetype-combat")?.dataset.presentationPhase,
+    actor: document.querySelector(".combat-formation-unit.is-active .combat-formation-unit__active-label")
       ?.textContent.replace(/\s+/g, " ").trim(),
     commandRect: (() => {
-      const rect = document.querySelector(".tow-combat__command")?.getBoundingClientRect();
+      const rect = document.querySelector(".archetype-combat__command")?.getBoundingClientRect();
       return rect ? { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } : null;
     })(),
   }));
@@ -108,9 +108,9 @@ try {
   const acceptedMs = Math.round(performance.now() - secondStarted);
   const log = await page.$eval("#harness-log", (node) => node.textContent);
   const afterSecond = await page.evaluate(() => ({
-    phase: document.querySelector(".tow-combat")?.dataset.presentationPhase,
-    activeActorId: document.querySelector(".tow-formation-unit.is-active")?.dataset.actorId,
-    targetConfirmation: Boolean(document.querySelector("[data-testid='tow-target-confirmation']")),
+    phase: document.querySelector(".archetype-combat")?.dataset.presentationPhase,
+    activeActorId: document.querySelector(".combat-formation-unit.is-active")?.dataset.actorId,
+    targetConfirmation: Boolean(document.querySelector("[data-testid='combat-target-confirmation']")),
   }));
 
   const result = {

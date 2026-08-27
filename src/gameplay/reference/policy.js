@@ -1,5 +1,5 @@
 export const REFERENCE_POLICY = Object.freeze({
-  id: "tow-1.4.16-public-evidence-v2",
+  id: "combat-1.4.16-public-evidence-v2",
   turnOrder: Object.freeze([
     "declare-enemy-intent",
     "player-command",

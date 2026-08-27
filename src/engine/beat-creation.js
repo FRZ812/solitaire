@@ -4,12 +4,25 @@
 // (identity, attributes, abilities, racial kit, derived pools). No import back
 // into beat.js, so no cycle.
 import { resolveRace } from "../data/races.js";
-import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
+import {
+  classifyLegacyAbilityGrant,
+  clampAbilityTier,
+  clampWorldAbilityTier,
+  getAbilityDef,
+  worldAbilityGrantDefinition,
+} from "../data/abilities.js";
 import { proficiencyDef } from "../data/proficiencies.js";
 import { withoutSelectedPlayableCharacter } from "../data/playable-roster.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { ATTRIBUTE_CAP } from "../config.js";
-import { createProgression, inferProgressionLevel, normalizeCharacterProgression, progressionLevel } from "./progression.js";
+import {
+  createProgression,
+  inferProgressionLevel,
+  normalizeCharacterProgression,
+  progressionLevel,
+  stripCombatLegacyProgression,
+  usesLegacyCharacterProgression,
+} from "./progression.js";
 import { canonicalProfessionId, isBroadProfessionName } from "../data/progression-paths.js";
 import { sanitizeProfessionPlan } from "./discoveries.js";
 
@@ -42,7 +55,7 @@ export function applyCreation({ beat, character, world, created }) {
     for (const key of [
       "archetype", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
       "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
-      "profile",
+      "profile", "combatArchetypeId", "progressionModel", "combatBaseStats",
     ]) {
       if (cs[key] != null) character[key] = cs[key];
     }
@@ -61,39 +74,47 @@ export function applyCreation({ beat, character, world, created }) {
       }
       character.proficiencies = proficiencies;
     }
-    // Ready-made builds bring an authored stack; freeform creation receives a
-    // deterministic level appropriate to the described attribute magnitude.
-    const suppliedLevel = cs.progression ? progressionLevel(cs.progression) : 0;
-    const declaredLevel = Number.isFinite(Number(cs.level)) ? Number(cs.level) : 0;
-    const racialLevels = Math.max(0, Math.min(30, Math.floor(Number(cs.racial_levels ?? cs.racialLevels) || 0)));
-    const plannedProfessionLevels = professionPlan.reduce((sum, entry) => sum + entry.levels, 0);
-    const plannedLevel = racialLevels + plannedProfessionLevels;
-    const startingLevel = suppliedLevel || (professionPlan.length ? plannedLevel : declaredLevel)
-      || inferProgressionLevel({ ...character, profession: professionId });
-    character.progression = createProgression({
-      professionId,
-      archetypeId: archetype || cs.progression?.archetypeId,
-      raceId: cs.race || character.race || "human",
-      level: startingLevel,
-      ...(professionPlan.length ? {
-        professions: professionPlan.map((entry) => ({
-          professionId: entry.profession,
-          specializationId: entry.specialization || null,
-          levels: entry.levels,
-        })),
-        racialLevels,
-      } : {}),
-      signatureSpellId: cs.signature_spell || cs.signatureSpell || null,
-      metamagicIds: Array.isArray(cs.metamagic)
-        ? cs.metamagic
-        : Array.isArray(cs.metamagic_ids) ? cs.metamagic_ids : [],
-      xp: cs.progression?.xp,
-    });
-    character.archetype = archetype || character.progression.archetypeId;
-    normalizeCharacterProgression(character, {
-      enforceLevelAttributeScale: true,
-      preserveValidAttributeShape: true,
-    });
+    const usesCombaterProgression = !usesLegacyCharacterProgression(character);
+    if (usesCombaterProgression) {
+      // Archetype builds own their combat growth outright. Do not create a dormant
+      // legacy level graph: even a compatibility shell becomes live again when
+      // a generic normalize, summary, or XP path sees it later.
+      stripCombatLegacyProgression(character);
+    } else {
+      // Ready-made builds bring an authored stack; freeform creation receives a
+      // deterministic level appropriate to the described attribute magnitude.
+      const suppliedLevel = cs.progression ? progressionLevel(cs.progression) : 0;
+      const declaredLevel = Number.isFinite(Number(cs.level)) ? Number(cs.level) : 0;
+      const racialLevels = Math.max(0, Math.min(30, Math.floor(Number(cs.racial_levels ?? cs.racialLevels) || 0)));
+      const plannedProfessionLevels = professionPlan.reduce((sum, entry) => sum + entry.levels, 0);
+      const plannedLevel = racialLevels + plannedProfessionLevels;
+      const startingLevel = suppliedLevel || (professionPlan.length ? plannedLevel : declaredLevel)
+        || inferProgressionLevel({ ...character, profession: professionId });
+      character.progression = createProgression({
+        professionId,
+        archetypeId: archetype || cs.progression?.archetypeId,
+        raceId: cs.race || character.race || "human",
+        level: startingLevel,
+        ...(professionPlan.length ? {
+          professions: professionPlan.map((entry) => ({
+            professionId: entry.profession,
+            specializationId: entry.specialization || null,
+            levels: entry.levels,
+          })),
+          racialLevels,
+        } : {}),
+        signatureSpellId: cs.signature_spell || cs.signatureSpell || null,
+        metamagicIds: Array.isArray(cs.metamagic)
+          ? cs.metamagic
+          : Array.isArray(cs.metamagic_ids) ? cs.metamagic_ids : [],
+        xp: cs.progression?.xp,
+      });
+      character.archetype = archetype || character.progression.archetypeId;
+      normalizeCharacterProgression(character, {
+        enforceLevelAttributeScale: true,
+        preserveValidAttributeShape: true,
+      });
+    }
     // Grant any starting abilities the concept calls for — martial techniques, or
     // spells if the player explicitly built a magical character. Accepts an
     // `abilities` array (ids or {id,tier}) and/or a legacy single `ability`.
@@ -106,7 +127,12 @@ export function applyCreation({ beat, character, world, created }) {
       const idOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of startAbilities) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
-        if (entry.id) entry.tier = clampAbilityTier(entry.id, entry.tier); // honour tier floors
+        if (usesCombaterProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
+        if (entry.id) {
+          entry.tier = usesCombaterProgression
+            ? clampWorldAbilityTier(entry.id, entry.tier)
+            : clampAbilityTier(entry.id, entry.tier); // honour tier floors
+        }
         if (entry.id && !list.some((x) => idOf(x) === entry.id)) list.push(entry);
       }
       character.abilities = list;
@@ -127,13 +153,16 @@ export function applyCreation({ beat, character, world, created }) {
       const ridOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of [...kit.innateAbilities, ...kit.startingSpells]) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
+        if (usesCombaterProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
+        if (entry.id && usesCombaterProgression) entry.tier = clampWorldAbilityTier(entry.id, entry.tier);
         if (entry.id && !rlist.some((x) => ridOf(x) === entry.id)) rlist.push(entry);
       }
       character.abilities = rlist;
       if (kit.startingSpells.length) {
         const spells = { ...(world.codex.spells || {}) };
         for (const sid of kit.startingSpells) {
-          const def = getAbilityDef(sid);
+          if (usesCombaterProgression && classifyLegacyAbilityGrant(sid) !== "world") continue;
+          const def = usesCombaterProgression ? worldAbilityGrantDefinition(sid) : getAbilityDef(sid);
           if (def && !spells[sid]) spells[sid] = { id: sid, name: def.name, description: def.desc || "An innate spell of your kindred.", acquisition: "innate to your kindred" };
         }
         world = { ...world, codex: { ...world.codex, spells } };
@@ -149,7 +178,9 @@ export function applyCreation({ beat, character, world, created }) {
       origin: cs.origin || w.origin,
       profession: professionId,
       archetype: character.archetype || w.archetype,
-      progression: { ...character.progression, paths: { ...character.progression.paths } },
+      ...(!usesCombaterProgression ? {
+        progression: { ...character.progression, paths: { ...character.progression.paths } },
+      } : {}),
       gender: cs.gender ?? w.gender,
       age: cs.age != null ? cs.age : w.age,
       agingMode: cs.agingMode ?? w.agingMode ?? "mortal",
@@ -160,11 +191,21 @@ export function applyCreation({ beat, character, world, created }) {
       ...((cs.templateId != null || w.templateId != null) ? { templateId: cs.templateId ?? w.templateId } : {}),
       ...((cs.portraitKey != null || w.portraitKey != null) ? { portraitKey: cs.portraitKey ?? w.portraitKey } : {}),
       ...((cs.profile != null || w.profile != null) ? { profile: cs.profile ?? w.profile } : {}),
+      ...((cs.combatArchetypeId != null || w.combatArchetypeId != null)
+        ? { combatArchetypeId: cs.combatArchetypeId ?? w.combatArchetypeId }
+        : {}),
+      ...((cs.progressionModel != null || w.progressionModel != null)
+        ? { progressionModel: cs.progressionModel ?? w.progressionModel }
+        : {}),
+      ...((cs.combatBaseStats != null || w.combatBaseStats != null)
+        ? { combatBaseStats: cs.combatBaseStats ?? w.combatBaseStats }
+        : {}),
       attributes: character.attributes,
       // Dedup: a long (manual) creation may have already filed a self-fact via
       // knowledge_updates before the final sheet repeats it — don't list it twice.
       knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
+    if (usesCombaterProgression) stripCombatLegacyProgression(merged, { forceCombat: true });
     const characters = withoutSelectedPlayableCharacter(
       { ...world.codex.characters, wanderer: merged },
       merged.templateId,

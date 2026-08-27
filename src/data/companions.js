@@ -13,21 +13,6 @@ import { bodyWeightForRace } from "../engine/weight.js";
 import { normalizeCharacterProgression } from "../engine/progression.js";
 
 export const COMPANIONS = {
-  bram: {
-    id: "bram", key: "bram", role: "sellsword", terms: "a share of the spoils", feeCp: 0,
-    desc: "A scarred sellsword nursing a cheap ale, looking for a road worth walking.",
-    name: "Bram Holt", race: "human", gender: "male", profession: "sellsword", origin: "central",
-    age: 38, agingMode: "mortal", attractiveness: 5,
-    appearance: { skin: "weathered tan", hair: "black shot with grey, cropped short", eyes: "brown", build: "big, slab-shouldered", facial_hair: "perpetual stubble", marks: "a broken nose and a long scar down the right forearm" },
-    base_appearance: "Big and slab-shouldered. Weathered tan, grey-shot black hair cropped short. Broken nose, brown eyes, a long forearm scar.",
-    description: "A sellsword between contracts, drinking cheap and watching the door. Loyal to coin first — and, slowly, to people who hold a line beside him.",
-    attributes: { body: 4, reflex: 2, vigor: 2, mind: 1, wit: 2, presence: 1 }, // ordinary backwater muscle, below the player
-    abilities: ["power-strike", "cleave"],
-    skills: [{ name: "Soldiering", rating: 3, desc: "formations, sieges, holding a line" }, { name: "Intimidation", rating: 2 }],
-    choosiness: "mid", // a veteran wants a band that can pay and hold its own
-    worn: ["boiled-leather-jerkin", "arming-sword", "dented-iron-cap"],
-    knows: ["I've soldiered under three banners and buried friends under all of them.", "I'll hold a line for coin; I'll hold it longer for someone who holds it with me."],
-  },
   senna: {
     id: "senna", key: "senna", role: "hunter", terms: "an even split and first pick of pelts", feeCp: 0,
     desc: "A marsh-hunter with a yew bow, bored of shooting eels for a living.",
@@ -72,51 +57,6 @@ export const COMPANIONS = {
     choosiness: "mid", // sizes you up; asks her tenth and no questions
     worn: ["black-shawl", "charm-strung-belt", "bone-handled-knife"],
     knows: ["Every cure is a poison measured kindly.", "I owe two debts I do not speak of, and I am owed a great many more."],
-  },
-  garran: {
-    id: "garran", key: "garran", role: "caravan-guard", terms: "a steady share and repair money", feeCp: 0,
-    desc: "A leather-armoured caravan guard looking for work that travels beyond the city roads.",
-    name: "Garran Vale", race: "human", gender: "male", profession: "sellsword", origin: "central",
-    age: 34, agingMode: "mortal", attractiveness: 7,
-    appearance: { skin: "road-tanned", hair: "dark brown, cropped short", eyes: "hazel", build: "tall, broad-shouldered, strong through the forearms", facial_hair: "a close dark beard", marks: "a long healed cut along the left forearm" },
-    base_appearance: "Tall and broad-shouldered, with road-tanned skin, cropped dark hair, hazel eyes, and a close beard. A long healed cut marks his left forearm.",
-    description: "A caravan guard who spent eight years walking the Crown and Alder roads beside wool carts, iron wagons, and families moving house. Garran is good at spotting an ambush, better at preventing a frightened driver from causing one, and meticulous about maintaining the sword and leather coat that keep him employed.",
-    attributes: { body: 4, reflex: 3, vigor: 3, mind: 2, wit: 3, presence: 2 },
-    abilities: ["power-strike", "second-wind"],
-    skills: [{ name: "Road-guarding", rating: 4, desc: "march order, convoy spacing, and ambush signs" }, { name: "Leatherwork", rating: 2 }],
-    choosiness: "mid",
-    worn: ["patched-leather-coat", "caravan-arming-sword", "yellow-road-shirt"],
-    knows: ["A convoy survives by keeping its spacing when the first horse shies.", "Good leather looks dull because somebody oils it before it cracks."],
-  },
-  elske: {
-    id: "elske", key: "elske", role: "charmwright", terms: "forty copper a week and the right to refuse a working", feeCp: 40,
-    desc: "A travelling charmwright in plum wool, weighing the next road against the last one.",
-    name: "Elske Marr", race: "human", gender: "female", profession: "witch", origin: "north",
-    age: 49, agingMode: "mortal", attractiveness: 6,
-    appearance: { skin: "fair, lightly weathered", hair: "silver-grey, pinned in a loose knot", eyes: "amber-green", build: "tall, slender, composed", facial_hair: "none", marks: "short tally scars across the right forearm and green-stained fingertips" },
-    base_appearance: "Tall, slender, and composed, with lightly weathered fair skin, amber-green eyes, and silver-grey hair pinned in a loose knot. Short tally scars cross her right forearm.",
-    description: "A travelling charmwright who makes protective knots, birthing tokens, fever bells, and small household wards under clearly stated terms. Elske left a comfortable parish after its reeve demanded one private curse too many. She is warmer than her severe gaze suggests, particular about payment, and unwilling to promise any magic she cannot explain before using it.",
-    attributes: { body: 1, reflex: 3, vigor: 2, mind: 4, wit: 4, presence: 3 },
-    abilities: ["hex", "second-wind"],
-    skills: [{ name: "Charmcraft", rating: 4, desc: "bounded household wards, tokens, and warning charms" }, { name: "Herblore", rating: 3 }],
-    choosiness: "high",
-    worn: ["plum-wool-gown", "black-travel-shawl", "charmwright's-belt", "bone-handled-work-knife"],
-    knows: ["A useful charm names what it guards, how long it lasts, and what breaks it.", "I left the parish with my tools, my account book, and every promise still mine to keep."],
-  },
-  linnet: {
-    id: "linnet", key: "linnet", role: "road-scout", terms: "an even share and replacement bowstrings", feeCp: 0,
-    desc: "A sharp-eyed road scout with a longbow and no patience for waiting behind walls.",
-    name: "Linnet Ash", race: "human", gender: "female", profession: "ranger", origin: "central",
-    age: 24, agingMode: "mortal", attractiveness: 8,
-    appearance: { skin: "sun-warmed and freckled", hair: "honey-brown in a loose side braid", eyes: "green", build: "lean, athletic, long-armed", facial_hair: "none", marks: "a pale bowstring line at the inner left forearm" },
-    base_appearance: "Lean and athletic, with sun-warmed freckled skin, green eyes, and honey-brown hair in a loose side braid. A pale bowstring line marks her left forearm.",
-    description: "An orchard-belt scout who watches hedgerows, road bends, and the movement of birds above approaching traffic. Linnet learned the bow in village competitions and the road from escorting cider wagons into Whitemarch. She wants harder country, honest company, and enough replacement strings that rain does not decide her range.",
-    attributes: { body: 2, reflex: 4, vigor: 3, mind: 2, wit: 4, presence: 2 },
-    abilities: ["rapid-jabs", "piercing-thrust"],
-    skills: [{ name: "Archery", rating: 4 }, { name: "Road-scouting", rating: 3, desc: "traffic signs, hedgerows, and concealed approaches" }],
-    choosiness: "low",
-    worn: ["teal-scouting-vest", "linen-road-shirt", "ash-longbow", "string-wallet"],
-    knows: ["Birds rise before a cart comes into view, and settle differently when riders leave the road.", "A wet bowstring is not bad luck. It is bad packing."],
   },
   doran: {
     id: "doran", key: "doran", role: "deserter", terms: "a fair split and no banners, ever again", feeCp: 0,

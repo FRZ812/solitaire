@@ -5,6 +5,7 @@ import { MOUNT_LIST } from "../data/mounts.js";
 import { CHARACTER_TEMPLATES } from "../data/templates.js";
 import { REGIONAL_ESTABLISHMENT_CHARACTER_IDENTITIES } from "../data/regional-establishment-characters.js";
 import { PORTRAIT_CANDIDATE_CHARACTER_IDENTITIES } from "../data/portrait-candidate-characters.js";
+import { STARTING_ARCHETYPES } from "../gameplay/combat/starting-archetypes.js";
 
 
 const fixed = (key, id, name, category, source, requiredVariants = 2) => Object.freeze({
@@ -108,6 +109,15 @@ const playable = CHARACTER_TEMPLATES.map((template) => fixed(
   requiredPortraitVariants(`template:${template.id}`),
 ));
 
+const combat = STARTING_ARCHETYPES.map((archetype) => fixed(
+  `archetype:${archetype.id}`,
+  archetype.id,
+  archetype.name,
+  "archetype",
+  "starting-archetypes",
+  2,
+));
+
 export const REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES = Object.freeze(
   REGIONAL_ESTABLISHMENT_CHARACTER_IDENTITIES.map(([id, name]) => fixed(
     `codex:${id}`,
@@ -189,7 +199,7 @@ export const CHARACTER_PORTRAIT_IDENTITIES = Object.freeze([
   ...REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES,
   ...PORTRAIT_CANDIDATE_IDENTITIES,
   ...playable,
-
+  ...combat,
   ...companions,
   ...captives,
   ...prisoners,

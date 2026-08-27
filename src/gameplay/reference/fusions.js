@@ -4,7 +4,7 @@ const KNIGHT_GUIDE_SOURCE = Object.freeze({
   confidence: "secondary",
   date: "2023-09-12",
   version: "version-sensitive",
-  url: "https://gall.dcinside.com/mgallery/board/view/?id=tow&no=5666",
+  url: "https://gall.dcinside.com/mgallery/board/view/?id=combat&no=5666",
 });
 
 export const STEELIFICATION = Object.freeze({

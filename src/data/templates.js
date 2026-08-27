@@ -381,29 +381,6 @@ const CHARACTER_HOOKS = Object.freeze({
 const CHARACTER_TEMPLATE_DEFINITIONS = [
   // ============================ STANDARD ============================
   {
-    id: "sellsword",
-    label: "Sellsword",
-    role: "Tank",
-    tier: "standard",
-    concept: "Sword, shield, and the sense to hold a line.",
-    story: "Bram has sold his blade under three frontier feud-lords and buried friends beneath all three banners. He fights from the front and takes his pay up front. He's looking for a last contract worth more than coin.",
-    highlights: ["Vigor", "Body"],
-    setup: {
-      name: "Bram Coltaine",
-      profession: "sellsword",
-      race: "human", subrace: null, origin: "west", gender: "male",
-      age: 32, agingMode: "mortal", attractiveness: 5,
-      bond: "Steel for coin — but a contract kept is the one name worth keeping.",
-      attributes: { body: 5, reflex: 3, vigor: 5, mind: 1, wit: 2, presence: 2 },
-      appearance: { skin: "weathered tan", hair: "dark brown", eyes: "brown", build: "broad and scarred", facial_hair: "short unkempt beard" },
-      base_appearance: "A broad-shouldered frontier veteran, olive-tanned and wind-cured, with a soldier's economy of movement and a nose set crooked from an old break.",
-      abilities: [{ id: "warrior-measured-strike", tier: "common" }, { id: "warrior-guarded-cut", tier: "uncommon" }],
-      items: [worn("arming-sword"), worn("chain-shirt"), worn("iron-helm"), worn("round-shield"), worn("traveling-cloak"), worn("marching-boots"), packed("whetstone")],
-      coins: { gold: 1, silver: 8 },
-      knows: ["Has soldiered in three border wars and survived all three."],
-    },
-  },
-  {
     id: "reaver",
     label: "Reaver",
     role: "Bruiser",

@@ -4,7 +4,9 @@
 import { ATTR_KEYS, ATTR_LABELS, originLabel, AERIAL_SIGHTING_DAYS } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
 import { attrDescriptor } from "../data/attribute-tiers.js";
-import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, classifyLegacyAbilityGrant } from "../data/abilities.js";
+import { BUFF_SPELL_LIST } from "../data/buff-spells.js";
+import { TRAVEL_SPELL_LIST } from "../data/travel-spells.js";
 import { ALL_ITEMS } from "../data/catalog.js";
 import { tierOrder } from "../data/tiers.js";
 import { TERRAINS } from "../data/terrains.js";
@@ -27,6 +29,7 @@ import { progressionLevel } from "./progression.js";
 import { progressionNarrativeProjection } from "./progression-abilities.js";
 import { summarizeMemoryBank } from "./memory.js";
 import { buildNarratorSteering } from "./narrator-settings.js";
+import { getSkill } from "../gameplay/combat/skills.js";
 
 const rankTotal = (paths) => Object.values(paths || {})
   .reduce((total, rank) => total + Math.max(0, Math.floor(Number(rank) || 0)), 0);
@@ -69,7 +72,7 @@ export function summarizeProgressionAllocation(character) {
   };
 }
 
-export function summarizeCodex(codex) {
+export function summarizeCodex(codex, { isolateCombatAbilities = false } = {}) {
   const lines = [];
   const chars = Object.values(codex.characters).filter(c => c.kind !== "player");
   const roster = chars.filter((c) => c.playable);
@@ -85,9 +88,17 @@ export function summarizeCodex(codex) {
   lines.push(`Races: ${races.join(", ") || "none"}`);
   const profs = Object.values(codex.professions).map(p => `${p.id}:${p.name}${p.common ? "*" : ""}`);
   lines.push(`Professions: ${profs.join(", ") || "none"}`);
-  const spells = Object.values(codex.spells).map(s => s.name);
+  const visibleAbilityRecords = (records) => Object.entries(records || {})
+    .filter(([id, record]) => (
+      !isolateCombatAbilities || (
+        record?.combatAbility !== true
+        && classifyLegacyAbilityGrant(record?.id || id) !== "combat"
+      )
+    ))
+    .map(([, record]) => record);
+  const spells = visibleAbilityRecords(codex.spells).map(s => s.name);
   if (spells.length) lines.push(`Spells: ${spells.join(", ")}`);
-  const skills = Object.values(codex.skills).map(s => `${s.name}(${s.rating ?? "?"})`);
+  const skills = visibleAbilityRecords(codex.skills).map(s => `${s.name}(${s.rating ?? "?"})`);
   if (skills.length) lines.push(`Skills: ${skills.join(", ")}`);
   lines.push(`(*=baseline)`);
   return lines.join("; ");
@@ -201,6 +212,48 @@ export function summarizeGrantableAbilities() {
   if (spells.length) parts.push(`Spells (magic): ${spells.sort().join(", ")}`);
   if (cataclysmic.length) parts.push(`Cataclysmic (terrain-scale — adjudicate per CATACLYSMIC MAGIC; feasible only with room/sky, hits everyone present, can fail or backfire): ${cataclysmic.sort().join(", ")}`);
   return parts.join(" | ");
+}
+
+const ARCHETYPE_WORLD_POWER_CATALOG = Object.freeze([...new Map(
+  [...TRAVEL_SPELL_LIST, ...BUFF_SPELL_LIST]
+    .filter((definition) => classifyLegacyAbilityGrant(definition.id) === "world")
+    .map((definition) => [definition.id, definition]),
+).values()]);
+const ARCHETYPE_WORLD_POWER_BY_ID = new Map(
+  ARCHETYPE_WORLD_POWER_CATALOG.map((definition) => [definition.id, definition]),
+);
+
+export function summarizeCombaterWorldPowers(character) {
+  const seen = new Set();
+  const known = [];
+  for (const entry of character?.abilities || []) {
+    const id = typeof entry === "string" ? entry : entry?.id;
+    if (!id || seen.has(id) || classifyLegacyAbilityGrant(id) !== "world") continue;
+    seen.add(id);
+    const definition = ARCHETYPE_WORLD_POWER_BY_ID.get(id);
+    if (!definition) continue;
+    const learnedTier = typeof entry === "string" ? "common" : (entry.tier || "common");
+    const tier = definition.minTier && tierOrder(learnedTier) < tierOrder(definition.minTier)
+      ? definition.minTier
+      : learnedTier;
+    known.push(`${id}: ${definition.name} (${tier})`);
+  }
+  return known.join(", ") || "none learned";
+}
+
+export function summarizeGrantableWorldPowers() {
+  return ARCHETYPE_WORLD_POWER_CATALOG.map((definition) => (
+    definition.minTier ? `${definition.id} (≥${definition.minTier})` : definition.id
+  )).join(", ");
+}
+
+export function summarizeCombatCombatKit(state) {
+  const definitions = (state?.mechanics?.build?.skills || [])
+    .map((entry) => getSkill(typeof entry === "string" ? entry : entry?.id))
+    .filter((definition) => definition?.abilityType);
+  return definitions.length
+    ? definitions.map((definition) => `${definition.id}: ${definition.name} (${progressionLabel(definition.abilityType)})`).join("; ")
+    : "none configured";
 }
 
 // The COMPLETE pool of item ids the narrator may grant (loot/gift/shop/reward),
@@ -379,8 +432,9 @@ export function buildStateContext(state) {
     you.profession ? progressionProfessionName(you.profession) : null,
     playerArchetype ? `(${playerArchetype.label} specialization)` : null,
   ].filter(Boolean).join(" ");
-  const playerAllocation = summarizeProgressionAllocation(character);
-  const progressionProjection = progressionNarrativeProjection(character);
+  const usesCombatProgression = character.progressionModel === "archetype";
+  const playerAllocation = usesCombatProgression ? null : summarizeProgressionAllocation(character);
+  const progressionProjection = usesCombatProgression ? null : progressionNarrativeProjection(character);
   const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
   const narratorSteering = buildNarratorSteering(state.narratorSettings);
   const narratorSteeringLine = narratorSteering ? `\n${narratorSteering}` : "";
@@ -399,16 +453,21 @@ export function buildStateContext(state) {
   const generatedAreaLine = t.area?.name && ecology
     ? `\n[AREA — ${t.area.name}; ${ecology.name}: ${ecology.description} Resources and materials: ${(t.resources || ecology.resources || []).join(", ") || "locally scarce"}.]`
     : "";
+  const abilityContext = usesCombatProgression
+    ? `[ARCHETYPE COMBAT KIT — these engine-owned actions are the player's complete combat kit and are not narrator-grantable: ${summarizeCombatCombatKit(state)}]
+[WORLD POWERS KNOWN — campaign utility outside the Archetype combat kit: ${summarizeCombaterWorldPowers(character)}]
+[GRANTABLE WORLD POWERS — the COMPLETE set you may grant by exact id to a Archetype archetype through earned teaching or discovery; grant no legacy combat ability, progression ability, or invented power. Respect each shown tier floor. ${summarizeGrantableWorldPowers()}]`
+    : `[PROGRESSION — level ${playerAllocation.totalLevel}/100 = racial ${playerAllocation.racialLevel}/30 + professions ${playerAllocation.professionLevel}/70; profession allocation ${playerAllocation.professionText}. Specialization ${playerArchetype?.label || "Adaptive Seeker"}. Broad-profession growth continues alongside any listed layered specialization branches. The engine owns durable ranks and every player branch choice; narrate an unlocked choice but never choose it.]
+[ABILITIES KNOWN — ${summarizeAbilities(character, progressionProjection)}]
+[PROGRESSION CAPABILITIES — ${summarizeProgressionCapabilities(character, progressionProjection)}]
+[GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. An id shown as "name (≥tier)" has a FLOOR — never grant or teach it below that tier (the engine clamps it up if you try). Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]`;
   return `${playerLine}${playerProfileLine}${narratorSteeringLine}
 [STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${localRosterLine}${buildSurroundings(state, t)}
 [REGION — ${biome.name}: ${biome.description}]${generatedAreaLine}
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
-[PROGRESSION — level ${playerAllocation.totalLevel}/100 = racial ${playerAllocation.racialLevel}/30 + professions ${playerAllocation.professionLevel}/70; profession allocation ${playerAllocation.professionText}. Specialization ${playerArchetype?.label || "Adaptive Seeker"}. Broad-profession growth continues alongside any listed layered specialization branches. The engine owns durable ranks and every player branch choice; narrate an unlocked choice but never choose it.]
-[ABILITIES KNOWN — ${summarizeAbilities(character, progressionProjection)}]
-[PROGRESSION CAPABILITIES — ${summarizeProgressionCapabilities(character, progressionProjection)}]
-[GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. An id shown as "name (≥tier)" has a FLOOR — never grant or teach it below that tier (the engine clamps it up if you try). Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]
+${abilityContext}
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
-[CODEX — ${summarizeCodex(world.codex)}]
+[CODEX — ${summarizeCodex(world.codex, { isolateCombatAbilities: usesCombatProgression })}]
 [INVENTORY — ${summarizeInventory(character, world.codex, state.time?.day || 0)}]
 [ITEM CATALOG — the COMPLETE set of item ids you may grant (loot, gift, shop find, reward), by kind. Grant ONLY these ids via inventory_changes.added; do NOT invent items — the engine DISCARDS any grant whose id is not a catalog id. Items carry a TIER (common→divine) that scales their power exactly like abilities — so gate the GRADE by narrative justification, NOT by handing out relics freely: common/uncommon is everyday kit; rare/epic is a fine smith, a guild, or hard-won loot; legendary+ is a fabled forge, a king's hoard, or a god's boon, and divine is godhood — almost never given. A NAMED legendary+ relic is a specific figure's signature arm (e.g. the Demon King's sword) — grant one ONLY when the fiction truly supports it (you ARE that figure, you slew its bearer); otherwise prefer a generic high-tier piece. Earn the grade in the fiction, exactly as you would a high-tier ability.
 ${summarizeGrantableItems()}]

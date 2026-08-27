@@ -3,7 +3,7 @@ import { AbilityIcon } from "./AbilityIcon.jsx";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { SectionHeader } from "./primitives.jsx";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
-import { getAbilityDef, abilityStatLine, abilityReqLine } from "../data/abilities.js";
+import { getAbilityDef, abilityStatLine, abilityReqLine, classifyLegacyAbilityGrant } from "../data/abilities.js";
 import { PROFICIENCIES, proficiencyRating, proficiencyDef } from "../data/proficiencies.js";
 import { knownBuffSpells } from "../data/buff-spells.js";
 import { knownTravelSpells } from "../data/travel-spells.js";
@@ -11,17 +11,24 @@ import { condNames } from "../data/conditions.js";
 import { ATTR_LABELS } from "../config.js";
 import { abilityTaxonomy } from "../data/ability-taxonomy.js";
 import { progressionNarrativeProjection } from "../engine/progression-abilities.js";
+import {
+  CHARACTER_ABILITY_TYPE_LABELS,
+  describeCharacterAbilityEffect,
+} from "../gameplay/combat/character-abilities.js";
+import { getSkill, resolveCost, skillRarityAtRank } from "../gameplay/combat/skills.js";
+import { resolveCombatAbilityArt } from "./combat/archetype-combat-ability-art.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
 
 export function arsenalAbilityGroups(character, progressionProjection = progressionNarrativeProjection(character)) {
-  const learned = progressionProjection.abilities.map((ability) => (
+  const usesCombatProgression = character?.progressionModel === "archetype";
+  const learned = usesCombatProgression ? [] : progressionProjection.abilities.map((ability) => (
     typeof ability === "string"
       ? { id: ability, tier: "common" }
       : { id: ability.id, tier: ability.tier || "common" }
   ));
   const abilities = [...new Map(
-    [...[...CORE].map((id) => ({ id, tier: "common" })), ...learned]
+    [...(usesCombatProgression ? [] : [...CORE].map((id) => ({ id, tier: "common" }))), ...learned]
       .map((ability) => [ability.id, ability]),
   ).values()]
     .filter((ability) => {
@@ -94,6 +101,54 @@ function AbilityCard({ ability, definition, variant = "technique" }) {
   );
 }
 
+export function combatArsenalAbilityRows(entries = []) {
+  return entries.flatMap((entry) => {
+    const id = typeof entry === "string" ? entry : entry?.id;
+    const rank = Number.isSafeInteger(entry?.rank) && entry.rank > 0 ? entry.rank : 1;
+    const definition = getSkill(id);
+    if (!definition?.abilityType) return [];
+    const details = definition.effects.map((effect) => (
+      describeCharacterAbilityEffect(effect, rank)
+    ));
+    return [{
+      definition,
+      description: details.join(" · "),
+      rank,
+      rarity: skillRarityAtRank(definition, rank),
+      resolveCost: resolveCost(definition.id, rank),
+      action: definition.consumesTurn ? "main" : "swift",
+      cooldown: definition.cooldown,
+    }];
+  });
+}
+
+function CombatRosterAbilityCard({ ability }) {
+  const [open, setOpen] = useState(false);
+  const {
+    definition, description, rank, rarity, resolveCost: cost, action, cooldown,
+  } = ability;
+  const label = CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || "Combat ability";
+  const timing = `${action === "main" ? "Main" : "Swift"} action`;
+  const cooldownCopy = cooldown > 0 ? ` · ${cooldown}-turn cooldown` : "";
+  return (
+    <button
+      type="button"
+      className={`combat-arsenal-card${open ? " is-open" : ""}`}
+      data-ability-type={definition.abilityType}
+      onClick={() => setOpen((value) => !value)}
+      aria-expanded={open}
+    >
+      <img src={resolveCombatAbilityArt(definition)} alt="" />
+      <span>
+        <small>{label} · {rarity} · Rank {rank} · {cost} Resolve · {timing}{cooldownCopy}</small>
+        <strong>{definition.name}</strong>
+        {open ? <p>{description}</p> : null}
+      </span>
+      <em aria-hidden="true">{open ? "−" : "+"}</em>
+    </button>
+  );
+}
+
 function SpellCard({ spell, kind, active, affordable, onCast }) {
   const canCastHere = kind === "boon" && onCast;
   const iconTier = spell.tier || spell.minTier || "common";
@@ -133,18 +188,30 @@ function SpellCard({ spell, kind, active, affordable, onCast }) {
 // Casting travel spells stays on the map because each one needs a destination.
 export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
+  const usesCombatProgression = character.progressionModel === "archetype";
   const [abilityFilter, setAbilityFilter] = useState("all");
   const progressionProjection = progressionNarrativeProjection(character);
-  const projectedCharacter = { ...character, abilities: progressionProjection.abilities };
+  const combatRosterAbilities = usesCombatProgression
+    ? combatArsenalAbilityRows(state.mechanics?.build?.skills || [])
+    : [];
+  const projectedCharacter = {
+    ...character,
+    abilities: usesCombatProgression
+      ? (character.abilities || []).filter((entry) => (
+          classifyLegacyAbilityGrant(typeof entry === "string" ? entry : entry?.id) === "world"
+        ))
+      : progressionProjection.abilities,
+  };
   const { techniques, performances, fieldcraft, subterfuge, oathcraft, primalcraft, pactcraft, devicecraft, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
   const trainedAbilities = [...techniques, ...performances, ...fieldcraft, ...subterfuge, ...oathcraft, ...primalcraft, ...pactcraft, ...devicecraft]
     .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
 
   const boons = knownBuffSpells(projectedCharacter);
   const travelSpells = knownTravelSpells(projectedCharacter);
-  const metamagicProfiles = progressionProjection.metamagicProfiles;
-  const progressionCapabilities = progressionProjection.progressionCapabilities
-    || progressionProjection.branchCapabilities;
+  const metamagicProfiles = usesCombatProgression ? [] : progressionProjection.metamagicProfiles;
+  const progressionCapabilities = usesCombatProgression
+    ? []
+    : progressionProjection.progressionCapabilities || progressionProjection.branchCapabilities;
   const activeConditions = new Set(condNames(character.conditions || []));
   const proficiencies = PROFICIENCIES
     .map((proficiency) => ({
@@ -178,9 +245,26 @@ export function ArsenalView({ state, onCastBuff }) {
 
   return (
     <DeckPage className="arsenal-view">
-      <DeckPageHeader icon="abilities" title="Skills" subtitle="Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies" />
+      <DeckPageHeader
+        icon="abilities"
+        title="Skills"
+        subtitle={usesCombatProgression
+          ? "Archetype combat kit · world powers · proficiencies"
+          : "Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies"}
+      />
 
-      <section>
+      {combatRosterAbilities.length > 0 ? (
+        <section className="combat-arsenal" aria-label="Archetype combat kit">
+          <SectionHeader>Archetype combat kit · {combatRosterAbilities.length}</SectionHeader>
+          <div className="combat-arsenal__list">
+            {combatRosterAbilities.map((ability) => (
+              <CombatRosterAbilityCard key={ability.definition.id} ability={ability} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {!usesCombatProgression && <section>
         <SectionHeader>Techniques, performances, fieldcraft, subterfuge, oathcraft, primal arts, pact arts, devices &amp; core actions · {visibleAbilities.length}</SectionHeader>
         <div className="arsenal-filters" role="group" aria-label="Skill categories">
           {abilityCategories.map((category) => (
@@ -195,7 +279,7 @@ export function ArsenalView({ state, onCastBuff }) {
             return <AbilityCard key={`${ability.id}-${index}`} ability={ability} definition={definition} />;
           })}
         </div>
-      </section>
+      </section>}
 
       {(metamagicProfiles.length > 0 || progressionCapabilities.length > 0) && (
         <section aria-label="Earned progression capabilities">
@@ -231,9 +315,11 @@ export function ArsenalView({ state, onCastBuff }) {
       )}
 
       <section>
-        <SectionHeader>Spells · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
+        <SectionHeader>{usesCombatProgression ? "World powers" : "Spells"} · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
         {combatSpells.length + boons.length + travelSpells.length === 0 ? (
-          <div className="arsenal-empty">No spells learned yet. Grimoires and teachers can awaken new magic.</div>
+          <div className="arsenal-empty">{usesCombatProgression
+            ? "No world powers learned yet. Rare teachers and discoveries can awaken them."
+            : "No spells learned yet. Grimoires and teachers can awaken new magic."}</div>
         ) : (
           <div className="spell-list">
             {combatSpells.map((ability, index) => {

@@ -6,7 +6,7 @@ export const MAX_SKILL_SLOTS_EVIDENCE = REFERENCE_POLICY.skills.loadoutCapacityE
 const COMMON_SKILL_SOURCE = Object.freeze({
   confidence: "secondary",
   date: "2023-08-08",
-  url: "https://gall.dcinside.com/mgallery/board/view/?id=tow&no=5316",
+  url: "https://gall.dcinside.com/mgallery/board/view/?id=combat&no=5316",
 });
 
 export const EMERGENCY_EVASION = Object.freeze({

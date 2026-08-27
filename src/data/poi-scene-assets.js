@@ -134,7 +134,7 @@ const TYPE_FAMILY = Object.freeze({
   gate: "military",
   barracks: "military",
   watchtower: "military",
-  tower: "military",
+  combat: "military",
   palace: "military",
   castle: "military",
   dock: "waterfront",

@@ -32,7 +32,6 @@ export const NARRATOR_MODELS = [
   { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", note: "OpenAI", provider: "OpenRouter standard", price: { input: 0.1, output: 0.6, cachedInput: 0.01, cacheWrite: 0.125, overrides: [{ minInputTokens: 272000, input: 0.2, output: 0.9, cachedInput: 0.02, cacheWrite: 0.25 }] }, intelligence: 51.2 },
   { id: "x-ai/grok-4.5", label: "Grok 4.5", note: "xAI", provider: "OpenRouter floor", price: { input: 2, output: 6, cachedInput: 0.3, overrides: [{ minInputTokens: 200000, input: 4, output: 12, cachedInput: 0.6 }] }, intelligence: 53.8 },
   { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", note: "OpenAI", provider: "OpenRouter standard", price: { input: 1, output: 6, cachedInput: 0.1, cacheWrite: 1.25, overrides: [{ minInputTokens: 272000, input: 2, output: 9, cachedInput: 0.2, cacheWrite: 2.5 }] }, intelligence: 55.0 },
-  { id: "z-ai/glm-5.3-flash", label: "GLM 5.3 Flash", note: "Z.ai reasoning", provider: "OpenRouter floor", price: { input: 0.075, output: 0.25, cachedInput: 0.015 }, intelligence: 57.5 },
   { id: "moonshotai/kimi-k3", label: "Kimi K3", note: "Moonshot AI", provider: "OpenRouter floor", price: { input: 2.9, output: 14, cachedInput: 0.29 }, intelligence: 57.1 },
 ];
 
@@ -110,7 +109,7 @@ export function narratorModelLabel(id) {
   return NARRATOR_MODELS.find((m) => m.id === id)?.label || id || null;
 }
 
-export const DEFAULT_NARRATOR_MODEL = "z-ai/glm-5.3-flash";
+export const DEFAULT_NARRATOR_MODEL = "deepseek/deepseek-v4-flash-0731";
 export const DEFAULT_NARRATOR_EFFORT = "max";
 
 // Semantic effort remains stable in player preferences. This mirror of the
@@ -119,7 +118,6 @@ export const DEFAULT_NARRATOR_EFFORT = "max";
 const MODEL_TRANSPORT_EFFORTS = {
   "deepseek/deepseek-v4-flash-0731": { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" },
   "z-ai/glm-5.2": { low: "high", medium: "high", high: "high", xhigh: "xhigh", max: "xhigh" },
-  "z-ai/glm-5.3-flash": { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" },
   "x-ai/grok-4.5": { low: "low", medium: "medium", high: "high", xhigh: "high", max: "high" },
   "moonshotai/kimi-k3": { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" },
 };
@@ -142,7 +140,7 @@ export function narratorEffortDisplayLabel(modelId, effort) {
 
 const MODEL_KEY  = "solitaire-narrator-model-v1";
 const EFFORT_KEY = "solitaire-narrator-effort-v3";
-// Retired selections migrate to the current product default.
+// Retired selections migrate to the sole current DeepSeek V4 Flash release.
 const NARRATOR_MODEL_ALIASES = {
   "deepseek/deepseek-v4-flash": DEFAULT_NARRATOR_MODEL,
   "deepseek/deepseek-v4-pro": DEFAULT_NARRATOR_MODEL,

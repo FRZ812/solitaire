@@ -16,7 +16,7 @@ export const PLAYABLE_CHARACTER_PLACEMENTS = Object.freeze({
   devout: "saltmother-shrine",
   "court-envoy": "asalan",
   "confidence-artist": "greenharbor",
-  "hedge-mage": "heron-tower",
+  "hedge-mage": "heron-combat",
   "knight-errant": "halfborn-hold",
   "war-priest": "sunward-bastion",
   duelist: "crowsmoor",

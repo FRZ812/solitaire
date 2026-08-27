@@ -2,7 +2,7 @@ const POLAR_KNIGHT_GUIDE = Object.freeze({
   confidence: "secondary",
   date: "2023-09-12",
   referenceVersion: "guide-current-on-source-date",
-  url: "https://gall.dcinside.com/mgallery/board/view/?id=tow&no=5666",
+  url: "https://gall.dcinside.com/mgallery/board/view/?id=combat&no=5666",
 });
 
 const STRUCTURAL_PLACEHOLDER = Object.freeze({

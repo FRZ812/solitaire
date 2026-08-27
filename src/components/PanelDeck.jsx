@@ -7,10 +7,10 @@ import { InventoryView } from "./InventoryView.jsx";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { CodexView } from "./CodexView.jsx";
 import { SettingsView } from "./SettingsView.jsx";
-import { ProgressionPage } from "./ProfessionProgression.jsx";
+
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
-import { isPortraitVariantToken, resolveCharacterPortrait } from "./character-portrait-assets.js";
+import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
@@ -18,27 +18,26 @@ import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
 import { canonicalProfessionId } from "../data/progression-paths.js";
 import { PROFESSIONS } from "../data/professions.js";
-import { characterDossierBackground } from "./character-dossier-background.js";
 
 // The unified character deck: Company · Character · Skills · Inventory ·
-// Progression · Codex · Settings as peer pages of one
+// Codex · Settings as peer pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
-const PAGES = ["party", "character", "abilities", "inventory", "progression", "codex", "settings"];
+const PAGES = ["party", "character", "abilities", "inventory", "codex", "settings"];
 const progressionLevel = progressionEngine.progressionLevel;
-const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", progression: "Progression", codex: "Codex", settings: "Settings" };
-const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", progression: "progression", codex: "codex", settings: "settings" };
+const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex", settings: "Settings" };
+const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex", settings: "settings" };
 
 export function shouldDismissPanel(pulled, velocity) {
   return pulled > 88 || (pulled > 18 && velocity > 0.55);
 }
 
 export function PanelDeck({ state, user, initialPage = "character", onClose, handlers }) {
-  const pages = state.character?.progressionModel === "tow-archetype"
-    ? PAGES.filter((key) => key !== "progression")
-    : PAGES;
-  const requestedPageKey = initialPage === "profession" || initialPage === "race" ? "progression" : initialPage;
+  const pages = PAGES;
+  const requestedPageKey = initialPage === "profession" || initialPage === "race" || initialPage === "progression"
+    ? "character"
+    : initialPage;
   const requestedPage = pages.indexOf(requestedPageKey);
   const [page, setPage] = useState(requestedPage === -1 ? pages.indexOf("character") : requestedPage);
   const [inventoryTarget, setInventoryTarget] = useState("wanderer");
@@ -248,9 +247,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 initialSelectedId={inventoryTarget}
               />
             )}
-            {activePage === "progression" && (
-              <ProgressionPage state={state} onChooseProgression={handlers.onChooseProgression} />
-            )}
+
             {activePage === "codex" && (
               <CodexView
                 embedded
@@ -299,16 +296,13 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
   const professionId = canonicalProfessionId(identityRecord.profession) || identityRecord.profession;
   const professionLabel = PROFESSIONS[professionId]?.name || labelize(professionId);
   const archetype = characterArchetype(identityRecord);
-  const towArchetype = identityRecord.progressionModel === "tow-archetype";
+  const combatArchetype = identityRecord.progressionModel === "archetype";
   const level = Math.max(1, progressionLevel(identityRecord));
   const callingLabel = archetype?.label || professionLabel;
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
-  const customPortrait = typeof portraitOverride === "string"
-    && portraitOverride.trim()
-    && !isPortraitVariantToken(portraitOverride);
-  const backdrop = characterDossierBackground({ ...identityRecord, id: PLAYER_PORTRAIT_ID, kind: "player" });
-  const unspentPoints = towArchetype ? 0 : (progressionEngine.pendingLevelAllocations?.(character)?.unspentLevels || 0);
+  const customPortrait = !!portraitOverride;
+
 
   async function onChoosePortrait(event) {
     const file = event.target.files?.[0];
@@ -354,16 +348,7 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
 
   return (
     <section ref={motionRef} className="dossier-hero">
-      <img
-        className="dossier-hero__backdrop"
-        src={backdrop}
-        alt=""
-        aria-hidden="true"
-        draggable="false"
-        decoding="async"
-        data-dossier-background-for={PLAYER_PORTRAIT_ID}
-      />
-      <img className={`dossier-hero__art${customPortrait ? " is-custom" : ""}`} src={portrait} alt="" draggable="false" decoding="async" />
+      <img className="dossier-hero__art" src={portrait} alt="" draggable="false" decoding="async" />
       <div className="dossier-hero__wash" aria-hidden="true" />
       <div className="dossier-hero__portrait-tools">
         <ProfessionIcon templateId={identityRecord.templateId} profession={identityRecord.profession} size="small" decorative />
@@ -397,7 +382,7 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
               {callingLabel && <strong className={archetype ? "is-archetype" : "is-profession"}>{callingLabel}</strong>}
             </>
           ) : <span>Wanderer</span>}
-          {towArchetype
+          {combatArchetype
             ? <strong className="is-level"><em>Power</em>{identityRecord.profile?.power || "Chosen"}</strong>
             : <strong className="is-level"><em>Level</em>{level}</strong>}
         </div>
@@ -419,7 +404,7 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
           >
             <Icon name={PAGE_ICONS[key]} size={18} />
             <span>{LABELS[key]}</span>
-            {unspentPoints > 0 && key === "progression" && <b className="dossier-hero__tab-badge" aria-label={`${unspentPoints} unspent progression ${unspentPoints === 1 ? "point" : "points"}`}>{unspentPoints}</b>}
+
           </button>
         ))}
       </div>

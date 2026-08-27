@@ -1,4 +1,4 @@
-// Town building registry — the "ruleset" half of the town system.
+// Combatn building registry — the "ruleset" half of the town system.
 //
 // A building is wired to a tile by giving that tile's poi a `service` id
 // (see handcrafted-tiles.js, e.g. The Healer's House carries service:"healer").
@@ -702,7 +702,7 @@ export const BUILDINGS = {
     keeper: "the estate steward",
     icon: "bldg",
     hours: { open: 6, close: 20 },
-    blurb: "A two-storey timber lodge west of the avenue, the working office of the estate's full steward — a separate officer from the house-steward who runs the Servants' Lane inside the inner compound. A high desk by the window, a wall of pigeon-holes for rent-rolls and seed-bills, a small fire that burns through the working months. He audits the house rents and the Townhouse Row leases the first week of every quarter, and squares the ward's tradesmen accounts at midsummer and midwinter.",
+    blurb: "A two-storey timber lodge west of the avenue, the working office of the estate's full steward — a separate officer from the house-steward who runs the Servants' Lane inside the inner compound. A high desk by the window, a wall of pigeon-holes for rent-rolls and seed-bills, a small fire that burns through the working months. He audits the house rents and the Combatnhouse Row leases the first week of every quarter, and squares the ward's tradesmen accounts at midsummer and midwinter.",
   },
 
   "foreign-trader": {
@@ -730,7 +730,7 @@ export const BUILDINGS = {
     keeper: "the master gardener",
     icon: "bldg",
     hours: { open: 5, close: 20 },
-    blurb: "A small stone cottage west of the avenue, set apart from Townhouse Row by a clipped hedge of box. A tiled hearth in the kitchen, a glassed window the row does not have, a key-ring at the gardener's belt that opens the orangery, the Walled Garden's side-gate, and the seed-store. Behind the cottage a low shed of working tools and the rolled canvas covers for the citrus.",
+    blurb: "A small stone cottage west of the avenue, set apart from Combatnhouse Row by a clipped hedge of box. A tiled hearth in the kitchen, a glassed window the row does not have, a key-ring at the gardener's belt that opens the orangery, the Walled Garden's side-gate, and the seed-store. Behind the cottage a low shed of working tools and the rolled canvas covers for the citrus.",
   },
 
   "orangery-keeper": {
@@ -769,7 +769,7 @@ export const BUILDINGS = {
   "tenant-row": {
     id: "tenant-row",
     kind: "keeper",
-    label: "Townhouse Row",
+    label: "Combatnhouse Row",
     keeper: "the row headman",
     icon: "bldg",
     hours: { open: 5, close: 22 },

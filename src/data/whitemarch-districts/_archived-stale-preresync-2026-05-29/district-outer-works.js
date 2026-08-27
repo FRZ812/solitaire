@@ -18,8 +18,8 @@
 //
 // Internal layout from south (city-facing) to north (frontier-facing):
 //   y=-9   wall ring + Gate Watchpost at (0,-9)
-//   y=-10  Watch Tower I, yard, Patrol Stable, Crown Road, Hospice,
-//          yard, Watch Tower II — the immediate inside-the-gate band.
+//   y=-10  Watch Archetype I, yard, Patrol Stable, Crown Road, Hospice,
+//          yard, Watch Archetype II — the immediate inside-the-gate band.
 //   y=-11  Wall-Watch Chapel, Road Fort (inner keep), Quartermaster's
 //          Yard, plus drill-yard connectors east and west.
 //   y=-12  Couriers' Post, Crown Road continuation, drill-yard.
@@ -106,19 +106,19 @@ const interior = {
   },
 
   // ===================== y = -10 BAND =================================
-  // Watch Tower I — south-west corner tower, restricted.
+  // Watch Archetype I — south-west corner combat, restricted.
   "-3,-10": {
     terrain: "indoor",
     poi: {
-      type: "tower",
-      name: "Watch Tower I",
+      type: "combat",
+      name: "Watch Archetype I",
       access: "restricted",
       parent: PARENT,
       parentName: PARENT_NAME,
-      part: "watch-tower-i",
-      partName: "Watch Tower I",
+      part: "watch-combat-i",
+      partName: "Watch Archetype I",
       description:
-        "A squat round tower set inside the south-west corner of the wall ring. The ground floor is a cold magazine of bolt-bundles, oilcloth, and a cooper's repair bench; a ladder of bare timber climbs to the wall-walk above. The watch posted here gambles with knuckle-bones while one of them keeps an eye on the southern approach. Strangers are stopped at the doorway; the duty register is not for general reading.",
+        "A squat round combat set inside the south-west corner of the wall ring. The ground floor is a cold magazine of bolt-bundles, oilcloth, and a cooper's repair bench; a ladder of bare timber climbs to the wall-walk above. The watch posted here gambles with knuckle-bones while one of them keeps an eye on the southern approach. Strangers are stopped at the doorway; the duty register is not for general reading.",
     },
     doors: [
       { x: -2, y: -10 }, // drill yard connector east
@@ -130,7 +130,7 @@ const interior = {
   "-2,-10": {
     terrain: "settlement",
     doors: [
-      { x: -3, y: -10 }, // Watch Tower I
+      { x: -3, y: -10 }, // Watch Archetype I
       { x: -1, y: -10 }, // Patrol Stable
       { x: -1, y: -11 }, // Wall-Watch Chapel
       { x: -2, y: -11 }, // drill-yard connector
@@ -198,25 +198,25 @@ const interior = {
     terrain: "settlement",
     doors: [
       { x: 1,  y: -10 }, // Hospice
-      { x: 3,  y: -10 }, // Watch Tower II
+      { x: 3,  y: -10 }, // Watch Archetype II
       { x: 2,  y: -11 }, // drill-yard connector
       { x: 1,  y: -11 }, // Quartermaster's Yard
     ],
   },
 
-  // Watch Tower II — south-east corner tower, restricted.
+  // Watch Archetype II — south-east corner combat, restricted.
   "3,-10": {
     terrain: "indoor",
     poi: {
-      type: "tower",
-      name: "Watch Tower II",
+      type: "combat",
+      name: "Watch Archetype II",
       access: "restricted",
       parent: PARENT,
       parentName: PARENT_NAME,
-      part: "watch-tower-ii",
-      partName: "Watch Tower II",
+      part: "watch-combat-ii",
+      partName: "Watch Archetype II",
       description:
-        "The south-east corner tower, twin to Watch Tower I but kept warmer — the duty crew here mans the signal-mirror that talks to the Great Wall at noon. The ground floor smells of pitch and rope. A speaking-trumpet on a bracket points down through a slit at the gate below; the sergeant calls challenges through it before raising the bar. Civilians get the door shut in their face.",
+        "The south-east corner combat, twin to Watch Archetype I but kept warmer — the duty crew here mans the signal-mirror that talks to the Great Wall at noon. The ground floor smells of pitch and rope. A speaking-trumpet on a bracket points down through a slit at the gate below; the sergeant calls challenges through it before raising the bar. Civilians get the door shut in their face.",
     },
     doors: [
       { x: 2,  y: -10 }, // drill yard connector
@@ -261,11 +261,11 @@ const interior = {
     ],
   },
 
-  // Wall approach connector (unnamed) at (-3,-11) — backs Watch Tower I.
+  // Wall approach connector (unnamed) at (-3,-11) — backs Watch Archetype I.
   "-3,-11": {
     terrain: "settlement",
     doors: [
-      { x: -3, y: -10 }, // Watch Tower I
+      { x: -3, y: -10 }, // Watch Archetype I
       { x: -2, y: -11 }, // drill-yard connector
     ],
   },
@@ -328,11 +328,11 @@ const interior = {
     ],
   },
 
-  // Wall approach connector (unnamed) at (3,-11) — backs Watch Tower II.
+  // Wall approach connector (unnamed) at (3,-11) — backs Watch Archetype II.
   "3,-11": {
     terrain: "settlement",
     doors: [
-      { x: 3,  y: -10 }, // Watch Tower II
+      { x: 3,  y: -10 }, // Watch Archetype II
       { x: 2,  y: -11 }, // drill-yard connector
     ],
   },

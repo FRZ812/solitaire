@@ -4,8 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getSkill, skillIds } from "../src/gameplay/tow/skills.js";
-import { getTowArchetypeIdentity } from "../src/gameplay/tow/archetype-identities.js";
+import { getSkill, skillIds } from "../src/gameplay/combat/skills.js";
+import { getCombatArchetypeIdentity } from "../src/gameplay/combat/archetype-identities.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_OUTPUT = path.join(ROOT, "docs", "design", "combat-vfx-imagegen-prompts.json");
@@ -18,7 +18,7 @@ const GENERAL_STYLE = Object.freeze({
 });
 
 function styleFor(skill) {
-  const identity = getTowArchetypeIdentity(skill?.archetypeId || skill?.exclusiveTo);
+  const identity = getCombatArchetypeIdentity(skill?.archetypeId || skill?.exclusiveTo);
   if (!identity) return GENERAL_STYLE;
   return Object.freeze({
     label: identity.name,
@@ -47,7 +47,7 @@ const EXACT_DIRECTIONS = Object.freeze({
   "first-aid": "Emerald restorative threads cross and stitch one wound point closed; gentle motes rise after closure without forming a medical logo.",
   "emergency-evasion": "Three offset phantom silhouettes dash along one continuous lane, each afterimage thinner and more transparent than the last.",
   "sudden-blow": "A fast compact thrust compresses air, contacts at center, and releases two narrow forward-moving shock rings.",
-  "unbendable-will": "A grounded golden tower-like aura rises in stacked vertical planes, braces against a lateral pressure wave, and remains upright.",
+  "unbendable-will": "A grounded golden combat-like aura rises in stacked vertical planes, braces against a lateral pressure wave, and remains upright.",
   "killing-instinct": "A restrained crimson predator-eye glint narrows onto one weak point, locks focus, then leaves a fine targeting afterglow.",
   "sleep-grenade": "A small glass vial arcs, cracks at center, and releases layered lavender dream vapor and crescent motes with no letters or text.",
   "blade-of-curse": "A wicked violet cleave carries thorn-like necrotic needles through its wake, then the cut path smolders into sparse curse mist.",

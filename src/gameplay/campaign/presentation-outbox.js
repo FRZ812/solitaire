@@ -40,10 +40,6 @@ export const MAX_PRESENTATION_ATTEMPTS = 5;
 export const MAX_PRESENTATION_JOBS = 64;
 
 export const PRESENTATION_KINDS = Object.freeze(["character-arrival", "combat-aftermath"]);
-export const PRESENTATION_ROUTE_BY_KIND = Object.freeze({
-  "character-arrival": "character-arrival",
-  "combat-aftermath": "combat-aftermath",
-});
 export const PRESENTATION_STATUSES = Object.freeze([
   "pending",
   "in-flight",
@@ -82,7 +78,7 @@ export function isPresentationJob(value) {
   return value.version === PRESENTATION_JOB_VERSION
     && identifier(value.id)
     && PRESENTATION_KINDS.includes(value.kind)
-    && value.route === PRESENTATION_ROUTE_BY_KIND[value.kind]
+    && identifier(value.route)
     && identifier(value.sourceReceiptId)
     && Number.isSafeInteger(value.stateRevision)
     && value.stateRevision >= 0
@@ -118,10 +114,7 @@ export function enqueuePresentation(queue, { kind, route, sourceReceiptId, state
   if (!PRESENTATION_KINDS.includes(kind)) {
     return { ok: false, reason: "invalid-presentation-kind", queue: jobs, job: null };
   }
-  if (route !== PRESENTATION_ROUTE_BY_KIND[kind]) {
-    return { ok: false, reason: "invalid-presentation-route", queue: jobs, job: null };
-  }
-  if (!identifier(sourceReceiptId)) {
+  if (!identifier(sourceReceiptId) || !identifier(route)) {
     return { ok: false, reason: "invalid-presentation-source", queue: jobs, job: null };
   }
   if (!Number.isSafeInteger(stateRevision) || stateRevision < 0) {
@@ -218,16 +211,9 @@ export function claimPresentation(queue, jobId, { owner, now, leaseMs = PRESENTA
     ...job,
     status: "in-flight",
     attempts,
-    // The previous attempt is a durable generation seed for explicit retries. Including it
-    // prevents a retry from recreating the exhausted attempt id even when owner, count, and
-    // claim time are identical.
-    attemptId: `attempt-${gameplayChecksum({
-      id: job.id,
-      owner,
-      attempts,
-      claimedAt: now,
-      previousAttemptId: job.attemptId,
-    })}`,
+    // The attempt id folds in the attempt number, so a response from the previous attempt
+    // cannot be mistaken for a response to this one.
+    attemptId: `attempt-${gameplayChecksum({ id: job.id, owner, attempts })}`,
     leaseOwner: owner,
     leaseExpiresAt: now + leaseMs,
     lastErrorCode: null,
@@ -259,13 +245,10 @@ export function completePresentation(queue, { jobId, attemptId, stateRevision })
     // caller's intent — this scene is presented — is already satisfied.
     return { ok: true, reason: null, queue: jobs, job, duplicate: true };
   }
-  if (job.status !== "in-flight") {
-    return { ok: false, reason: "presentation-not-in-flight", queue: jobs, job };
-  }
   if (job.attemptId !== attemptId) {
     return { ok: false, reason: "presentation-attempt-mismatch", queue: jobs, job };
   }
-  if (!Number.isSafeInteger(stateRevision) || stateRevision !== job.stateRevision) {
+  if (Number.isSafeInteger(stateRevision) && stateRevision !== job.stateRevision) {
     return { ok: false, reason: "presentation-state-moved", queue: jobs, job };
   }
 
@@ -299,9 +282,6 @@ export function releasePresentation(queue, { jobId, attemptId, errorCode = "pres
 
   const job = jobs[index];
   if (job.status === "presented") return { ok: true, reason: null, queue: jobs, job, duplicate: true };
-  if (job.status !== "in-flight") {
-    return { ok: false, reason: "presentation-not-in-flight", queue: jobs, job };
-  }
   if (attemptId !== undefined && job.attemptId !== attemptId) {
     return { ok: false, reason: "presentation-attempt-mismatch", queue: jobs, job };
   }
@@ -310,7 +290,7 @@ export function releasePresentation(queue, { jobId, attemptId, errorCode = "pres
   const released = {
     ...job,
     status: exhausted ? "failed" : "pending",
-    attemptId: exhausted ? job.attemptId : null,
+    attemptId: null,
     leaseOwner: null,
     leaseExpiresAt: null,
     lastErrorCode: identifier(errorCode) ? errorCode : "presentation-failed",
@@ -320,40 +300,6 @@ export function releasePresentation(queue, { jobId, attemptId, errorCode = "pres
     reason: null,
     queue: jobs.map((entry, at) => (at === index ? released : entry)),
     job: released,
-  };
-}
-
-/** Give an exhausted job one explicit, user-requested attempt without reopening a loop. */
-export function retryFailedPresentation(queue, jobId) {
-  const jobs = Array.isArray(queue) ? queue : [];
-  const index = jobs.findIndex((job) => job.id === jobId);
-  if (index < 0) return { ok: false, reason: "unknown-presentation-job", queue: jobs, job: null };
-  const job = jobs[index];
-  if (job.status !== "failed") {
-    return { ok: false, reason: "presentation-not-failed", queue: jobs, job };
-  }
-  const retried = {
-    ...job,
-    status: "pending",
-    attempts: MAX_PRESENTATION_ATTEMPTS - 1,
-    // Keep the exhausted attempt id as the next claim's durable generation seed. Older saved
-    // failed jobs did not retain one, so derive a retry-only seed that cannot be an attempt id.
-    // Completion and release both require in-flight status, so stale responses cannot consume
-    // the seed while the retried job is pending.
-    attemptId: job.attemptId || `retry-seed-${gameplayChecksum({
-      id: job.id,
-      attempts: job.attempts,
-      lastErrorCode: job.lastErrorCode,
-    })}`,
-    leaseOwner: null,
-    leaseExpiresAt: null,
-    lastErrorCode: null,
-  };
-  return {
-    ok: true,
-    reason: null,
-    queue: jobs.map((entry, at) => (at === index ? retried : entry)),
-    job: retried,
   };
 }
 
