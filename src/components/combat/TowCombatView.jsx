@@ -46,6 +46,7 @@ import {
 import { combatVfxForIntent } from "./tow-combat-vfx.js";
 import { TowCombatVfxCanvas } from "./TowCombatVfxCanvas.jsx";
 import { FormationBattlefield } from "./FormationBattlefield.jsx";
+import { trapModalFocus } from "../exploration/modalFocus.js";
 import { combatChoreographyForAction } from "./tow-combat-choreography.js";
 import { towStatusPresentation } from "./tow-combat-status.js";
 import "./tow-combat.css";
@@ -525,7 +526,9 @@ function StatusDetails({ actor, status, source, enemy = false, onDismiss }) {
   );
 }
 
-function CombatantDossier({ actor, art, abilityRows, onClose }) {
+function CombatantDossier({ actor, art, abilityRows, opener, onClose }) {
+  const dialogRef = useRef(null);
+  const layerRef = useRef(null);
   const hasResolve = Number.isFinite(actor.resolve) && Number.isFinite(actor.resolveMax);
   const stats = [
     ["HP", `${actor.hp}/${actor.maxHp}`],
@@ -539,15 +542,66 @@ function CombatantDossier({ actor, art, abilityRows, onClose }) {
     ["Critical", `${actor.stats?.critRate ?? 0}%`],
     ["Dodge", `${actor.stats?.dodgeRate ?? 0}%`],
   ];
+
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    const dialog = dialogRef.current;
+    const siblings = layer?.parentElement
+      ? [...layer.parentElement.children].filter((element) => element !== layer)
+      : [];
+    const previous = siblings.map((element) => ({
+      element,
+      hadInert: element.hasAttribute("inert"),
+      ariaHidden: element.getAttribute("aria-hidden"),
+    }));
+    for (const element of siblings) {
+      element.setAttribute("inert", "");
+      element.setAttribute("aria-hidden", "true");
+    }
+    dialog?.querySelector("button:not(:disabled)")?.focus();
+    return () => {
+      for (const entry of previous) {
+        if (!entry.hadInert) entry.element.removeAttribute("inert");
+        if (entry.ariaHidden === null) entry.element.removeAttribute("aria-hidden");
+        else entry.element.setAttribute("aria-hidden", entry.ariaHidden);
+      }
+      const restore = () => {
+        if (opener?.isConnected && !opener.disabled) opener.focus();
+      };
+      if (typeof globalThis.requestAnimationFrame === "function") {
+        globalThis.requestAnimationFrame(restore);
+      } else {
+        queueMicrotask(restore);
+      }
+    };
+  }, [opener]);
+
+  function handleKeyDown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose?.();
+      return;
+    }
+    if (event.key === "Tab") {
+      trapModalFocus(event, dialogRef.current);
+      event.stopPropagation();
+    }
+  }
+
   return (
     <div
+      ref={layerRef}
       className="tow-combat__dossier-backdrop"
       role="presentation"
+      data-modal-escape-boundary
+      onKeyDown={handleKeyDown}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
     >
       <aside
+        ref={dialogRef}
         className={`tow-combat__dossier tow-combat__dossier--${actor.side}`}
         role="dialog"
         aria-modal="true"
@@ -563,7 +617,7 @@ function CombatantDossier({ actor, art, abilityRows, onClose }) {
             <strong id={`tow-combat-dossier-${domId(actor.id)}`}>{actor.name}</strong>
             <em>{actor.hp > 0 ? "Standing" : "Defeated"}</em>
           </span>
-          <button type="button" onClick={onClose} aria-label={`Close ${actor.name} dossier`} autoFocus>
+          <button type="button" onClick={onClose} aria-label={`Close ${actor.name} dossier`}>
             <Icon name="x" size={16} strokeWidth={1.7} />
           </button>
         </header>
@@ -1155,6 +1209,7 @@ export function TowCombatView({
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [inspectedStatus, setInspectedStatus] = useState(null);
   const [inspectedActorId, setInspectedActorId] = useState(null);
+  const dossierOpenerRef = useRef(null);
   const [recordExpanded, setRecordExpanded] = useState(false);
   const [satchelOpen, setSatchelOpen] = useState(false);
   const [impactCues, setImpactCues] = useState([]);
@@ -1430,8 +1485,11 @@ export function TowCombatView({
     setTargetingDraft({ skillId: row.skillState.id, anchorCell });
   }
 
-  function inspectCombatant(actor) {
+  function inspectCombatant(actor, opener = null) {
     if (!actor || inputSuppressed) return;
+    dossierOpenerRef.current = opener || (combatRef.current?.contains(document.activeElement)
+      ? document.activeElement
+      : null);
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setInspectedActorId(null);
@@ -1875,6 +1933,7 @@ export function TowCombatView({
             actor={inspectedActor}
             art={combatArt(inspectedActor)}
             abilityRows={dossierAbilityRows}
+            opener={dossierOpenerRef.current}
             onClose={() => setInspectedActorId(null)}
           />
         ) : null}

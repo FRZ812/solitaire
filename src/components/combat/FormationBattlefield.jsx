@@ -426,9 +426,9 @@ function FormationGrid({
             aria-pressed={isSelected}
             disabled={!enabled}
             aria-haspopup={!isValid && canInspect ? "dialog" : undefined}
-            onClick={() => {
+            onClick={(event) => {
               if (isValid) onSelectCell?.(side, index);
-              else if (canInspect) onInspectActor(actor);
+              else if (canInspect) onInspectActor(actor, event.currentTarget);
             }}
             onFocus={() => {
               if (isValid) onPreviewCell?.(side, index);

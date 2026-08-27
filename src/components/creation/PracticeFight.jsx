@@ -11,8 +11,9 @@
 // felt wrong" will, and without them there is nothing to diagnose from.
 
 import "./quick-start.css";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TowCombatView } from "../combat/TowCombatView.jsx";
+import { activateModalFocus } from "../exploration/modalFocus.js";
 import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
 import {
   dispatchTowRuntimePlayerAction,
@@ -28,12 +29,52 @@ import {
 import { getStartingArchetype } from "../../gameplay/tow/starting-archetypes.js";
 import { weaponPresentationFromItemIds } from "../../gameplay/tow/weapon-presentation.js";
 
+function PracticeModalSurface({
+  as: Element = "section",
+  className,
+  label,
+  returnFocusSelector,
+  onExit,
+  children,
+}) {
+  const surfaceRef = useRef(null);
+  const exitRef = useRef(onExit);
+  exitRef.current = onExit;
+
+  useEffect(() => {
+    const cleanup = activateModalFocus(surfaceRef.current, () => exitRef.current?.());
+    return () => {
+      cleanup();
+      requestAnimationFrame(() => {
+        if (document.activeElement !== document.body
+          && document.activeElement !== document.documentElement) return;
+        document.querySelector(returnFocusSelector)?.focus?.();
+      });
+    };
+  }, [returnFocusSelector]);
+
+  return (
+    <Element
+      ref={surfaceRef}
+      className={className}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      data-app-exclusive-surface
+    >
+      {children}
+    </Element>
+  );
+}
+
 export function PracticeFight({
   receipt,
   scenarioId,
   allyGroupId = DEFAULT_PRACTICE_ALLY_GROUP_ID,
   skillRarities = null,
   keepsakeId = null,
+  returnFocusSelector = ".character-preview__practice-button",
   onExit,
 }) {
   const archetype = getStartingArchetype(receipt?.archetypeId);
@@ -114,16 +155,27 @@ export function PracticeFight({
 
   if (!practice?.ok) {
     return (
-      <div className="practice-fight practice-fight--failed" role="alert">
-        <p>That build could not open a practice fight ({practice?.reason || "unknown"}).</p>
+      <PracticeModalSurface
+        as="div"
+        className="practice-fight practice-fight--failed"
+        label="Practice unavailable"
+        returnFocusSelector={returnFocusSelector}
+        onExit={onExit}
+      >
+        <p role="alert">That build could not open a practice fight ({practice?.reason || "unknown"}).</p>
         <button type="button" onClick={onExit}>Back</button>
-      </div>
+      </PracticeModalSurface>
     );
   }
 
   if (result) {
     return (
-      <section className="practice-fight practice-fight--result" aria-label="Practice result">
+      <PracticeModalSurface
+        className="practice-fight practice-fight--result"
+        label="Practice result"
+        returnFocusSelector={returnFocusSelector}
+        onExit={onExit}
+      >
         <h2>
           {result.outcome === "victory"
             ? "You won that one"
@@ -152,7 +204,7 @@ export function PracticeFight({
           <button type="button" onClick={() => start(attemptIndex + 1)}>Try another seed</button>
           <button type="button" onClick={onExit}>Back to your build</button>
         </div>
-      </section>
+      </PracticeModalSurface>
     );
   }
 
@@ -168,6 +220,7 @@ export function PracticeFight({
           : allyPresentation.get(actor.id)?.weapon || null
       )}
       error={feedback}
+      returnFocusSelector={returnFocusSelector}
       onEscape={onExit}
       escapeLabel="Leave practice"
       onRetreat={(actorId) => dispatch({ type: "attempt-retreat", actorId: actorId ?? null })}

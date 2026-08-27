@@ -6,6 +6,7 @@ import {
   compileNarratorCandidate,
   NARRATOR_RESPONSE_KEYS,
 } from "./engine/narrator-turn-compiler.js";
+import { readPendingCombatHandoff } from "./gameplay/production/pending-directive.js";
 
 function requestFixture(baseState, overrides = {}) {
   return {
@@ -188,6 +189,18 @@ describe("App narrator result integration", () => {
     expect(compiled.turn.start_combat.foes).toEqual([
       { npc_id: "mark", kind: "npc", name: "The Mark", tier: "rare", count: 1 },
     ]);
+    const staged = App.stageImmediateCombatHandoff(
+      result,
+      compiled.turn.start_combat,
+      "campaign-a",
+    );
+    expect(staged.ok).toBe(true);
+    expect(staged.state.pendingCombatDirective).toBeTruthy();
+    expect(readPendingCombatHandoff(staged.state.pendingCombatDirective, {
+      campaignId: "campaign-a",
+      state: staged.state,
+    }).ok).toBe(true);
+    expect(result.pendingCombatDirective).toBe(null);
   });
 
   it("accepts only the active request for the same user, campaign, revision, and state", () => {

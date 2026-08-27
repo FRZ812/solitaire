@@ -225,7 +225,7 @@ describe("formation battlefield", () => {
 
     await act(async () => occupied.click());
     expect(onInspectActor).toHaveBeenCalledOnce();
-    expect(onInspectActor).toHaveBeenCalledWith(actor);
+    expect(onInspectActor).toHaveBeenCalledWith(actor, occupied);
   });
 
   it("holds pre-move cells until the cue, then swaps formation and intent atomically", async () => {

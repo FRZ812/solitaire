@@ -237,6 +237,22 @@ describe("the simple grid-to-preview flow", () => {
     expect(mounted.querySelectorAll(".character-preview__carousel [role=radio]")[1].tabIndex).toBe(0);
   });
 
+  it("Escape closes the nested details modal without dismissing Quick Start", async () => {
+    const mounted = await render(<ControlledStart onQuit={vi.fn()} />);
+    await click(mounted.querySelector(".character-choice-card"));
+    const detailsTrigger = mounted.querySelector(".character-preview__details-button");
+    detailsTrigger.focus();
+    await click(detailsTrigger);
+    const details = mounted.querySelector(".character-details");
+
+    await keydown(details.querySelector(".character-details__close"), "Escape");
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(mounted.querySelector(".character-details")).toBeNull();
+    expect(mounted.querySelector(".archetype-start")).toBeTruthy();
+    expect(document.activeElement).toBe(detailsTrigger);
+  });
+
   it("keeps loadout and practice controls behind an on-demand details drawer", async () => {
     const asked = [];
     const mounted = await render(
@@ -635,6 +651,21 @@ describe("every advertised character reaches the production fight", () => {
 
       const result = mounted.querySelector(".practice-fight--result");
       expect(result).toBeTruthy();
+      expect(result.getAttribute("role")).toBe("dialog");
+      expect(result.getAttribute("aria-modal")).toBe("true");
+      const resultButtons = [...result.querySelectorAll("button:not(:disabled)")];
+      expect(document.activeElement).toBe(resultButtons[0]);
+      resultButtons.at(-1).focus();
+      const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+      await act(async () => resultButtons.at(-1).dispatchEvent(tab));
+      expect(tab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(resultButtons[0]);
+      const reverseTab = new KeyboardEvent("keydown", {
+        key: "Tab", shiftKey: true, bubbles: true, cancelable: true,
+      });
+      await act(async () => resultButtons[0].dispatchEvent(reverseTab));
+      expect(reverseTab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(resultButtons.at(-1));
       expect(result.querySelector(".practice-fight__receipt").textContent).toContain("verified");
       expect(result.querySelector(".practice-fight__receipt").textContent).toContain("Solo");
       expect(result.textContent).toContain("Nothing here was written down");

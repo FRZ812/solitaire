@@ -12,6 +12,12 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "./data/initial-state.js";
+import {
+  MAX_PRESENTATION_ATTEMPTS,
+  MAX_PRESENTATION_JOBS,
+  enqueuePresentation,
+} from "./gameplay/campaign/presentation-outbox.js";
+import { createPendingCombatHandoff } from "./gameplay/production/pending-directive.js";
 import { LAST_OPENED_KEY, readResumeSnapshot } from "./engine/campaign-resume.js";
 import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt } from "./gameplay/tow/outcomes.js";
@@ -127,6 +133,64 @@ function campaignInAFight({
     tow: { activeCombat: opened.session },
   };
   return state;
+}
+
+function campaignWithPendingLoot() {
+  const state = makeInitialState();
+  state.created = true;
+  state.pendingLoot = {
+    deadCount: 2,
+    coins: { copper: 7, silver: 0, gold: 0 },
+    items: [],
+    ability: null,
+  };
+  return state;
+}
+
+function campaignWithUnstartableEnemyHandoff() {
+  const state = makeInitialState();
+  state.created = true;
+  const created = createPendingCombatHandoff({
+    campaignId: "tow-browser-campaign",
+    state,
+    directive: {
+      initiator: "enemy",
+      surprise: true,
+      lethal: true,
+      foes: [{
+        npc_id: null,
+        kind: "bandits",
+        name: "Crowded ambush",
+        tier: "common",
+        count: 10,
+      }],
+      note: "Ten attackers close in at once.",
+    },
+  });
+  if (!created.ok) throw new Error(created.reason);
+  state.pendingCombatDirective = created.handoff;
+  return state;
+}
+
+function presentationBacklog(count, { firstPresented = false } = {}) {
+  let queue = [];
+  for (let index = 0; index < count; index += 1) {
+    const queued = enqueuePresentation(queue, {
+      kind: "combat-aftermath",
+      route: "combat-aftermath",
+      sourceReceiptId: `old-settlement-${index}`,
+      stateRevision: index,
+      payload: { message: `Old aftermath ${index}.` },
+    });
+    const status = firstPresented && index === 0 ? "presented" : "failed";
+    queue = queued.queue.map((job) => job.id === queued.job.id ? {
+      ...job,
+      status,
+      attempts: status === "failed" ? MAX_PRESENTATION_ATTEMPTS : 1,
+      lastErrorCode: status === "failed" ? "provider-unavailable" : null,
+    } : job);
+  }
+  return queue;
 }
 
 // Campaign boot performs real persistence and migration work. Under the full Vitest
@@ -283,6 +347,58 @@ afterEach(async () => {
 afterAll(() => {
   vi.restoreAllMocks();
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+});
+
+describe("pending loot is durable campaign state", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
+  it("renders after a mounted reload and Search clears it in the loot commit", async () => {
+    harness.serverState = campaignWithPendingLoot();
+    let mounted = await mountCampaign();
+    expect(await waitFor(() => [...mounted.querySelectorAll("button")]
+      .find((button) => button.textContent === "Search"))).toBeTruthy();
+
+    await unmountCampaign();
+    mounted = await mountCampaign();
+    const search = await waitFor(() => [...mounted.querySelectorAll("button")]
+      .find((button) => button.textContent === "Search"));
+    await click(search);
+
+    await waitFor(() => harness.serverState.pendingLoot === null);
+    expect(harness.serverState.character.inventory.coins.copper).toBe(7);
+    expect([...mounted.querySelectorAll("button")]
+      .some((button) => button.textContent === "Search")).toBe(false);
+  });
+
+  it("Leave clears the durable manifest without taking anything", async () => {
+    harness.serverState = campaignWithPendingLoot();
+    const mounted = await mountCampaign();
+    const leave = await waitFor(() => [...mounted.querySelectorAll("button")]
+      .find((button) => button.textContent === "Leave"));
+    await click(leave);
+
+    await waitFor(() => harness.serverState.pendingLoot === null);
+    expect(harness.serverState.character.inventory.coins.copper).toBe(0);
+    expect(mounted.textContent).not.toContain("The fallen");
+  });
+});
+
+describe("failed immediate combat handoff recovery", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
+  it("keeps the handoff after a failed commit and then offers an explicit discard", async () => {
+    harness.serverState = campaignWithUnstartableEnemyHandoff();
+    const mounted = await mountCampaign();
+    const defend = await waitFor(() => [...mounted.querySelectorAll("button")]
+      .find((button) => button.textContent === "Defend"));
+
+    await click(defend);
+    expect(harness.serverState.pendingCombatDirective).toBeTruthy();
+    const discard = await waitFor(() => [...mounted.querySelectorAll("button")]
+      .find((button) => button.textContent === "Discard handoff"));
+    await click(discard);
+
+    await waitFor(() => harness.serverState.pendingCombatDirective === null);
+    expect([...mounted.querySelectorAll("button")]
+      .some((button) => button.textContent === "Defend")).toBe(false);
+    expect(mounted.textContent).not.toContain("combat handoff is still waiting");
+  });
 });
 
 describe("a held-skill victory promotion", { timeout: APP_INTEGRATION_TIMEOUT }, () => {
@@ -913,6 +1029,49 @@ describe("the scene is owed even if the tab dies", { timeout: APP_INTEGRATION_TI
     });
   }
 
+  it("requeues one bounded user retry after automatic attempts are exhausted", async () => {
+    const state = makeInitialState();
+    state.created = true;
+    state.presentationJobs = presentationBacklog(1);
+    harness.serverState = state;
+
+    const mounted = await mountCampaign();
+    const retry = await waitFor(() => mounted.querySelector(".tow-aftermath-retry"));
+    await click([...retry.querySelectorAll("button")].find((button) => /Tell it again/.test(button.textContent)));
+
+    await waitFor(() => harness.serverState.presentationJobs?.length === 0);
+    expect(mounted.querySelector(".tow-aftermath-retry")).toBeNull();
+  });
+
+  it("prunes presented history before reserving queue capacity for a new debt", async () => {
+    harness.serverState.presentationJobs = presentationBacklog(MAX_PRESENTATION_JOBS, {
+      firstPresented: true,
+    });
+    harness.narratorFails = true;
+    await settleWithFailingNarrator(await mountCampaign());
+
+    const jobs = await waitFor(() => {
+      const saved = harness.serverState.presentationJobs || [];
+      return saved.find((job) => job.sourceReceiptId === "tow-browser-campaign:combat:1")
+        ? saved
+        : null;
+    });
+    expect(jobs).toHaveLength(MAX_PRESENTATION_JOBS);
+    expect(jobs.some((job) => job.status === "presented")).toBe(false);
+  });
+
+  it("reports a full queue instead of silently dropping the new debt", async () => {
+    harness.serverState.presentationJobs = presentationBacklog(MAX_PRESENTATION_JOBS);
+    harness.narratorFails = true;
+    const mounted = await mountCampaign();
+    await settleWithFailingNarrator(mounted);
+
+    await waitFor(() => mounted.textContent.includes("presentation queue is full"));
+    expect(harness.serverState.presentationJobs).toHaveLength(MAX_PRESENTATION_JOBS);
+    expect(harness.serverState.presentationJobs
+      .some((job) => job.sourceReceiptId === "tow-browser-campaign:combat:1")).toBe(false);
+  });
+
   it("records the debt in the same commit as the settlement", async () => {
     harness.narratorFails = true;
     const jobs = await settleWithFailingNarrator(await mountCampaign());
@@ -940,7 +1099,7 @@ describe("the scene is owed even if the tab dies", { timeout: APP_INTEGRATION_TI
     const retry = await waitFor(() => mounted.querySelector(".tow-aftermath-retry"));
     await click([...retry.querySelectorAll("button")].find((b) => /Tell it again/.test(b.textContent)));
 
-    await waitFor(() => harness.serverState.presentationJobs?.[0]?.status === "presented");
+    await waitFor(() => harness.serverState.presentationJobs?.length === 0);
     // Exactly one settlement throughout: paying for prose never re-settles a fight.
     expect(harness.serverState.combatSettlementReceipts).toHaveLength(1);
   });

@@ -25,6 +25,7 @@ import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
 import { makeRepurposedPortraitCharacters } from "./repurposed-portrait-characters.js";
 import { makePortraitCandidateCharacters } from "./portrait-candidate-characters.js";
 import { makeRegionalEstablishmentCharacters } from "./regional-establishment-characters.js";
+import { isPresentationJob } from "../gameplay/campaign/presentation-outbox.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -935,6 +936,7 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
     pendingTravelCombat: null,
     productionCombatSequence: 0,
     combatSettlementReceipts: [],
+    pendingLoot: null,
     // The Tower of Winter sidecar: the durable build, and the fight in progress. A fight
     // used to live in component state, so it lasted exactly as long as the tab did.
     mechanics: emptyMechanicsSidecar(),
@@ -1073,7 +1075,10 @@ export function migrateCodex(state) {
   if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
   if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
   if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
-  if (!Array.isArray(next.presentationJobs)) next.presentationJobs = [];
+  if (next.pendingLoot === undefined) next.pendingLoot = null;
+  next.presentationJobs = Array.isArray(next.presentationJobs)
+    ? next.presentationJobs.filter((job) => isPresentationJob(job) && job.status !== "presented")
+    : [];
   if (next.pendingReward === undefined) next.pendingReward = null;
   // Backfilled in two steps because a campaign can predate either the sidecar or just its
   // combat slot: the build migration shipped first and left the slot for this one.

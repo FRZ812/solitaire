@@ -354,6 +354,7 @@ function AbilitySwapPicker({
       {open && typeof document !== "undefined" ? createPortal((
         <div
           className="ability-swap-picker__overlay"
+          data-app-exclusive-surface
           data-modal-escape-boundary
           style={{ "--character-accent": accent }}
           onKeyDown={onPanelKeyDown}
@@ -653,6 +654,7 @@ function KeepsakePicker({
       {open && typeof document !== "undefined" ? createPortal((
         <div
           className="ability-swap-picker__overlay keepsake-picker__overlay"
+          data-app-exclusive-surface
           data-modal-escape-boundary
           style={{ "--character-accent": accent }}
           onKeyDown={onPanelKeyDown}
@@ -1022,7 +1024,14 @@ function CharacterDetails({
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
+        data-modal-escape-boundary
         tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onClose?.();
+        }}
       >
         <header>
           <div>
@@ -1174,6 +1183,11 @@ export function QuickStartLane({
   const [allyGroupId, setAllyGroupId] = useState(DEFAULT_PRACTICE_ALLY_GROUP_ID);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const rootRef = useRef(null);
+  const modalRef = useModalFocus(onQuit);
+  const setRootRef = (node) => {
+    rootRef.current = node;
+    modalRef.current = node;
+  };
   const railRef = useRef(null);
   const thumbnailRefs = useRef([]);
   const gridChoiceRefs = useRef([]);
@@ -1224,7 +1238,14 @@ export function QuickStartLane({
 
   if (!normalized.preview) {
     return (
-      <section ref={rootRef} className="archetype-start character-select is-grid" role="dialog" aria-modal="true" aria-label="Choose an archetype">
+      <section
+        ref={setRootRef}
+        className="archetype-start character-select is-grid"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose an archetype"
+        data-app-exclusive-surface
+      >
         <img className="character-select__world" src={winterScene} alt="" />
         <div className="character-select__veil" aria-hidden="true" />
         <div className="character-grid-view">
@@ -1276,10 +1297,11 @@ export function QuickStartLane({
   return (
     <section
       className="archetype-start character-select is-preview"
-      ref={rootRef}
+      ref={setRootRef}
       role="dialog"
       aria-modal="true"
       aria-label={`Preview ${selected.name} archetype`}
+      data-app-exclusive-surface
       style={{
         "--character-accent": selected.color,
         "--portrait-scale": selected.portrait.scale,

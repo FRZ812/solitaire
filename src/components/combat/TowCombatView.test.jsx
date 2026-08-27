@@ -672,6 +672,46 @@ describe("compact combat HUD", () => {
     expect(mounted.querySelector("[data-testid='tow-combat-dossier']")).toBeNull();
   });
 
+  it("gives the nested dossier modal focus entry, containment, inert background, and restoration", async () => {
+    const encounter = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const mounted = await renderView({ encounter });
+    const playerCell = cellElement(mounted, formationCellForActor(encounter, encounter.playerId));
+
+    await act(async () => playerCell.click());
+    const dossier = mounted.querySelector("[data-testid='tow-combat-dossier']");
+    const close = dossier.querySelector("button[aria-label^='Close ']");
+    const modalLayer = dossier.closest(".tow-combat__dossier-backdrop");
+    const background = [...modalLayer.parentElement.children].filter((child) => child !== modalLayer);
+
+    expect(document.activeElement).toBe(close);
+    expect(background.length).toBeGreaterThan(0);
+    expect(background.every((child) => (
+      child.hasAttribute("inert") && child.getAttribute("aria-hidden") === "true"
+    ))).toBe(true);
+
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => close.dispatchEvent(tab));
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(close);
+
+    const reverseTab = new KeyboardEvent("keydown", {
+      key: "Tab", shiftKey: true, bubbles: true, cancelable: true,
+    });
+    await act(async () => close.dispatchEvent(reverseTab));
+    expect(reverseTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(close);
+
+    await act(async () => close.dispatchEvent(new KeyboardEvent(
+      "keydown", { key: "Escape", bubbles: true, cancelable: true },
+    )));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(mounted.querySelector("[data-testid='tow-combat-dossier']")).toBeNull();
+    expect(document.activeElement).toBe(playerCell);
+    expect(background.every((child) => (
+      !child.hasAttribute("inert") && child.getAttribute("aria-hidden") !== "true"
+    ))).toBe(true);
+  });
+
   it("focuses the legal anchor and restores the initiating action on Cancel or Escape", async () => {
     const opening = openLabSession({
       packageId: "rogue",

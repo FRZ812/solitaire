@@ -173,6 +173,46 @@ afterAll(() => {
 });
 
 describe("one new-campaign start", () => {
+  it("isolates every document surface, traps both Tab directions, and restores its opener", async () => {
+    const outside = document.createElement("section");
+    const opener = document.createElement("button");
+    opener.textContent = "Open character start";
+    outside.append(opener);
+    document.body.append(outside);
+    opener.focus();
+
+    const mounted = await mount();
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    await waitFor(() => outside.hasAttribute("inert") && outside.hasAttribute("hidden"));
+    expect(outside.getAttribute("aria-hidden")).toBe("true");
+    await waitFor(() => start.contains(document.activeElement));
+
+    const focusable = [...start.querySelectorAll("button:not(:disabled)")];
+    focusable.at(-1).focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => focusable.at(-1).dispatchEvent(tab));
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(focusable[0]);
+
+    const reverseTab = new KeyboardEvent("keydown", {
+      key: "Tab", shiftKey: true, bubbles: true, cancelable: true,
+    });
+    await act(async () => focusable[0].dispatchEvent(reverseTab));
+    expect(reverseTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(focusable.at(-1));
+
+    await act(async () => root.unmount());
+    root = null;
+    container.remove();
+    container = null;
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(document.activeElement).toBe(opener);
+    expect(outside.hasAttribute("inert")).toBe(false);
+    expect(outside.hasAttribute("hidden")).toBe(false);
+    expect(outside.hasAttribute("aria-hidden")).toBe(false);
+    outside.remove();
+  });
+
   it("shows eight complete characters and no legacy roster or limbo route", async () => {
     const mounted = await mount();
     const start = await waitFor(() => mounted.querySelector(".archetype-start"));
@@ -211,6 +251,12 @@ describe("one new-campaign start", () => {
 
     await waitFor(() => !mounted.querySelector(".archetype-start"));
     const storyStage = await waitFor(() => mounted.querySelector(".visual-novel-stage"));
+    const storyInput = await waitFor(() => mounted.querySelector(".story-input__field"));
+    await waitFor(() => document.activeElement === storyInput);
+    const hud = mounted.querySelector(".game-hud-layer");
+    expect(hud.hasAttribute("inert")).toBe(false);
+    expect(hud.hasAttribute("hidden")).toBe(false);
+    expect(hud.hasAttribute("aria-hidden")).toBe(false);
     expect(mounted.textContent).toContain(`${STARTING_ARCHETYPES[3].character.name} enters Whitemarch`);
     expect(mounted.textContent).not.toContain("There is no floor");
     expect(storyStage.querySelectorAll(".beat")).toHaveLength(1);
@@ -265,6 +311,45 @@ describe("visual-novel player rewind", () => {
 });
 
 describe("practice is reversible and writes nothing", () => {
+  it("keeps practice document-isolated, traps Tab, and restores the logical practice opener", async () => {
+    const mounted = await mount();
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    await click(start.querySelectorAll(".character-choice-card")[0]);
+    const practiceOpener = start.querySelector(".character-preview__practice-button");
+    practiceOpener.focus();
+
+    const outside = document.createElement("section");
+    outside.append(document.createElement("button"));
+    document.body.append(outside);
+    await waitFor(() => outside.hasAttribute("inert") && outside.hasAttribute("hidden"));
+    expect(outside.getAttribute("aria-hidden")).toBe("true");
+
+    await click(practiceOpener);
+    const combat = await waitFor(() => mounted.querySelector(".tow-combat"));
+    await waitFor(() => combat.contains(document.activeElement));
+    const focusable = [...combat.querySelectorAll("button:not(:disabled), summary")];
+    focusable.at(-1).focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => focusable.at(-1).dispatchEvent(tab));
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(focusable[0]);
+    const reverseTab = new KeyboardEvent("keydown", {
+      key: "Tab", shiftKey: true, bubbles: true, cancelable: true,
+    });
+    await act(async () => focusable[0].dispatchEvent(reverseTab));
+    expect(reverseTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(focusable.at(-1));
+
+    await click([...combat.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Leave practice")));
+    const restored = await waitFor(() => mounted.querySelector(".character-preview__practice-button"));
+    await waitFor(() => document.activeElement === restored);
+    expect(outside.hasAttribute("inert")).toBe(true);
+    expect(outside.hasAttribute("hidden")).toBe(true);
+    expect(outside.getAttribute("aria-hidden")).toBe("true");
+    outside.remove();
+  });
+
   it("opens a real commandable encounter without touching the campaign", async () => {
     const mounted = await mount();
     const start = await waitFor(() => mounted.querySelector(".archetype-start"));

@@ -13,6 +13,7 @@ import {
   prunePresentations,
   releasePresentation,
   requeueAbandonedPresentations,
+  retryFailedPresentation,
 } from "./presentation-outbox.js";
 
 const T0 = 1_000_000;
@@ -61,10 +62,18 @@ describe("recording the debt", () => {
 
   it("refuses a debt it cannot describe", () => {
     expect(queueWithJob({ kind: "nonsense" }).reason).toBe("invalid-presentation-kind");
+    expect(queueWithJob({ kind: "character-arrival", route: "combat-aftermath" }).reason)
+      .toBe("invalid-presentation-route");
     expect(queueWithJob({ sourceReceiptId: "" }).reason).toBe("invalid-presentation-source");
     expect(queueWithJob({ stateRevision: -1 }).reason).toBe("invalid-presentation-revision");
     expect(queueWithJob({ payload: { bad: Number.POSITIVE_INFINITY } }).reason)
       .toBe("invalid-presentation-payload");
+  });
+
+  it("rejects a restored job whose kind is paired with another kind's route", () => {
+    const { job } = queueWithJob();
+
+    expect(isPresentationJob({ ...job, route: "character-arrival" })).toBe(false);
   });
 
   it("keeps the queue bounded", () => {
@@ -180,6 +189,16 @@ describe("applying the answer", () => {
     })).toMatchObject({ ok: false, reason: "presentation-state-moved" });
   });
 
+  it("requires completion to name the exact state revision", () => {
+    const { queue, job } = queueWithJob();
+    const claimed = claimPresentation(queue, job.id, { owner: "tab-a", now: T0 });
+
+    expect(completePresentation(claimed.queue, {
+      jobId: job.id,
+      attemptId: claimed.job.attemptId,
+    })).toMatchObject({ ok: false, reason: "presentation-state-moved" });
+  });
+
   it("absorbs a duplicate response rather than presenting twice", () => {
     const { queue, job } = queueWithJob();
     const claimed = claimPresentation(queue, job.id, { owner: "tab-a", now: T0 });
@@ -249,6 +268,65 @@ describe("what a reload does to it", () => {
     expect(completePresentation(done.queue, {
       jobId: job.id, attemptId: claimed.job.attemptId, stateRevision: 7,
     })).toMatchObject({ duplicate: true });
+  });
+});
+
+describe("an explicit retry after automatic attempts are exhausted", () => {
+  it("requeues one bounded attempt instead of leaving the failed job inert", () => {
+    let { queue, job } = queueWithJob();
+    let exhaustedAttemptId = null;
+    for (let attempt = 0; attempt < MAX_PRESENTATION_ATTEMPTS; attempt += 1) {
+      const claimed = claimPresentation(queue, job.id, { owner: "tab-a", now: T0 });
+      if (attempt === MAX_PRESENTATION_ATTEMPTS - 1) {
+        exhaustedAttemptId = claimed.job.attemptId;
+      }
+      queue = releasePresentation(claimed.queue, {
+        jobId: job.id,
+        attemptId: claimed.job.attemptId,
+        errorCode: "provider-unavailable",
+      }).queue;
+    }
+
+    const modernRetried = retryFailedPresentation(queue, job.id);
+    expect(completePresentation(modernRetried.queue, {
+      jobId: job.id,
+      attemptId: exhaustedAttemptId,
+      stateRevision: job.stateRevision,
+    })).toMatchObject({ ok: false, reason: "presentation-not-in-flight" });
+    expect(releasePresentation(modernRetried.queue, {
+      jobId: job.id,
+      attemptId: exhaustedAttemptId,
+      errorCode: "late-old-attempt",
+    })).toMatchObject({ ok: false, reason: "presentation-not-in-flight" });
+
+    // Older restored failed jobs did not retain their exhausted attempt id. Retrying one must
+    // still create a generation that cannot collide with the delayed response from that job.
+    queue = queue.map((entry) => ({ ...entry, attemptId: null }));
+    const retried = retryFailedPresentation(queue, job.id);
+    expect(retried).toMatchObject({
+      ok: true,
+      job: { status: "pending", lastErrorCode: null },
+    });
+    expect(retried.job.attempts).toBe(MAX_PRESENTATION_ATTEMPTS - 1);
+
+    const claimed = claimPresentation(retried.queue, job.id, { owner: "tab-a", now: T0 });
+    expect(claimed).toMatchObject({ ok: true, job: { attempts: MAX_PRESENTATION_ATTEMPTS } });
+    expect(claimed.job.attemptId).not.toBe(exhaustedAttemptId);
+    expect(completePresentation(claimed.queue, {
+      jobId: job.id,
+      attemptId: exhaustedAttemptId,
+      stateRevision: job.stateRevision,
+    })).toMatchObject({ ok: false, reason: "presentation-attempt-mismatch" });
+    const failedAgain = releasePresentation(claimed.queue, {
+      jobId: job.id,
+      attemptId: claimed.job.attemptId,
+      errorCode: "provider-still-unavailable",
+    });
+    expect(failedAgain.job).toMatchObject({
+      status: "failed",
+      attempts: MAX_PRESENTATION_ATTEMPTS,
+      lastErrorCode: "provider-still-unavailable",
+    });
   });
 });
 
