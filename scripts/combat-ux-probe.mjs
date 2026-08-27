@@ -25,7 +25,7 @@ page.on("console", (message) => {
   if (message.type() === "error") errors.push(`console.error: ${message.text()}`);
 });
 await page.goto(HARNESS_URL, { waitUntil: "networkidle0", timeout: 60000 });
-await page.waitForSelector(".tow-combat", { timeout: 30000 });
+await page.waitForSelector(".archetype-combat", { timeout: 30000 });
 await new Promise((resolve) => setTimeout(resolve, 1200));
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,21 +33,21 @@ const shot = async (name) => {
   await page.screenshot({ path: `${OUT}/${name}.png` });
 };
 const state = () => page.evaluate(() => {
-  const combat = document.querySelector(".tow-combat");
+  const combat = document.querySelector(".archetype-combat");
   if (!combat) return { gone: true };
   const text = (selector) => document.querySelector(selector)?.textContent?.trim() || null;
   return {
     phase: combat.getAttribute("data-presentation-phase"),
     busy: combat.getAttribute("aria-busy"),
-    round: text(".tow-combat__round strong"),
-    statusLine: text(".tow-combat__round em"),
-    context: text(".tow-combat__context"),
-    actions: [...document.querySelectorAll(".tow-combat__action")].map((button) => ({
+    round: text(".archetype-combat__round strong"),
+    statusLine: text(".archetype-combat__round em"),
+    context: text(".archetype-combat__context"),
+    actions: [...document.querySelectorAll(".archetype-combat__action")].map((button) => ({
       id: button.getAttribute("data-skill-id"),
       label: button.getAttribute("aria-label")?.slice(0, 110),
       disabled: button.disabled || button.getAttribute("aria-disabled") === "true",
     })),
-    targetConfirmation: !!document.querySelector('[data-testid="tow-target-confirmation"]'),
+    targetConfirmation: !!document.querySelector('[data-testid="combat-target-confirmation"]'),
     log: [...document.querySelectorAll("#harness-log div")].map((row) => row.textContent).slice(-6),
   };
 });
@@ -57,7 +57,7 @@ console.log("ENTRY", JSON.stringify(await state(), null, 1));
 
 // Tap the Strike ability and watch what happens next.
 await page.evaluate(() => {
-  const strike = [...document.querySelectorAll(".tow-combat__action")]
+  const strike = [...document.querySelectorAll(".archetype-combat__action")]
     .find((button) => button.getAttribute("data-skill-id") === "strike");
   strike.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 });
@@ -72,7 +72,7 @@ console.log("AFTER COMMIT", JSON.stringify(await state(), null, 1));
 
 // Second strike to see repeat-flow pacing.
 await page.evaluate(() => {
-  const strike = [...document.querySelectorAll(".tow-combat__action")]
+  const strike = [...document.querySelectorAll(".archetype-combat__action")]
     .find((button) => button.getAttribute("data-skill-id") === "strike" && !button.disabled);
   if (strike) strike.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 });
@@ -81,12 +81,12 @@ await shot("04-second-strike");
 console.log("SECOND STRIKE", JSON.stringify(await state(), null, 1));
 
 // Open a targeting-heavy ability if present.
-const abilityIds = await page.evaluate(() => [...document.querySelectorAll(".tow-combat__action")]
+const abilityIds = await page.evaluate(() => [...document.querySelectorAll(".archetype-combat__action")]
   .map((button) => button.getAttribute("data-skill-id")));
 console.log("ABILITIES", abilityIds.join(","));
 for (const skillId of abilityIds.filter((id) => id && id !== "strike")) {
   await page.evaluate((id) => {
-    const button = [...document.querySelectorAll(".tow-combat__action")]
+    const button = [...document.querySelectorAll(".archetype-combat__action")]
       .find((candidate) => candidate.getAttribute("data-skill-id") === id && !candidate.disabled);
     if (button) button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }, skillId);
@@ -95,7 +95,7 @@ for (const skillId of abilityIds.filter((id) => id && id !== "strike")) {
   console.log(`TARGETING ${skillId}`, JSON.stringify(await state(), null, 1));
   // cancel back
   await page.evaluate(() => {
-    const cancel = [...document.querySelectorAll(".tow-combat__target-cancel")][0];
+    const cancel = [...document.querySelectorAll(".archetype-combat__target-cancel")][0];
     if (cancel) cancel.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
   await sleep(400);
@@ -103,13 +103,13 @@ for (const skillId of abilityIds.filter((id) => id && id !== "strike")) {
 
 // Inspect an enemy cell (dossier).
 await page.evaluate(() => {
-  const cell = document.querySelector('[aria-label="Enemy formation"] .tow-formation-cell.has-unit');
+  const cell = document.querySelector('[aria-label="Enemy formation"] .combat-formation-cell.has-unit');
   if (cell) cell.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 });
 await sleep(500);
 await shot("20-dossier");
 const dossierOpen = await page.evaluate(() => Boolean(
-  document.querySelector('[data-testid="tow-combat-dossier"]'),
+  document.querySelector('[data-testid="archetype-combat-dossier"]'),
 ));
 console.log("DOSSIER OPEN", JSON.stringify({ dossier: dossierOpen }));
 

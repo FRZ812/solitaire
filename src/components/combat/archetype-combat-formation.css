@@ -1,0 +1,874 @@
+.combat-formation-battlefield {
+  --combat-formation-gold: #e6bf78;
+  --combat-formation-player: #7ed8dd;
+  --combat-formation-enemy: #ef8674;
+  --combat-formation-affected: #b895f5;
+  --combat-formation-move: #9fe0e4;
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(0.12rem, 0.7vh, 0.48rem);
+  width: min(100%, 56rem);
+  min-height: 24rem;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: clamp(0.2rem, 1vh, 0.7rem) clamp(0.2rem, 1.5vw, 1rem);
+  isolation: isolate;
+}
+
+.combat-formation-battlefield__announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.combat-formation-battlefield__divide {
+  display: block;
+  width: min(62%, 28rem);
+  height: 1px;
+  margin: 0 auto;
+  opacity: 0.28;
+  background: linear-gradient(90deg, transparent, var(--combat-formation-gold), transparent);
+  box-shadow: 0 0 1.2rem rgba(229, 190, 120, 0.2);
+  pointer-events: none;
+}
+
+.combat-formation-grid {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: clamp(0.14rem, 0.55vw, 0.42rem) clamp(0.2rem, 1.2vw, 0.85rem);
+  align-self: stretch;
+}
+
+.combat-formation-grid.has-lunging-unit,
+.combat-formation-cell.has-lunging-unit {
+  z-index: 20 !important;
+}
+
+.combat-formation-cell {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0.52rem;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.combat-formation-cell:disabled {
+  opacity: 1;
+}
+
+.combat-formation-cell:not(:disabled) {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.combat-formation-cell__overlays {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+/* Intent is a portrait-corner medallion. Source and target remain available to assistive
+   technology, while the board position and target highlight carry the visible relationship. */
+.combat-formation-cell__overlays .archetype-combat__intent {
+  position: absolute;
+  top: 0.12rem;
+  right: 7%;
+  bottom: auto;
+  left: auto;
+  display: grid;
+  width: 2.08rem;
+  height: 2.08rem;
+  place-items: center;
+  transform: none;
+  pointer-events: none;
+  filter: drop-shadow(0 0.35rem 0.5rem rgba(0,0,0,0.78));
+}
+
+.combat-formation-cell__overlays .archetype-combat__intent-source,
+.combat-formation-cell__overlays .archetype-combat__intent-target,
+.combat-formation-cell__overlays .archetype-combat__intent-name { display: none; }
+
+.combat-formation-cell__overlays .archetype-combat__intent-sigil {
+  width: 2rem;
+  height: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  border-radius: 50%;
+}
+
+.combat-formation-cell__overlays .archetype-combat__intent-sigil::before {
+  inset: -0.14rem;
+  border-radius: 50%;
+}
+.combat-formation-cell__overlays .archetype-combat__intent-sigil::after { display: none; }
+.combat-formation-cell__overlays .archetype-combat__intent-sigil img,
+.combat-formation-cell__overlays .archetype-combat__intent-sigil i { border-radius: 50%; }
+.combat-formation-cell__overlays .archetype-combat__intent > strong {
+  position: absolute;
+  right: -0.08rem;
+  bottom: -0.08rem;
+  min-width: 1.04rem;
+  margin: 0;
+  padding: 0.12rem 0.18rem 0.1rem;
+  font-size: 0.43rem;
+}
+
+.combat-formation-statuses {
+  position: absolute;
+  z-index: 9;
+  bottom: 1.34rem;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: 92%;
+  min-height: 1.18rem;
+  padding: 0.07rem 0.12rem;
+  gap: 0.08rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(226, 209, 174, 0.11);
+  border-radius: 0.28rem;
+  background: rgba(4, 8, 10, 0.76);
+  box-shadow: 0 0.18rem 0.42rem rgba(0,0,0,0.46);
+  transform: translateX(-50%);
+  backdrop-filter: blur(3px);
+}
+
+.combat-formation-status {
+  --combat-status-accent: #d8ae65;
+  position: relative;
+  display: grid;
+  flex: 0 0 1rem;
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--combat-status-accent) 64%, #fff 8%);
+  border-radius: 0.2rem;
+  background: rgba(4, 9, 11, 0.9);
+  box-shadow: 0 0.22rem 0.48rem rgba(0,0,0,0.62);
+}
+
+.combat-formation-status__art {
+  position: absolute;
+  inset: 0.04rem;
+  overflow: hidden;
+  border-radius: 0.16rem;
+  background-image: var(--combat-status-icon);
+  background-position: var(--combat-status-icon-position, center);
+  background-size: var(--combat-status-icon-size, cover);
+}
+
+.combat-formation-status > strong {
+  position: absolute;
+  z-index: 2;
+  right: -0.13rem;
+  bottom: -0.11rem;
+  display: grid;
+  min-width: 0.62rem;
+  height: 0.62rem;
+  padding: 0 0.06rem;
+  place-items: center;
+  border: 1px solid rgba(245, 222, 177, 0.48);
+  border-radius: 99px;
+  background: #090d0f;
+  color: #fff1d6;
+  font-size: 0.34rem;
+  line-height: 1;
+}
+
+.combat-formation-status--more {
+  color: #e7d6b6;
+  font-size: 0.34rem;
+  font-weight: 850;
+}
+
+.combat-formation-cell__move-marker {
+  position: absolute;
+  z-index: 1;
+  right: 12%;
+  bottom: 0.02rem;
+  left: 12%;
+  height: clamp(0.72rem, 2.4vh, 1.3rem);
+  border: 1px solid color-mix(in srgb, var(--combat-formation-move) 78%, white 22%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(115, 209, 216, 0.2), transparent 70%);
+  box-shadow: 0 0 0.85rem rgba(101, 207, 215, 0.42), inset 0 0 0.62rem rgba(218, 250, 250, 0.16);
+  opacity: 0.78;
+  pointer-events: none;
+  animation: combat-formation-move-settle var(--combat-move-duration, 200ms) ease-out both;
+}
+
+/* Logical cells never become visible tiles. Targeting is a diffuse light source behind the
+   unit card; on an empty legal anchor the same light remains as a soft, borderless locator. */
+.combat-formation-cell::before,
+.combat-formation-cell::after {
+  position: absolute;
+  z-index: 0;
+  inset: 9% 7% 4%;
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.7);
+  content: "";
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 190ms cubic-bezier(.2,.76,.2,1), filter 160ms ease;
+}
+
+.combat-formation-cell::before {
+  background: radial-gradient(
+    ellipse at 50% 62%,
+    color-mix(in srgb, currentColor 62%, white 10%) 0,
+    color-mix(in srgb, currentColor 28%, transparent) 31%,
+    transparent 72%
+  );
+  filter: blur(0.42rem);
+}
+
+.combat-formation-cell::after {
+  inset: 28% 15% 4%;
+  background: radial-gradient(ellipse at 50% 72%, currentColor 0, transparent 68%);
+  filter: blur(0.9rem);
+}
+
+.combat-formation-cell.is-valid-anchor {
+  color: var(--combat-formation-player);
+}
+
+.combat-formation-grid--enemy .combat-formation-cell.is-valid-anchor {
+  color: var(--combat-formation-enemy);
+}
+
+.combat-formation-cell.is-valid-anchor::before {
+  opacity: 0.34;
+  transform: scale(0.88);
+}
+
+.combat-formation-cell.is-valid-anchor::after {
+  opacity: 0.13;
+  transform: scale(0.84);
+}
+
+.combat-formation-cell.is-valid-anchor:not(:disabled):hover::before,
+.combat-formation-cell.is-valid-anchor:not(:disabled):focus-visible::before,
+.combat-formation-cell.is-valid-anchor:not(:disabled):hover::after,
+.combat-formation-cell.is-valid-anchor:not(:disabled):focus-visible::after {
+  opacity: 0.66;
+  transform: scale(1);
+}
+
+.combat-formation-cell.is-affected {
+  color: var(--combat-formation-affected);
+}
+
+.combat-formation-cell.is-affected::before {
+  opacity: 0.68;
+  transform: scale(1);
+}
+
+.combat-formation-cell.is-affected::after {
+  opacity: 0.38;
+  transform: scale(1);
+}
+
+.combat-formation-cell.is-preview-anchor {
+  color: var(--combat-formation-gold);
+}
+
+.combat-formation-cell.is-preview-anchor::before {
+  opacity: 0.98;
+}
+
+.combat-formation-cell.is-preview-anchor::after {
+  opacity: 0.3;
+  transform: scale(1);
+}
+
+.combat-formation-cell.is-selected-anchor {
+  color: var(--combat-formation-gold);
+}
+
+.combat-formation-cell.is-selected-anchor::before,
+.combat-formation-cell.is-selected-anchor::after {
+  opacity: 0.92;
+  transform: scale(1);
+}
+
+.combat-formation-cell.is-selected-anchor::before {
+  filter: blur(0.3rem) brightness(1.18);
+}
+
+.combat-formation-cell.is-intent-target:not(.is-selected-anchor) {
+  color: var(--combat-formation-enemy);
+}
+
+.combat-formation-cell.is-intent-target:not(.is-selected-anchor)::before {
+  opacity: 0.58;
+  transform: scale(1);
+  animation: combat-formation-intent 1.35s ease-in-out infinite alternate;
+}
+
+.archetype-combat .combat-formation-cell:not(:disabled):focus-visible {
+  outline: 0;
+}
+
+.combat-formation-unit {
+  position: absolute;
+  z-index: 2;
+  inset: 0 2%;
+  display: block;
+  width: auto;
+  max-width: 8.6rem;
+  margin-inline: auto;
+  overflow: clip;
+  border-radius: 0.55rem 0.55rem 0.32rem 0.32rem;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.combat-formation-unit__figure {
+  position: absolute;
+  z-index: 1;
+  inset: 0 8% 1.05rem;
+  display: grid;
+  place-items: end center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-formation-unit__figure img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: drop-shadow(0 0.38rem 0.4rem rgba(0,0,0,0.78));
+  user-select: none;
+}
+
+.combat-formation-unit__monogram {
+  display: grid;
+  width: min(72%, 4.5rem);
+  aspect-ratio: 0.82;
+  place-items: center;
+  border: 1px solid rgba(226, 198, 143, 0.28);
+  border-radius: 48% 48% 18% 18%;
+  background: linear-gradient(145deg, rgba(71, 90, 92, 0.88), rgba(13, 22, 25, 0.92));
+  color: rgba(246, 226, 186, 0.82);
+  font: 400 clamp(1.5rem, 4vw, 2.7rem)/1 "Instrument Serif", Georgia, serif;
+}
+
+.combat-formation-unit__active-label {
+  position: absolute;
+  z-index: 7;
+  top: 0.08rem;
+  left: 50%;
+  display: flex;
+  max-width: 94%;
+  padding: 0.12rem 0.3rem 0.1rem;
+  overflow: hidden;
+  align-items: baseline;
+  gap: 0.22rem;
+  border: 1px solid rgba(245, 208, 132, 0.78);
+  border-radius: 999px;
+  color: #fff2d4;
+  background: rgba(22, 15, 8, 0.9);
+  box-shadow: 0 0.2rem 0.62rem rgba(0, 0, 0, 0.72), 0 0 0.65rem rgba(221, 168, 76, 0.24);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.combat-formation-unit__active-label strong {
+  color: #e9bd6f;
+  font-size: clamp(0.34rem, 0.78vw, 0.42rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.combat-formation-unit__active-label em {
+  overflow: hidden;
+  font-size: clamp(0.42rem, 0.96vw, 0.52rem);
+  font-style: normal;
+  font-weight: 760;
+  text-overflow: ellipsis;
+}
+
+.combat-formation-unit__vitals {
+  position: absolute;
+  z-index: 4;
+  right: 2%;
+  bottom: 0;
+  left: 2%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.05rem;
+  padding: 0.1rem 0.14rem 0.12rem;
+  border: 1px solid rgba(224, 206, 164, 0.18);
+  border-radius: 0.32rem;
+  background: linear-gradient(100deg, rgba(5, 10, 12, 0.91), rgba(5, 10, 12, 0.68));
+  box-shadow: 0 0.32rem 0.8rem rgba(0,0,0,0.42), inset 0 1px rgba(255,255,255,0.035);
+  backdrop-filter: blur(4px);
+}
+
+.combat-formation-unit__meter {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: clamp(0.52rem, 1.05vh, 0.64rem);
+  padding-inline: 0.18rem;
+  overflow: hidden;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.16rem;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.78);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+  font-variant-numeric: tabular-nums;
+}
+
+.combat-formation-unit__meter i {
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #738c61, #b6cc86);
+  transition: width 260ms cubic-bezier(.18,.76,.2,1);
+}
+
+.combat-formation-unit__meter-label,
+.combat-formation-unit__meter-value {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  line-height: 1;
+  color: rgba(255, 248, 229, 0.88);
+  text-shadow: 0 1px 0.22rem rgba(0,0,0,0.96);
+}
+
+.combat-formation-unit__meter-label {
+  font-size: clamp(0.34rem, 0.78vw, 0.42rem);
+  font-weight: 850;
+  letter-spacing: 0.05em;
+}
+
+.combat-formation-unit__meter-value {
+  overflow: hidden;
+  font-size: clamp(0.41rem, 0.95vw, 0.52rem);
+  font-weight: 690;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.combat-formation-unit__meter-value strong {
+  color: #fffced;
+  font: inherit;
+  font-weight: 900;
+}
+
+.combat-formation-unit__meter--hp.is-enemy i {
+  background: linear-gradient(90deg, #963f38, #df695b);
+}
+
+.combat-formation-unit__meter--resolve {
+  height: clamp(0.48rem, 0.96vh, 0.58rem);
+}
+
+.combat-formation-unit__meter--resolve i {
+  background: linear-gradient(90deg, #7065aa, #b9a8ea);
+}
+
+.combat-formation-unit.is-active .combat-formation-unit__figure {
+  filter: brightness(1.08) drop-shadow(0 0 0.72rem rgba(238, 202, 131, 0.54));
+}
+
+.combat-formation-unit.is-active .combat-formation-unit__vitals {
+  border-color: rgba(237, 199, 124, 0.68);
+  box-shadow: 0 0 1rem rgba(224, 176, 88, 0.26), inset 0 1px rgba(255,255,255,0.06);
+}
+
+.combat-formation-unit.is-reacting .combat-formation-unit__figure {
+  animation: combat-formation-contact 260ms cubic-bezier(.2,.76,.2,1) both;
+}
+
+/* A basic melee attack is spatial theatre, never formation movement. The complete visual
+   card (portrait, attached overlays and both vital meters) lunges to contact and returns as one unit;
+   the authoritative actor remains in its starting cell throughout. */
+.combat-formation-unit.is-lunging {
+  z-index: 16;
+  overflow: visible;
+  transform-origin: 50% 84%;
+  animation: combat-formation-melee-lunge var(--combat-lunge-duration, 620ms)
+    cubic-bezier(.2,.74,.18,1) var(--combat-lunge-delay, 0ms) both;
+  will-change: transform, filter;
+}
+
+.combat-formation-unit.is-lunging .combat-formation-unit__figure {
+  z-index: 15;
+  overflow: hidden;
+}
+
+.combat-formation-unit__down-label {
+  position: absolute;
+  z-index: 8;
+  top: 0.12rem;
+  left: 50%;
+  padding: 0.14rem 0.36rem 0.12rem;
+  border: 1px solid rgba(190, 117, 104, 0.62);
+  border-radius: 999px;
+  color: #ead5cf;
+  background: rgba(27, 12, 13, 0.9);
+  box-shadow: 0 0.25rem 0.6rem rgba(0, 0, 0, 0.68);
+  font-size: clamp(0.38rem, 0.86vw, 0.48rem);
+  font-weight: 880;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+}
+
+.combat-formation-unit.is-down .combat-formation-unit__figure {
+  opacity: 0.34;
+  filter: grayscale(0.92) brightness(0.5) drop-shadow(0 0.45rem 0.45rem rgba(0,0,0,0.72));
+  transform: translateY(34%) rotate(7deg) scale(0.88);
+  transform-origin: 50% 100%;
+}
+
+.combat-formation-unit.is-down .combat-formation-unit__vitals {
+  opacity: 0.58;
+}
+
+.combat-formation-unit.is-arriving {
+  animation: combat-formation-arrive var(--combat-move-duration, 200ms) cubic-bezier(.16,.82,.24,1) both;
+}
+
+/* Front rows paint over back rows while preserving the same row/column semantics at every
+   viewport width. Enemy row 3 and player row 1 are nearest the centre line. */
+.combat-formation-grid--enemy .combat-formation-cell[data-row="0"] { z-index: 1; }
+.combat-formation-grid--enemy .combat-formation-cell[data-row="1"] { z-index: 2; }
+.combat-formation-grid--enemy .combat-formation-cell[data-row="2"] { z-index: 3; }
+.combat-formation-grid--player .combat-formation-cell[data-row="0"] { z-index: 3; }
+.combat-formation-grid--player .combat-formation-cell[data-row="1"] { z-index: 2; }
+.combat-formation-grid--player .combat-formation-cell[data-row="2"] { z-index: 1; }
+
+/* Row zero is the front rank in the rules for both sides. The enemy grid is visually
+   reversed so its front rank still meets the player's front rank at the centre line. */
+.combat-formation-grid--enemy .combat-formation-cell[data-row="0"] { grid-row: 3; }
+.combat-formation-grid--enemy .combat-formation-cell[data-row="1"] { grid-row: 2; }
+.combat-formation-grid--enemy .combat-formation-cell[data-row="2"] { grid-row: 1; }
+
+.archetype-combat__battlefield--formation {
+  display: grid;
+  min-height: clamp(22rem, 58vh, 40rem);
+  box-sizing: border-box;
+  padding-top: clamp(0.65rem, 1.8vh, 1.15rem);
+  place-items: stretch center;
+  overflow: hidden;
+}
+
+.archetype-combat__battlefield--formation::after { display: none; }
+
+.archetype-combat__battlefield--formation > .combat-formation-battlefield {
+  z-index: 2;
+  width: min(100%, 48rem);
+  height: 100%;
+  min-height: 0;
+}
+
+.archetype-combat__target-confirm {
+  position: absolute;
+  z-index: 12;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  left: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.55rem;
+  align-items: center;
+  width: min(100%, 42rem);
+  margin: 0 auto;
+  padding: 0.55rem 0.62rem;
+  border: 1px solid rgba(189, 153, 233, 0.36);
+  border-radius: 0.72rem;
+  background: linear-gradient(100deg, rgba(24, 18, 35, 0.94), rgba(7, 13, 16, 0.92));
+  box-shadow: 0 0.7rem 1.6rem rgba(0,0,0,0.34), inset 0 1px rgba(255,255,255,0.04);
+}
+
+.archetype-combat__target-confirm > span { min-width: 0; }
+.archetype-combat__target-confirm small,
+.archetype-combat__target-confirm strong,
+.archetype-combat__target-confirm em { display: block; }
+.archetype-combat__target-confirm small {
+  font-size: 0.5rem;
+  font-weight: 830;
+  letter-spacing: 0.14em;
+  color: #c7a7ed;
+  text-transform: uppercase;
+}
+.archetype-combat__target-confirm strong {
+  overflow: hidden;
+  color: #fff1d8;
+  font: 400 1rem/1.05 "Instrument Serif", Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archetype-combat__target-confirm em {
+  margin-top: 0.15rem;
+  color: rgba(237, 228, 208, 0.6);
+  font-size: 0.62rem;
+  font-style: normal;
+  text-transform: capitalize;
+}
+
+.archetype-combat__target-confirm button {
+  min-height: 2.75rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(222, 201, 164, 0.24);
+  border-radius: 999px;
+  color: #eee3ce;
+  background: rgba(7, 12, 14, 0.8);
+  cursor: pointer;
+}
+.archetype-combat__target-confirm .archetype-combat__target-commit {
+  border-color: rgba(218, 178, 102, 0.62);
+  color: #17110a;
+  background: linear-gradient(135deg, #f0d49a, #bc8848);
+  font-weight: 820;
+}
+.archetype-combat__target-confirm .archetype-combat__target-commit:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.archetype-combat__mythical-declaration {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(16rem, 0.85fr);
+  align-items: end;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 30% 52%, rgba(129, 91, 183, 0.26), transparent 42%),
+    linear-gradient(105deg, rgba(2, 5, 8, 0.96), rgba(13, 9, 20, 0.93) 58%, rgba(3, 7, 9, 0.97));
+  animation: combat-mythical-cut-in 1.12s cubic-bezier(.18,.74,.18,1) both;
+}
+.archetype-combat__mythical-declaration > img {
+  z-index: 2;
+  width: min(100%, 56rem);
+  height: 94vh;
+  justify-self: center;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: drop-shadow(1rem 1.2rem 1.8rem rgba(0,0,0,0.76));
+}
+.archetype-combat__mythical-aura {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, transparent 36%, rgba(228, 199, 255, 0.16) 36.2%, transparent 37%),
+    linear-gradient(115deg, transparent 48%, rgba(224, 179, 104, 0.18) 48.2%, transparent 49%);
+}
+.archetype-combat__mythical-copy {
+  z-index: 3;
+  align-self: center;
+  padding: 2rem clamp(1.4rem, 5vw, 5rem) 2rem 0;
+  text-align: left;
+}
+.archetype-combat__mythical-copy small,
+.archetype-combat__mythical-copy strong,
+.archetype-combat__mythical-copy em { display: block; }
+.archetype-combat__mythical-copy small {
+  color: #d6b5f7;
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.archetype-combat__mythical-copy strong {
+  margin: 0.32rem 0;
+  color: #fff1d3;
+  font: 400 clamp(2.6rem, 7vw, 6.8rem)/0.84 "Instrument Serif", Georgia, serif;
+  text-wrap: balance;
+  text-shadow: 0 0.25rem 1.2rem rgba(0,0,0,0.66);
+}
+.archetype-combat__mythical-copy em {
+  color: rgba(241, 222, 190, 0.62);
+  font-size: 0.62rem;
+  font-style: normal;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+@keyframes combat-mythical-cut-in {
+  0% { opacity: 0; clip-path: inset(48% 0 48% 0); }
+  14% { opacity: 1; clip-path: inset(0 0 0 0); }
+  78% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.018); }
+}
+
+@keyframes combat-formation-intent {
+  from { opacity: 0.42; transform: scale(0.94); }
+  to { opacity: 0.86; transform: scale(1.08); }
+}
+
+@keyframes combat-formation-contact {
+  0% { filter: brightness(1); transform: translateX(0); }
+  38% { filter: brightness(1.35); transform: translateX(-0.16rem); }
+  100% { filter: brightness(1); transform: translateX(0); }
+}
+
+@keyframes combat-formation-melee-lunge {
+  0% {
+    filter: brightness(1);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  14% {
+    filter: brightness(1.04);
+    transform: translate3d(var(--combat-lunge-wind-x), var(--combat-lunge-wind-y), 0) scale(0.98);
+  }
+  44% {
+    filter: brightness(1.1);
+    transform: translate3d(var(--combat-lunge-mid-x), var(--combat-lunge-mid-y), 0) scale(1.045);
+  }
+  58%, 68% {
+    filter: brightness(1.2) drop-shadow(0 0 0.72rem rgba(241, 203, 132, 0.4));
+    transform: translate3d(var(--combat-lunge-x), var(--combat-lunge-y), 0) scale(1.08);
+  }
+  100% {
+    filter: brightness(1);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes combat-formation-arrive {
+  from {
+    opacity: 0.76;
+    transform: translateY(calc(var(--combat-move-offset, 0) * 108%));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes combat-formation-move-settle {
+  0% { opacity: 0; transform: scale(0.74); }
+  38% { opacity: 0.9; transform: scale(1.08); }
+  100% { opacity: 0.58; transform: scale(1); }
+}
+
+@media (max-width: 38rem) {
+  .combat-formation-battlefield {
+    min-height: 18rem;
+    padding-inline: 0;
+  }
+
+  .combat-formation-grid {
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    column-gap: 0.08rem;
+  }
+
+  .combat-formation-cell { min-height: 0; }
+  .combat-formation-unit {
+    inset: 0 3%;
+    max-width: 6.3rem;
+  }
+  .combat-formation-unit__figure { right: 7%; bottom: 1rem; left: 7%; }
+  .combat-formation-unit__vitals { right: 1%; left: 1%; padding-inline: 0.16rem; }
+  .combat-formation-unit__meter-label { font-size: clamp(0.32rem, 1.25vw, 0.38rem); }
+  .combat-formation-unit__meter-value { font-size: clamp(0.39rem, 1.55vw, 0.47rem); }
+
+  .archetype-combat .archetype-combat__battlefield--formation {
+    flex: 1 1 auto;
+    min-height: clamp(19rem, 49svh, 27rem);
+    padding-top: 0.72rem;
+  }
+  .archetype-combat__target-confirm {
+    right: 0.15rem;
+    bottom: calc(100% + 0.38rem);
+    left: 0.15rem;
+    width: auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.32rem;
+    padding-inline: 0.45rem;
+  }
+  .archetype-combat__target-confirm > span { grid-column: auto; }
+  .archetype-combat__target-confirm small,
+  .archetype-combat__target-confirm em { display: none; }
+  .archetype-combat__target-confirm strong { font-size: 0.88rem; }
+  .archetype-combat__target-confirm button {
+    width: auto;
+    min-width: 0;
+    min-height: 2.75rem;
+    padding-inline: 0.7rem;
+  }
+  .archetype-combat__mythical-declaration {
+    grid-template-columns: 1fr;
+    align-items: end;
+  }
+  .archetype-combat__mythical-declaration > img {
+    grid-area: 1 / 1;
+    width: 112%;
+    height: 78vh;
+    justify-self: start;
+    object-position: 18% 100%;
+    opacity: 0.88;
+  }
+  .archetype-combat__mythical-copy {
+    grid-area: 1 / 1;
+    align-self: end;
+    padding: 0 1.2rem max(12vh, 5rem);
+    background: linear-gradient(transparent, rgba(2,5,8,0.9));
+  }
+  .archetype-combat__mythical-copy strong { max-width: 11ch; }
+}
+
+@media (max-height: 46rem) {
+  .combat-formation-battlefield { min-height: 18rem; gap: 0.1rem; }
+  .combat-formation-grid { grid-template-rows: repeat(3, minmax(0, 1fr)); }
+  .combat-formation-cell { min-height: 0; }
+  .combat-formation-unit { inset-block-start: 0; }
+  .archetype-combat .archetype-combat__battlefield--formation { padding-top: 0.55rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combat-formation-cell::before,
+  .combat-formation-cell::after,
+  .combat-formation-unit__meter i {
+    transition: none;
+  }
+
+  .combat-formation-cell.is-intent-target::before { animation: none; }
+  .combat-formation-unit.is-reacting .combat-formation-unit__figure { animation: none; }
+  .combat-formation-unit.is-lunging {
+    animation: combat-formation-contact 160ms ease-out var(--combat-lunge-delay, 0ms) both;
+  }
+  .combat-formation-unit.is-arriving { animation: none; }
+  .combat-formation-cell__move-marker { animation: none; }
+  .archetype-combat__mythical-declaration { animation-duration: 280ms; }
+}

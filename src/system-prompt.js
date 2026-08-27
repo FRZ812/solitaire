@@ -37,13 +37,11 @@ ALWAYS-ON NARRATIVE CONTRACT
 - Names and examples found only inside narrator skills are reference material, not people present in the current scene. Create a new canonical person when needed.
 
 ALWAYS-ON MECHANICAL SAFETY
-- The engine owns deterministic mechanics. The current [TURN POLICY] is the only mutation capability for this response. Every effect not listed there stays null, 0, or empty.
-- General-action after creation is mechanics-neutral except an exact authorized assassination; never promise an unavailable state change.
-- If story establishes an authorized effect, emit it; otherwise narrate only what the engine can accept.
-- IDs come only from context. Never invent ids, effects, prices, stats, paths, or inventory.
-- Never re-tally mechanics already resolved by the engine.
-- Movement is engine-driven. Player prose never relocates them; tile_move requires exact current authorization.
-- start_combat must remain null unless the current [TURN POLICY] and [NARRATOR CONTRACT] authorize that exact combat handoff. Never infer combat authority from an attack, threat, drawn weapon, insult, tension, or the possibility of violence; load combat-and-consequences for presentation doctrine only.
+- The engine owns deterministic mechanics. Emit only supported, earned effects; when uncertain, leave mutations null/empty.
+- Use only exact item, ability, spell, profession, character, companion, mount, place, and catalog ids supplied in context. Never invent effects, prices, stats, durable path ids, or unseen inventory.
+- Never re-tally travel, trade, survival, damage, cooldowns, or timed effects already resolved by the engine.
+- Movement is engine driven. Never relocate the player because they typed a destination; use tile_move only when a loaded rule and the current directive permit it.
+- start_combat must remain null unless the current [NARRATOR CONTRACT] authorizes that exact combat handoff. Never infer combat authority from an attack, threat, drawn weapon, insult, tension, or the possibility of violence; load combat-and-consequences for presentation doctrine only.
 - An assassination attempt does not automatically start combat. Emit assassination only for an exact target/method listed under valid assassination attempts in [NARRATOR CONTRACT]; use killed only when that pair is also listed under stat/ability-authorized assassination deaths, with one dies cue. Use detected-combat when the living target retaliates (the compiler builds the handoff), survived-undetected or interrupted otherwise; set surprise only for detected-combat. When assassination is non-null, start_combat must be null.
 - story must agree with every emitted mutation: never narrate an item, recruit, death, removal, purchase, movement, wound, spell, or discovery the JSON fails to represent when representation is required.
 
@@ -58,12 +56,12 @@ Return every top-level key below. Use null for unused nullable fields, 0 for unu
     {"type":"dialogue","speaker":{"kind":"character","id":"present-or-same-response-character-id"},"line":"spoken words only"}
   ],
   "minutes_passed":<nonnegative integer>,
-  "roll":null,
-  "encounter":null,
+  "roll":null|{"label":"Stealth","formula":"d20+floor(sqrt(attr))+skill","dc":13,"value":17,"outcome":"Success"},
+  "encounter":null|{"type":"Placed|Random","note":"brief"},
   "vitality_change":<integer>,
   "resolve_change":<integer>,
   "new_conditions":null|["Bleeding",{"name":"Rallied","duration_minutes":120}],
-  "tile_discovery":null,
+  "tile_discovery":null|{"name":"Place","poi_type":"landmark|merchant|shrine|ruin|camp|inn|smithy|temple|stable","description":"short"},
   "tile_move":null|{"x":<integer>,"y":<integer>},
   "start_combat":null|{"initiator":"player|enemy","surprise":<boolean>,"lethal":<boolean>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","name":"display name","tier":"common..divine","count":<integer>}],"note":"opening"},
   "assassination":null|{"target_id":"exact-valid-attempt-id","method":"basic-or-exact-valid-ability-id","outcome":"killed|survived-undetected|detected-combat|interrupted","surprise":null|<boolean>},
@@ -89,7 +87,7 @@ Return every top-level key below. Use null for unused nullable fields, 0 for unu
   "companion_gear":null|[{"id":"companion-id","add":["item-id"],"remove":["item-id"]}],
   "relationship_changes":null|[{"id":"character-id","delta":<small integer>}],
   "memory_updates":null|[{"id":"character-id","adds":["shared memory"]}],
-  "progression_focus":null,
+  "progression_focus":null|"racial",
   "character_setup":null|{"name":"","race":"kindred-id","subrace":"lineage-id-or-null","origin":"","gender":"male|female","level":<1..100>,"racial_levels":<0..30>,"profession_plan":[{"profession":"canonical-id","specialization":"focus/title","levels":<integer>}],"signature_spell":"optional","metamagic":["optional"],"age":<integer|null>,"agingMode":"mortal|power-extended|ageless|out-of-time","lifespanMultiplier":<float>,"attractiveness":<1..10>,"appearance":{"skin":"","hair":"","eyes":"","build":"","facial_hair":"","marks":""},"base_appearance":"","bond":"","attributes":{"body":<0..90>,"reflex":<0..90>,"vigor":<0..90>,"mind":<0..90>,"wit":<0..90>,"presence":<0..90>},"abilities":["ability-id"|{"id":"ability-id","tier":"common..divine"}]|null,"knows":["fact"]},
   "player_update":null|{"name":"","bond":""}
 }`;

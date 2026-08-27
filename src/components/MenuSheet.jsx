@@ -123,7 +123,7 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
       const max = state.character.resolveMax ?? 0;
       const cur = Math.round(state.character.resolve ?? 0);
       const rr = combat.triggers?.resolveRegen || 0;
-      extra = <div style={liveStyle}>Right now: <b>{cur}/{max}</b>{rr > 0 ? ` — and ${rr} back after a free basic ability from your traits` : " — restored by rest or a drink"}.</div>;
+      extra = <div style={liveStyle}>Right now: <b>{cur}/{max}</b>{rr > 0 ? ` — and ${rr} back each turn from your traits` : " — restored by rest or a drink"}.</div>;
     } else if (id === "vitality") {
       extra = <div style={liveStyle}>{canHeal(state.character.conditions) ? "Right now: healing normally." : "Right now: NOT healing — a wound or need is blocking it."}</div>;
     }

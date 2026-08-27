@@ -63,7 +63,7 @@ const LS_KEY = "solitaire-mapeditor-draft-v1";
 
 const TERRAIN_OPTIONS = Object.keys(TERRAINS);
 const POI_TYPE_OPTIONS = [
-  "", "plaza", "hall", "market", "stair", "gate", "tower", "barracks",
+  "", "plaza", "hall", "market", "stair", "gate", "combat", "barracks",
   "dock", "yard", "court", "prison", "smithy", "temple", "town",
   "river", "sewer", "slavemarket", "hidden", "site", "bldg",
 ];
@@ -1512,7 +1512,7 @@ function MultiEditPanel({ count, tiles, keys, onTilePatch, onPoiPatch, onSetPare
           <input
             type="text" list="poi-type-suggestions"
             value={poiType.value}
-            placeholder={poiType.mixed ? "mixed — type to overwrite" : "market, smithy, tower, river, …"}
+            placeholder={poiType.mixed ? "mixed — type to overwrite" : "market, smithy, combat, river, …"}
             onChange={(e) => onPoiPatch({ type: e.target.value })}
             style={input()}
           />
@@ -1634,7 +1634,7 @@ function EditPanel({
               type="text" list="poi-type-suggestions"
               value={poi.type || ""}
               onChange={(e) => onPoiPatch({ type: e.target.value })}
-              placeholder="market, smithy, tower, river, …"
+              placeholder="market, smithy, combat, river, …"
               style={input()}
             />
             <datalist id="poi-type-suggestions">

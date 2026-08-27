@@ -2,7 +2,7 @@ const UINT32_MAX_PLUS_ONE = 0x100000000;
 
 function hashSeed(seed) {
   let hash = 2166136261;
-  for (const char of String(seed ?? "tower-of-winter")) {
+  for (const char of String(seed ?? "combat-of-winter")) {
     hash ^= char.codePointAt(0);
     hash = Math.imul(hash, 16777619);
   }

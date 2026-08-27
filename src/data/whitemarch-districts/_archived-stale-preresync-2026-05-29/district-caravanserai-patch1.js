@@ -73,14 +73,14 @@ const PARENT_NAME = "The Caravanserai";
 const OUTER_CURTAIN_DESC =
   "The outer caravan wall — taller than the inner curtain but still mud-brick on a stone footing, raised in a hurry as the camp outgrew its first ring. The parapet walk is wide enough for a man with a bow and a horn; on busy nights the warden's men pace it the whole way around, calling watch-times between the corner towers. The mud-brick is patched in three colours where storms or drunkards have knocked it open.";
 
-const OUTER_TOWER_DESC =
+const OUTER_COMBATER_DESC =
   "A squat stone watchtower at the corner of the outer caravan wall — paid for after a worse season of horse-thieves than the one that bought the inner towers. A single brazier burns at the top, watched in shifts by the warden's men, with a horn on a thong, a tally-stick for the wagons coming up the road, and a bell for fire and raid.";
 
 function wall(part, partName, description) {
   return {
     terrain: "wall",
     poi: {
-      type: part === "tower" ? "tower" : "site",
+      type: part === "combat" ? "combat" : "site",
       name: PARENT_NAME + " Outer Wall",
       access: "restricted",
       parent: PARENT,
@@ -104,7 +104,7 @@ export const TILES = {
   // ==========================================================================
 
   // North edge y=-6, x in -19..-7 (13 walls). NW and NE corners are towers.
-  "-19,-6": wall("outer-tower", "Outer Northwest Watchtower", OUTER_TOWER_DESC),
+  "-19,-6": wall("outer-combat", "Outer Northwest Watchtower", OUTER_COMBATER_DESC),
   "-18,-6": curtainN(),
   "-17,-6": curtainN(),
   "-16,-6": curtainN(),
@@ -116,10 +116,10 @@ export const TILES = {
   "-10,-6": curtainN(),
   "-9,-6":  curtainN(),
   "-8,-6":  curtainN(),
-  "-7,-6":  wall("outer-tower", "Outer Northeast Watchtower", OUTER_TOWER_DESC),
+  "-7,-6":  wall("outer-combat", "Outer Northeast Watchtower", OUTER_COMBATER_DESC),
 
   // South edge y=6, x in -19..-7 (13 walls). SW and SE corners are towers.
-  "-19,6": wall("outer-tower", "Outer Southwest Watchtower", OUTER_TOWER_DESC),
+  "-19,6": wall("outer-combat", "Outer Southwest Watchtower", OUTER_COMBATER_DESC),
   "-18,6": curtainS(),
   "-17,6": curtainS(),
   "-16,6": curtainS(),
@@ -131,7 +131,7 @@ export const TILES = {
   "-10,6": curtainS(),
   "-9,6":  curtainS(),
   "-8,6":  curtainS(),
-  "-7,6":  wall("outer-tower", "Outer Southeast Watchtower", OUTER_TOWER_DESC),
+  "-7,6":  wall("outer-combat", "Outer Southeast Watchtower", OUTER_COMBATER_DESC),
 
   // West edge x=-19, y in -5..5 (11 walls).
   "-19,-5": curtainW(),

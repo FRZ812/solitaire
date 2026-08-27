@@ -2,7 +2,7 @@ const OFFICIAL_STORE_SOURCE = Object.freeze({
   confidence: "observed-labels",
   captured: "2026-08-09",
   version: "1.4.16",
-  url: "https://play.google.com/store/apps/details?id=com.tailormadegames.tow&hl=en&gl=US",
+  url: "https://play.google.com/store/apps/details?id=com.tailormadegames.combat&hl=en&gl=US",
 });
 
 export const MITHRIL_HELM = Object.freeze({

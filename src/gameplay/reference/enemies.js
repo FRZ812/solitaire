@@ -2,7 +2,7 @@ const OFFICIAL_GATEKEEPER_SCREENSHOT = Object.freeze({
   fields: Object.freeze(["name", "maxHp"]),
   confidence: "observed",
   sourceType: "first-party-screenshot",
-  sourceUrl: "https://play.google.com/store/apps/details?id=com.tailormadegames.tow",
+  sourceUrl: "https://play.google.com/store/apps/details?id=com.tailormadegames.combat",
   capturedOn: "2026-08-09",
   observation: "The Gatekeeper is shown at 60/60 HP.",
 });

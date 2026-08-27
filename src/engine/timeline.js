@@ -30,7 +30,7 @@ export function mechanicsSeal(state) {
     ended: state?.ended === true,
     // A fight still in progress is not itself irreversible, but its session id changing
     // means one ended and another began between here and now.
-    activeCombatId: state?.mechanics?.tow?.activeCombat?.sessionId ?? null,
+    activeCombatId: state?.mechanics?.combat?.activeCombat?.sessionId ?? null,
   };
 }
 
@@ -42,41 +42,17 @@ function sealsMatch(first, second) {
     && first.activeCombatId === second.activeCombatId;
 }
 
-function hasIrreversibleMechanics(state) {
-  const tow = state?.mechanics?.tow;
-  const hasTerminalSettlement = Array.isArray(state?.combatSettlementReceipts)
-    && state.combatSettlementReceipts.some((receipt) => (
-      receipt?.version === 1
-      && typeof receipt.sessionId === "string"
-      && receipt.sessionId.length > 0
-      && ["victory", "defeat", "retreated"].includes(receipt.outcome)
-    ));
-  return hasTerminalSettlement
-    || state?.ended === true
-    || state?.mechanics?.bootstrapId != null
-    || state?.mechanics?.build != null
-    || typeof tow?.activeCombat?.sessionId === "string"
-    || (Array.isArray(tow?.rewardClaims) && tow.rewardClaims.length > 0)
-    || Boolean(state?.pendingReward)
-    || Object.keys(tow?.readiness || {}).length > 0
-    || Object.keys(tow?.companionReadiness || {}).length > 0;
-}
-
 /**
  * Whether the story may be rewound to before turn `k`.
  *
- * Legacy checkpoints carry no seal. They remain rewindable only while the campaign has no
- * irreversible mechanics that the checkpoint failed to capture; otherwise they are
- * quarantined rather than treated as retroactively proven safe.
+ * Legacy checkpoints carry no seal. They predate combat being durable at all, so there is
+ * nothing they could be crossing; treating them as rewindable keeps old saves working
+ * without pretending they were checked.
  */
 export function canRewindToTurn(state, k) {
   const checkpoint = state?.turns?.[k];
   if (!checkpoint) return { ok: false, reason: "unknown-turn" };
-  if (!checkpoint.mechanicsSeal) {
-    return hasIrreversibleMechanics(state)
-      ? { ok: false, reason: "unsealed-legacy-checkpoint" }
-      : { ok: true, reason: null };
-  }
+  if (!checkpoint.mechanicsSeal) return { ok: true, reason: null };
   if (sealsMatch(checkpoint.mechanicsSeal, mechanicsSeal(state))) return { ok: true, reason: null };
   return { ok: false, reason: "crosses-irreversible-mechanics" };
 }

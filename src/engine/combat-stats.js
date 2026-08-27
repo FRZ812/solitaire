@@ -165,7 +165,7 @@ export function itemCombatStats(item) {
   else if (has("brigandine", "scale", "lamellar")) armor = 4;
   else if (has("studded")) armor = 3;
   else if (has("leather", "jerkin", "hide", "gambeson", "padded", "quilted")) armor = 3;
-  else if (has("tower shield", "tower")) armor = 4;
+  else if (has("combat shield", "combat")) armor = 4;
   else if (has("kite", "heater", "shield")) armor = 3;
   else if (has("buckler")) armor = 2;
   else if (has("coif", "vambrace", "greaves", "gauntlet")) armor = 2;
@@ -293,10 +293,10 @@ export function collectEquippedPassives(character, codex) {
   // Allocated racial progression is authoritative for earned progression-only
   // traits. Legacy freeform racialPassives (or a forged item) cannot smuggle an
   // Adaptable/Dragon Heart/Regeneration id around its level threshold.
-  // Tower archetypes derive combat identity from their formation kit. Keep a
+  // Archetype archetypes derive combat identity from their formation kit. Keep a
   // consumer-side firewall as well as the entitlement projection so a stale
   // profession/racial ledger can never affect their combat stats during load.
-  if (character?.progressionModel !== "tow-archetype") {
+  if (character?.progressionModel !== "archetype") {
     enabled.push(...progressionPassiveEntries(character));
   }
   const nonProgressionExclusive = (entry) => !passiveDef(entry?.id)?.progressionExclusive;

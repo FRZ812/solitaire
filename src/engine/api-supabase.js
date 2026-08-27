@@ -94,22 +94,6 @@ export function callNarrator(
   );
 }
 
-export function narratorTurnPolicyContext(turnPolicy) {
-  const contract = {
-    id: turnPolicy.id,
-    required_skills: turnPolicy.requiredSkillIds || [],
-    allowed_effects: turnPolicy.allowedEffects || [],
-    ...(turnPolicy.effectConstraints ? { effect_constraints: turnPolicy.effectConstraints } : {}),
-    ...(turnPolicy.continuation?.terminalEffect
-      ? { terminal_effect: turnPolicy.continuation.terminalEffect }
-      : {}),
-    ...(turnPolicy.storyCharacterIds?.length
-      ? { story_character_ids: turnPolicy.storyCharacterIds }
-      : {}),
-  };
-  return `[TURN POLICY — ${JSON.stringify(contract)}. All other effect fields must remain neutral. If an allowed effect is materially established by the accepted scene, emit it in this same response; never hide a mechanical result only in story.]`;
-}
-
 async function callNarratorWithinDeadline(
   state,
   userMsgRaw,
@@ -129,7 +113,7 @@ async function callNarratorWithinDeadline(
   const state_context = [
     selectedContext.text,
     projection.context,
-    narratorTurnPolicyContext(turnPolicy),
+    `[TURN POLICY — id=${turnPolicy.id}; required narrator skills=${turnPolicy.requiredSkillIds.join(",") || "none"}; allowed effects=${turnPolicy.allowedEffects.join(",") || "none"}.]`,
   ].join("\n");
   const trimmedHistory = prepareNarratorHistory(state.apiHistory);
   const narratorSettings = normalizeNarratorSettings(state.narratorSettings);
@@ -182,14 +166,12 @@ async function callNarratorWithinDeadline(
       candidate: response.candidate,
       projection,
       turnPolicy,
-      state,
       metadata: {
         raw: response.text,
         thinking: response.thinking,
         userMsg: response.userMsg,
         model,
         memories: response.memories,
-        memoryProposals: response.memoryProposals,
       },
     });
     if (!compiled.ok) {
@@ -276,15 +258,12 @@ async function runOneAttemptWithinDeadline(
     throw new Error(`narrate ${response.status}`);
   }
 
-  const { text, thinking, memories, memoryProposals } = await accumulateAnthropicSSE(
-    response.body,
-    onProgress,
-  );
+  const { text, thinking, memories } = await accumulateAnthropicSSE(response.body, onProgress);
   // Store only the action. The next request already carries a fresh state_context;
   // persisting it inside every history item multiplied payload and save size.
   const userMsg = canonicalUserMsg;
   const parsed = parseStrictNarratorCandidate(text);
-  return { candidate: parsed, text, thinking, userMsg, memories, memoryProposals };
+  return { candidate: parsed, text, thinking, userMsg, memories };
 }
 
 async function accumulateAnthropicSSE(body, onProgress) {

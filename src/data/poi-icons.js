@@ -121,7 +121,7 @@ const TYPE_ICON = Object.freeze({
   ruin: "wild-ruin", ruins: "wild-ruin",
   fortress: "wild-fortress", fort: "wild-fortress", castle: "wild-fortress", stronghold: "wild-fortress",
   manor: "wild-manor", estate: "wild-manor",
-  tower: "wild-watchtower", watchtower: "wild-watchtower",
+  combat: "wild-watchtower", watchtower: "wild-watchtower",
   village: "wild-village", town: "wild-village", settlement: "wild-village", hamlet: "wild-village",
   mine: "wild-mine", quarry: "wild-mine",
   camp: "wild-campsite", campsite: "wild-campsite",

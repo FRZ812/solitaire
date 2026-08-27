@@ -20,7 +20,7 @@ const SIGHTED_SITES = Object.freeze({
   ruin: Object.freeze({ title: "Ruins", line: "Broken walls stand clear of the ground around them." }),
   resource: Object.freeze({ title: "Workings", line: "Cut ground, spoil heaps, and worn paths show work here." }),
   crossing: Object.freeze({ title: "A crossing", line: "The way over the water is visible from here." }),
-  fortification: Object.freeze({ title: "A fortified work", line: "Walls and a tower hold the high ground." }),
+  fortification: Object.freeze({ title: "A fortified work", line: "Walls and a combat hold the high ground." }),
   wonder: Object.freeze({ title: "Something out of the ordinary", line: "Something stands in the open that belongs to no ordinary landscape." }),
 });
 
@@ -276,13 +276,7 @@ export function applyTravelNarrationPresentation(state, beat) {
       truncated: index === story.length - 1 && !!beat._truncated,
     };
     return item.type === "beat"
-      ? {
-        id: `n${stamp}-${index}`,
-        type: "narration",
-        ...(item.actor_id ? { actorId: item.actor_id } : {}),
-        content: item.text,
-        ...shared,
-      }
+      ? { id: `n${stamp}-${index}`, type: "narration", content: item.text, ...shared }
       : {
         id: `d${stamp}-${index}`,
         type: "dialogue",

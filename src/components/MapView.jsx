@@ -317,7 +317,7 @@ export const MAP_ASSETS = {
       <path d="M2 22l6-11 4 7.5M10 22l4-7.5" />
     </svg>
   ),
-  // ruin: Crumbling, cracked stone tower
+  // ruin: Crumbling, cracked stone combat
   ruin: (color) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
       <path d="M6 21V8l6-4v4h6v13H6z" fill="rgba(215, 167, 111, 0.1)" />
@@ -931,7 +931,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               // walls, so the result reads as honest 3D geometry rather
               // than a flat drop shadow. Ground tiles (plains, streets,
               // water) draw a single hex at their natural position.
-              // Walls tower over buildings.
+              // Walls combat over buildings.
               const lift = liftForTile(tile);
               const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
               // Elevated hexes (walls/buildings) always render at full

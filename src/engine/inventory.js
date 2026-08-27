@@ -287,9 +287,9 @@ export function equipItem(state, itemId, charId = "wanderer") {
     const addedSpells = [];
     abilities = Array.isArray(abilities) ? [...abilities] : [];
     for (const ga of (g.abilities || [])) {
-      const usesTowerProgression = state.character.progressionModel === "tow-archetype";
-      if (usesTowerProgression && classifyLegacyAbilityGrant(ga?.id) !== "world") continue;
-      const tier = usesTowerProgression
+      const usesCombaterProgression = state.character.progressionModel === "archetype";
+      if (usesCombaterProgression && classifyLegacyAbilityGrant(ga?.id) !== "world") continue;
+      const tier = usesCombaterProgression
         ? clampWorldAbilityTier(ga.id, ga.tier || "common")
         : ga.tier || "common";
       if (!abilities.some((a) => idOf(a) === ga.id)) { abilities.push({ id: ga.id, tier }); addedAbilities.push(ga.id); }

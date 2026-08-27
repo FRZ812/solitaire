@@ -299,7 +299,7 @@ export const BIOMES = [
         { kind: "horse-trader",     weight: 10, posture: "friendly", desc: "a horse-trader driving a string of yearlings east" },
       ],
       hills: [
-        { kind: "watchtower-blink", weight: 6,  posture: "neutral",  desc: "a flash of mirror-light from a tower miles off — someone is being signalled about" },
+        { kind: "watchtower-blink", weight: 6,  posture: "neutral",  desc: "a flash of mirror-light from a combat miles off — someone is being signalled about" },
       ],
       road: [
         { kind: "plateau-remount-train", weight: 12, posture: "friendly", desc: "a remount train of lean steppe horses bound for the eastern marches" },
