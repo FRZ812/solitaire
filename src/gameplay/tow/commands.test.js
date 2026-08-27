@@ -225,6 +225,27 @@ describe("exactly-once dispatch", () => {
     expect(again.session.revision).toBe(1);
   });
 
+  it("conflicts when a repeated command ID names different normalized input", () => {
+    const first = strike(open());
+    const conflict = dispatchTowCommand(first.session, {
+      id: "cmd-1",
+      expectedRevision: 0,
+      type: "stand-down",
+      actorId: "wanderer",
+      skillId: null,
+      targetId: null,
+    });
+
+    expect(conflict).toMatchObject({
+      ok: false,
+      reason: "command-id-conflict",
+      session: first.session,
+      command: null,
+      events: [],
+      duplicate: false,
+    });
+  });
+
   it("refuses a command aimed at a revision that has moved on", () => {
     const session = open();
     const first = strike(session);

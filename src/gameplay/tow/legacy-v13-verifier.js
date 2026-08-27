@@ -1,16 +1,16 @@
-// Verifier-only compatibility boundary for sessions produced by deployed Tower v1.2.
+// Verifier-only compatibility boundary for sessions produced by deployed Tower v1.3.
 // The frozen graph is intentionally not registered as a playable runtime.
 
 import { cloneJsonData } from "../kernel/json-data.js";
-import { verifyTowSession as verifyFrozenTowV12Session } from "./replay-v12.js";
+import { verifyTowSession as verifyFrozenTowV13Session } from "./replay-v13.js";
 import {
-  isTowSession as isFrozenTowV12Session,
-  towSessionChecksum as frozenTowV12SessionChecksum,
-} from "./session-v12.js";
+  isTowSession as isFrozenTowV13Session,
+  towSessionChecksum as frozenTowV13SessionChecksum,
+} from "./session-v13.js";
 import {
-  TOW_RULESET_ID as TOW_V12_RULESET_ID,
-  TOW_SESSION_VERSION as TOW_V12_SESSION_VERSION,
-} from "./ruleset-v12.js";
+  TOW_RULESET_ID as TOW_V13_RULESET_ID,
+  TOW_SESSION_VERSION as TOW_V13_SESSION_VERSION,
+} from "./ruleset-v13.js";
 
 const LEGACY_COMMAND_KEYS = Object.freeze([
   "actorId", "eventsFrom", "eventsTo", "expectedRevision", "id", "seq",
@@ -42,30 +42,30 @@ function ownDataValue(value, key) {
   return descriptor.value;
 }
 
-export function verifyRetiredTowV12Session(value) {
+export function verifyRetiredTowV13Session(value) {
   let session;
   try {
-    session = cloneJsonData(value, "invalid-retired-v1.2-session");
+    session = cloneJsonData(value, "invalid-retired-v1.3-session");
   } catch {
-    return { ok: false, reason: "invalid-retired-v1.2-session", divergence: null };
+    return { ok: false, reason: "invalid-retired-v1.3-session", divergence: null };
   }
-  if (ownDataValue(session, "version") !== TOW_V12_SESSION_VERSION
-    || ownDataValue(session, "rulesetId") !== TOW_V12_RULESET_ID) {
-    return { ok: false, reason: "retired-v1.2-session-required", divergence: null };
+  if (ownDataValue(session, "version") !== TOW_V13_SESSION_VERSION
+    || ownDataValue(session, "rulesetId") !== TOW_V13_RULESET_ID) {
+    return { ok: false, reason: "retired-v1.3-session-required", divergence: null };
   }
   try {
-    if (!isFrozenTowV12Session(session)
+    if (!isFrozenTowV13Session(session)
       || (session.status === "settled" && session.terminalReceipt === null)) {
-      return { ok: false, reason: "invalid-retired-v1.2-session", divergence: null };
+      return { ok: false, reason: "invalid-retired-v1.3-session", divergence: null };
     }
     if (!hasExactCommandRecords(session)) {
       return { ok: false, reason: "invalid-command-record", divergence: null };
     }
-    if (session.checksum !== frozenTowV12SessionChecksum(session)) {
-      return { ok: false, reason: "retired-v1.2-checksum-mismatch", divergence: null };
+    if (session.checksum !== frozenTowV13SessionChecksum(session)) {
+      return { ok: false, reason: "retired-v1.3-checksum-mismatch", divergence: null };
     }
-    return verifyFrozenTowV12Session(session);
+    return verifyFrozenTowV13Session(session);
   } catch {
-    return { ok: false, reason: "invalid-retired-v1.2-session", divergence: null };
+    return { ok: false, reason: "invalid-retired-v1.3-session", divergence: null };
   }
 }

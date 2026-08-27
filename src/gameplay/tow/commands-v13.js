@@ -1,3 +1,5 @@
+// Frozen verifier-only Tower v1.3 semantics from deployed commit 1dd86f8.
+// Never route playable/current combat through this module.
 // The command boundary: the only way a fight changes.
 //
 // Before this, a click called the reducer and React kept whatever came back. That works
@@ -22,7 +24,7 @@
 // is already true is that no state reaches the session except through this file, and every
 // byte of it is reproducible from the commands recorded alongside it.
 
-import { cloneJsonData, equalJsonData } from "../kernel/json-data.js";
+import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import {
   actionsLeftFor,
@@ -32,13 +34,12 @@ import {
   skipTurn as encounterSkipTurn,
   useCombatItem as encounterUseCombatItem,
   useSkill as encounterUseSkill,
-} from "./encounter.js";
+} from "./encounter-v13.js";
 import {
   MAX_TOW_COMMANDS,
   TOW_RULESET_ID,
   sealTowSession,
-} from "./session.js";
-
+} from "./session-v13.js";
 
 export const TOW_COMMAND_VERSION = 1;
 
@@ -244,7 +245,7 @@ export function resolveTowCommand(session, command) {
  * verified session is verified against the code that will actually run it — a second
  * implementation could agree with the recording and still disagree with production.
  */
-function resolveTowCommandOnEncounterInternal(before, command) {
+export function resolveTowCommandOnEncounter(before, command) {
   const actorId = command.actorId ?? before.playerId;
   let result;
   if (command.type === "use-skill") {
@@ -276,10 +277,6 @@ function resolveTowCommandOnEncounterInternal(before, command) {
   if (after.rng.state !== before.rng.state) streams.combat = { ...after.rng };
   if (after.intentRng.state !== before.intentRng.state) streams.intent = { ...after.intentRng };
   return { ok: true, reason: null, encounter: after, streams };
-}
-
-export function resolveTowCommandOnEncounter(before, command) {
-  return resolveTowCommandOnEncounterInternal(before, command);
 }
 
 /**
@@ -330,11 +327,8 @@ export function dispatchTowCommand(session, input) {
 
   const prior = session?.commands?.find?.((entry) => entry.id === command.id);
   if (prior) {
-    if (!equalJsonData(towCommand(prior), command)) {
-      return refused("command-id-conflict", session);
-    }
-    // Exactly-once. The exact normalized command already landed; replaying it must not
-    // resolve it again or report a second failure — the caller's recorded intent was met.
+    // Exactly-once. The command already landed; replaying it must not resolve it again, and
+    // must not report failure either — the caller's intent was satisfied.
     return {
       ok: true,
       reason: null,

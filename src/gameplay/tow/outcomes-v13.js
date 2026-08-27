@@ -1,3 +1,5 @@
+// Frozen verifier-only Tower v1.3 semantics from deployed commit 1dd86f8.
+// Never route playable/current combat through this module.
 // What zero health actually means.
 //
 // The encounter knows one thing about a fallen actor: their HP reached zero. Everything the
@@ -18,7 +20,7 @@
 // cannot start killing them because the foe turned out to be stronger than expected.
 
 import { gameplayChecksum } from "../kernel/replay.js";
-import { participantIsLethal, sealTowSession, towStreamEndpoints } from "./session.js";
+import { participantIsLethal, sealTowSession, towStreamEndpoints } from "./session-v13.js";
 
 export const TOW_TERMINAL_RECEIPT_VERSION = 1;
 
@@ -146,8 +148,6 @@ export function resolveTowTerminalReceipt(session) {
   return {
     version: TOW_TERMINAL_RECEIPT_VERSION,
     sessionId: session.sessionId,
-    campaignId: session.context.campaignId,
-    campaignRevision: session.context.campaignRevision,
     rulesetId: session.rulesetId,
     reason: encounter.phase,
     winner: retreated ? null : won ? "player" : "enemies",

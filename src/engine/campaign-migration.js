@@ -22,6 +22,7 @@ import {
 } from "../gameplay/tow/build.js";
 import {
   isDeterministicRewardOffer,
+  isValidRewardClaimLedger,
   MAX_REWARD_REROLLS,
   migrateRewardOfferToCurrentRuleset,
   recompileRetiredRewardOffer,
@@ -29,12 +30,11 @@ import {
   rewardSeedFor,
 } from "../gameplay/tow/rewards.js";
 import {
-  verifyRetiredTowV13Session,
   verifyTowSession,
 } from "../gameplay/tow/replay.js";
 import { verifyRetiredTowV12Session } from "../gameplay/tow/legacy-v12-verifier.js";
+import { verifyRetiredTowV13Session } from "../gameplay/tow/legacy-v13-verifier.js";
 import {
-  decodeRetiredTowV13Session,
   decodeTowSession,
 } from "../gameplay/tow/persistence.js";
 import { TOW_RULESET_ID } from "../gameplay/tow/ruleset.js";
@@ -66,6 +66,8 @@ export function isReadableCampaignSchema(version) {
 export function emptyMechanicsSidecar() {
   return {
     version: MECHANICS_SIDECAR_VERSION,
+    campaignId: null,
+    campaignRevision: 0,
     bootstrapId: null,
     bootstrapOrigin: null,
     build: null,
@@ -134,7 +136,7 @@ const RETIRED_REWARD_KEYS = Object.freeze([
   "version",
 ].sort());
 
-const SETTLEMENT_RECEIPT_KEYS = Object.freeze([
+const LEGACY_SETTLEMENT_RECEIPT_KEYS = Object.freeze([
   "combatItemsSpent",
   "fallen",
   "outcome",
@@ -145,6 +147,11 @@ const SETTLEMENT_RECEIPT_KEYS = Object.freeze([
   "sequence",
   "sessionId",
   "version",
+].sort());
+const SETTLEMENT_RECEIPT_KEYS = Object.freeze([
+  ...LEGACY_SETTLEMENT_RECEIPT_KEYS,
+  "campaignId",
+  "campaignRevision",
 ].sort());
 
 function exactKeys(value, expected) {
@@ -192,10 +199,17 @@ function validNonnegativeCounters(value) {
 }
 
 function validSettlementReceipt(receipt, sourceReceiptId) {
-  return exactKeys(receipt, SETTLEMENT_RECEIPT_KEYS)
+  const currentShape = exactKeys(receipt, SETTLEMENT_RECEIPT_KEYS);
+  return (currentShape || exactKeys(receipt, LEGACY_SETTLEMENT_RECEIPT_KEYS))
+    && (!currentShape || (
+      (receipt.campaignId === null
+        || (typeof receipt.campaignId === "string" && receipt.campaignId.length > 0))
+      && Number.isSafeInteger(receipt.campaignRevision)
+      && receipt.campaignRevision >= 0
+    ))
     && receipt.version === 1
     && receipt.sessionId === sourceReceiptId
-    && receipt.outcome === "victory"
+    && ["victory", "defeat", "retreated"].includes(receipt.outcome)
     && Number.isSafeInteger(receipt.rounds)
     && receipt.rounds > 0
     && Number.isSafeInteger(receipt.sequence)
@@ -218,25 +232,23 @@ function validSettlementLedger(state) {
   return receipts.every((receipt) => {
     if (!validSettlementReceipt(receipt, receipt?.sessionId)
       || ids.has(receipt.sessionId)) return false;
+    if (exactKeys(receipt, SETTLEMENT_RECEIPT_KEYS)
+      && (receipt.campaignId !== state?.mechanics?.campaignId
+        || receipt.campaignRevision > state?.mechanics?.campaignRevision)) return false;
     ids.add(receipt.sessionId);
     return true;
   });
 }
 
-function validRewardClaims(value) {
+function validRewardClaims(value, build, receipts) {
   if (!Array.isArray(value) || value.length > 256) return false;
-  const sourceIds = new Set();
+  if (value.length === 0) return true;
+  if (!isTowBuild(build) || !isValidRewardClaimLedger(build, value)) return false;
+  const receiptById = new Map((receipts || []).map((receipt) => [receipt?.sessionId, receipt]));
   return value.every((claim) => {
-    if (!exactKeys(claim, ["claimedId", "offerId", "sourceReceiptId"])
-      || typeof claim.sourceReceiptId !== "string"
-      || claim.sourceReceiptId.length === 0
-      || typeof claim.offerId !== "string"
-      || claim.offerId.length === 0
-      || typeof claim.claimedId !== "string"
-      || claim.claimedId.length === 0
-      || sourceIds.has(claim.sourceReceiptId)) return false;
-    sourceIds.add(claim.sourceReceiptId);
-    return true;
+    const receipt = receiptById.get(claim.sourceReceiptId);
+    return validSettlementReceipt(receipt, claim.sourceReceiptId)
+      && receipt.outcome === "victory";
   });
 }
 
@@ -255,8 +267,7 @@ function verifiesRetiredSessionUnderCurrentRules(session) {
       return verifyRetiredTowV12Session(session).ok;
     }
     if (session.rulesetId !== "solitaire-tow-v1.3") return false;
-    return decodeRetiredTowV13Session(session).ok
-      && verifyRetiredTowV13Session(session).ok;
+    return verifyRetiredTowV13Session(session).ok;
   } catch {
     return false;
   }
@@ -338,6 +349,10 @@ function hasRewardProvenance(state, reward, rulesetId) {
       encounter,
       towSettlementContextForSession(session),
     );
+    if (exactKeys(receipt, LEGACY_SETTLEMENT_RECEIPT_KEYS)) {
+      delete expectedReceipt.campaignId;
+      delete expectedReceipt.campaignRevision;
+    }
     return equalJsonData(receipt, expectedReceipt);
   } catch {
     return false;
@@ -473,6 +488,11 @@ function hasMechanicsStateShape(state, activeCombatIsAccepted) {
   const tow = sidecar?.tow;
   return isPlainRecord(sidecar)
     && sidecar.version === MECHANICS_SIDECAR_VERSION
+    && owns(sidecar, "campaignId")
+    && (sidecar.campaignId === null
+      || (typeof sidecar.campaignId === "string" && sidecar.campaignId.length > 0))
+    && Number.isSafeInteger(sidecar.campaignRevision)
+    && sidecar.campaignRevision >= 0
     && owns(sidecar, "bootstrapId")
     && (sidecar.bootstrapId === null || typeof sidecar.bootstrapId === "string")
     && owns(sidecar, "build")
@@ -482,7 +502,11 @@ function hasMechanicsStateShape(state, activeCombatIsAccepted) {
     && activeCombatIsAccepted(tow.activeCombat)
     && isPlainRecord(tow.readiness)
     && isPlainRecord(tow.companionReadiness)
-    && validRewardClaims(tow.rewardClaims)
+    && validRewardClaims(
+      tow.rewardClaims,
+      sidecar.build,
+      state.combatSettlementReceipts || [],
+    )
     && validSavedFormation(tow.formation)
     && validSettlementLedger(state)
     && hasValidCurrentPendingReward(state);
@@ -496,6 +520,8 @@ export function hasCurrentMechanicsState(state) {
 }
 
 export function canCommitTowSession(state, session) {
+  if ((state?.mechanics?.campaignId ?? null) !== (session?.context?.campaignId ?? null)
+    || state?.mechanics?.campaignRevision !== session?.context?.campaignRevision) return false;
   const sourceReceiptId = state?.pendingReward?.sourceReceiptId;
   return typeof sourceReceiptId !== "string"
     || sourceReceiptId.length === 0
@@ -556,7 +582,14 @@ export function migrateCampaignState(state) {
     if (!isPlainRecord(next.mechanics) || next.mechanics.version !== MECHANICS_SIDECAR_VERSION) {
       return { ok: false, reason: "unsupported-mechanics-sidecar", state: null };
     }
-    if ((owns(next.mechanics, "bootstrapId")
+    if ((owns(next.mechanics, "campaignId")
+      && next.mechanics.campaignId !== null
+      && (typeof next.mechanics.campaignId !== "string"
+        || next.mechanics.campaignId.length === 0))
+      || (owns(next.mechanics, "campaignRevision")
+        && (!Number.isSafeInteger(next.mechanics.campaignRevision)
+          || next.mechanics.campaignRevision < 0))
+      || (owns(next.mechanics, "bootstrapId")
       && next.mechanics.bootstrapId !== null
       && typeof next.mechanics.bootstrapId !== "string")
       || (owns(next.mechanics, "build")
@@ -592,6 +625,8 @@ export function migrateCampaignState(state) {
     const defaults = emptyTowMechanics();
     const existingTow = next.mechanics.tow || {};
     next.mechanics = {
+      campaignId: null,
+      campaignRevision: 0,
       bootstrapId: null,
       build: null,
       ...next.mechanics,
@@ -676,7 +711,12 @@ export function verifyMigrationReadBack(original, migrated) {
         if (!owns(original_.tow, key)) delete comparable.tow[key];
       }
     }
-    for (const key of ["bootstrapId", "build"]) {
+    for (const key of [
+      "campaignId",
+      "campaignRevision",
+      "bootstrapId",
+      "build",
+    ]) {
       if (!owns(original_, key)) delete comparable[key];
     }
     let expectedOriginal = original_;

@@ -4,10 +4,10 @@ import v13ResolveCadenceSession from "./fixtures/v13-resolve-cadence-session.jso
 import * as commandApi from "./commands.js";
 import { dispatchTowCommand } from "./commands.js";
 import { sealTowTerminalReceipt } from "./outcomes.js";
+import { verifyRetiredTowV13Session } from "./legacy-v13-verifier.js";
 import {
   firstJsonDifference,
   replayTowCombatSession,
-  verifyRetiredTowV13Session,
   verifyTowSession,
 } from "./replay.js";
 import {

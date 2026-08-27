@@ -319,6 +319,35 @@ describe("v1 runtime compatibility", () => {
     });
   });
 
+  it("requires decode and replay verification before every mutation-capable forward", () => {
+    const blocked = dispatchTowCommand(openSession(), {
+      id: "runtime-mutation-gate-block",
+      expectedRevision: 0,
+      type: "use-skill",
+      actorId: "wanderer",
+      skillId: "block",
+      targetId: "wanderer",
+    });
+    const tampered = JSON.parse(JSON.stringify(blocked.session));
+    tampered.encounter.actors.wanderer.hp -= 1;
+    tampered.checksum = towSessionChecksum(tampered);
+    expect(decodeTowSession(tampered).ok).toBe(true);
+
+    const nextCommand = strikeInput(tampered, "runtime-mutation-gate-strike");
+    expect(dispatchTowRuntimeCommand(tampered, nextCommand).reason)
+      .toBe("replay-state-divergence");
+    expect(dispatchTowRuntimePlayerAction(tampered, nextCommand).reason)
+      .toBe("replay-state-divergence");
+    expect(createTowRuntimeStreamSequencer(tampered, "loot").reason)
+      .toBe("replay-state-divergence");
+    expect(sealTowRuntimeTerminalReceipt(tampered).reason)
+      .toBe("replay-state-divergence");
+    expect(spendTowRuntimeSessionStream(tampered, "loot", tampered.streams.loot).reason)
+      .toBe("replay-state-divergence");
+    expect(markTowRuntimeSessionSettled(tampered, tampered.sessionId).reason)
+      .toBe("replay-state-divergence");
+  });
+
   it("rejects a replay-valid practice victory before campaign settlement", () => {
     const terminal = terminalSession({ mode: "practice" });
     const sealed = sealTowRuntimeTerminalReceipt(terminal);
@@ -338,6 +367,28 @@ describe("v1 runtime compatibility", () => {
       duplicate: false,
     });
     expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("binds settlement to the campaign identity and revision admitted by the session", () => {
+    const terminal = terminalSession({
+      context: { campaignId: "campaign-a", campaignRevision: 7 },
+    });
+    const sealed = sealTowRuntimeTerminalReceipt(terminal).session;
+    expect(sealed.terminalReceipt).toMatchObject({
+      campaignId: "campaign-a",
+      campaignRevision: 7,
+    });
+    const wrongCampaign = makeInitialState();
+    wrongCampaign.mechanics.campaignId = "campaign-b";
+    wrongCampaign.mechanics.campaignRevision = 7;
+    expect(settleTowRuntimeEncounter(wrongCampaign, sealed).reason)
+      .toBe("tow-campaign-identity-mismatch");
+
+    const staleRevision = makeInitialState();
+    staleRevision.mechanics.campaignId = "campaign-a";
+    staleRevision.mechanics.campaignRevision = 8;
+    expect(settleTowRuntimeEncounter(staleRevision, sealed).reason)
+      .toBe("tow-campaign-revision-mismatch");
   });
 
   it("rejects practice authority relabeled as campaign even after recomputing its checksum", () => {

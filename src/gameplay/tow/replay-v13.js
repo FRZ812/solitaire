@@ -1,3 +1,5 @@
+// Frozen verifier-only Tower v1.3 semantics from deployed commit 1dd86f8.
+// Never route playable/current combat through this module.
 // Proving a saved fight is the fight that was played.
 //
 // A save that round-trips is not the same as a save that is correct. The encounter could
@@ -18,12 +20,9 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng } from "../kernel/rng.js";
-import {
-  resolveTowCommandOnEncounter,
-  towCommand,
-} from "./commands.js";
-import { encounterFromGenesis } from "./session.js";
-import { resolveTowTerminalReceipt } from "./outcomes.js";
+import { resolveTowCommandOnEncounter, towCommand } from "./commands-v13.js";
+import { encounterFromGenesis } from "./session-v13.js";
+import { resolveTowTerminalReceipt } from "./outcomes-v13.js";
 
 export const MAX_TOW_REPLAY_COMMANDS = 4096;
 
@@ -70,7 +69,7 @@ function divergence(commandSeq, commandId, path, expected, actual, reason) {
  * @returns {{ok: boolean, reason: string|null, encounter: object|null,
  *   divergence: object|null, replayedCommands: number}}
  */
-function replayTowCombatSessionWithResolver(genesis, commands, resolveCommand) {
+export function replayTowCombatSession(genesis, commands) {
   let log;
   try {
     log = cloneJsonData(commands, "invalid-replay-commands");
@@ -100,7 +99,7 @@ function replayTowCombatSessionWithResolver(genesis, commands, resolveCommand) {
   for (let index = 0; index < log.length; index += 1) {
     const command = log[index];
     const eventsFrom = encounter.sequence;
-    const resolved = resolveCommand(encounter, towCommand(command));
+    const resolved = resolveTowCommandOnEncounter(encounter, towCommand(command));
     if (!resolved.ok) {
       // A command the log says was accepted but the reducer now refuses means the rules
       // changed underneath a saved fight. That is a ruleset-pinning failure, not a corrupt
@@ -152,10 +151,6 @@ function replayTowCombatSessionWithResolver(genesis, commands, resolveCommand) {
   return { ok: true, reason: null, encounter, divergence: null, replayedCommands: log.length };
 }
 
-export function replayTowCombatSession(genesis, commands) {
-  return replayTowCombatSessionWithResolver(genesis, commands, resolveTowCommandOnEncounter);
-}
-
 /**
  * Verify a live session against a replay of its own genesis and commands.
  *
@@ -163,12 +158,12 @@ export function replayTowCombatSession(genesis, commands) {
  * The saved session is never mutated — verification that could alter what it verifies is
  * not verification.
  */
-function verifyTowSessionWithReplay(session, replay) {
+export function verifyTowSession(session) {
   if (!session || typeof session !== "object") {
     return { ok: false, reason: "invalid-session", divergence: null };
   }
 
-  const replayed = replay(session.genesis, session.commands);
+  const replayed = replayTowCombatSession(session.genesis, session.commands);
   if (!replayed.ok) return { ok: false, reason: replayed.reason, divergence: replayed.divergence };
 
   const lastSeq = session.commands.length - 1;
@@ -193,10 +188,11 @@ function verifyTowSessionWithReplay(session, replay) {
   // them. A loot endpoint that moved during a fight would mean something spent the wrong
   // generator — a telegraph draw reaching into the spoils.
   //
-  // Only before a terminal receipt is sealed, though. Settlement may advance the held streams
-  // while the session remains terminal and before the final settled marker is written. The
-  // receipt below still proves the exact replay-derived endpoints from which that spend began.
-  if (!session.terminalReceipt) {
+  // Only up to settlement, though. Settlement is where the loot stream is legitimately
+  // spent, and replaying that spend means replaying the loot roll itself — a separate
+  // contract from replaying the fight. Until then, an unmoved endpoint is exactly what a
+  // faithful replay should find.
+  if (session.status !== "settled") {
     const expectedStreams = { ...session.streams };
     const replayedStreams = {
       // Nothing in a fight spends these, so a faithful replay leaves them at the seeds
@@ -224,10 +220,12 @@ function verifyTowSessionWithReplay(session, replay) {
     const replayedSession = {
       ...session,
       encounter: replayed.encounter,
-      streams: {
-        loot: seedEndpoint(session, "loot"),
-        rewards: seedEndpoint(session, "rewards"),
-      },
+      streams: session.status === "settled"
+        ? {
+            loot: seedEndpoint(session, "loot"),
+            rewards: seedEndpoint(session, "rewards"),
+          }
+        : session.streams,
     };
     const actualReceipt = resolveTowTerminalReceipt(replayedSession);
     const receiptDiff = firstJsonDifference(expectedReceipt, actualReceipt, "terminalReceipt");
@@ -241,10 +239,6 @@ function verifyTowSessionWithReplay(session, replay) {
   }
 
   return { ok: true, reason: null, divergence: null };
-}
-
-export function verifyTowSession(session) {
-  return verifyTowSessionWithReplay(session, replayTowCombatSession);
 }
 
 // Where a stream sits when nothing has spent it: derived from genesis, never copied from

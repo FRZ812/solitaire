@@ -162,6 +162,10 @@ describe("migration is pure and idempotent", () => {
     expect(migrated.ok).toBe(true);
     expect(hasMechanicsSidecar(migrated.state)).toBe(true);
     expect(migrated.state.mechanics).toEqual(emptyMechanicsSidecar());
+    expect(migrated.state.mechanics).toMatchObject({
+      campaignId: null,
+      campaignRevision: 0,
+    });
     expect(hasCurrentMechanicsState(migrated.state)).toBe(true);
   });
 
@@ -181,6 +185,14 @@ describe("migration is pure and idempotent", () => {
     malformedBuild.mechanics.build = "forged";
     expect(hasCurrentMechanicsState(malformedBuild)).toBe(false);
 
+    const malformedCampaignIdentity = JSON.parse(JSON.stringify(current));
+    malformedCampaignIdentity.mechanics.campaignId = {};
+    expect(hasCurrentMechanicsState(malformedCampaignIdentity)).toBe(false);
+
+    const unsafeCampaignRevision = JSON.parse(JSON.stringify(current));
+    unsafeCampaignRevision.mechanics.campaignRevision = Number.MAX_SAFE_INTEGER + 1;
+    expect(hasCurrentMechanicsState(unsafeCampaignRevision)).toBe(false);
+
     const emptyBuild = JSON.parse(JSON.stringify(current));
     emptyBuild.mechanics.build = {};
     expect(hasCurrentMechanicsState(emptyBuild)).toBe(false);
@@ -192,6 +204,21 @@ describe("migration is pure and idempotent", () => {
     expect(upgradeCampaignPayload(invalidRank))
       .toMatchObject({ ok: false, writable: false, state: invalidRank });
   });
+
+  it.each(["victory", "defeat", "retreated"])(
+    "accepts a complete %s receipt in the migration settlement ledger",
+    (outcome) => {
+      const state = JSON.parse(JSON.stringify(settledRewardCampaign().state));
+      state.pendingReward = null;
+      state.mechanics.tow.activeCombat = null;
+      state.combatSettlementReceipts[0].outcome = outcome;
+
+      expect(upgradeCampaignPayload(state)).toMatchObject({
+        ok: true,
+        writable: true,
+      });
+    },
+  );
 
   it("does not mutate the payload it migrates", () => {
     const legacy = legacyCampaign();

@@ -1,3 +1,5 @@
+// Frozen verifier-only Tower v1.3 semantics from deployed commit 1dd86f8.
+// Never route playable/current combat through this module.
 // The durable Tower of Winter combat session.
 //
 // A fight used to live in two places that both vanish on reload: a React `useState` for the
@@ -24,15 +26,15 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { createRng, nextFloat } from "../kernel/rng.js";
 import { gameplayChecksum } from "../kernel/replay.js";
-import { createTowEncounter, isTowEncounter } from "./encounter.js";
+import { createTowEncounter, isTowEncounter } from "./encounter-v13.js";
 import {
   STATIC_FORMATION_RULES_VERSION,
   isFormationRulesVersion,
   normalizeFormation,
 } from "./formation.js";
-import { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
+import { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset-v13.js";
 
-export { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset.js";
+export { TOW_RULESET_ID, TOW_SESSION_VERSION } from "./ruleset-v13.js";
 
 /** The generator behind every stream. Bumping this invalidates replay on purpose. */
 export const TOW_RNG_VERSION = "mulberry32-v1";
@@ -67,7 +69,6 @@ export const TOW_RETREAT_POLICIES = Object.freeze(["forbidden", "allowed"]);
 
 export const MAX_TOW_COMMANDS = 4096;
 export const MAX_TOW_PARTICIPANTS = 32;
-export const MAX_TOW_REWARD_REROLLS = 4;
 
 const SESSION_KEYS = Object.freeze([
   "checksum",
@@ -88,7 +89,6 @@ const SESSION_KEYS = Object.freeze([
 
 const CONTEXT_KEYS = Object.freeze([
   "admission",
-  "campaignId",
   "campaignRevision",
   "detectionFacts",
   "directiveId",
@@ -109,7 +109,6 @@ const GENESIS_KEYS = Object.freeze([
   "enemySnapshots",
   "formations",
   "intentSchedules",
-  "mode",
   "playerSnapshot",
   "rngVersion",
   "seedManifest",
@@ -217,7 +216,6 @@ function isContext(value) {
     && identifier(value.source.kind)
     && (value.source.note === null || typeof value.source.note === "string")
     && typeof value.location === "string"
-    && optionalIdentifier(value.campaignId)
     && Number.isSafeInteger(value.campaignRevision)
     && value.campaignRevision >= 0
     && isParticipantBindings(value.participantBindings)
@@ -238,11 +236,8 @@ function isContext(value) {
     && Array.isArray(value.lootPolicy.ownedUniqueIds)
     && value.lootPolicy.ownedUniqueIds.every((id) => typeof id === "string")
     && isLootSources(value.lootPolicy.sources)
-    && exactKeys(value.rewardPolicy, ["proficiencyId", "rerolls"])
+    && exactKeys(value.rewardPolicy, ["proficiencyId"])
     && optionalIdentifier(value.rewardPolicy.proficiencyId)
-    && Number.isSafeInteger(value.rewardPolicy.rerolls)
-    && value.rewardPolicy.rerolls >= 0
-    && value.rewardPolicy.rerolls <= MAX_TOW_REWARD_REROLLS
     && exactKeys(value.admission, ["notes", "version"])
     && Number.isSafeInteger(value.admission.version)
     && Array.isArray(value.admission.notes)
@@ -271,7 +266,6 @@ export function towCombatContext(input = {}) {
       note: input.source?.note ?? null,
     },
     location: typeof input.location === "string" ? input.location : "",
-    campaignId: input.campaignId ?? null,
     campaignRevision: Number.isSafeInteger(input.campaignRevision) && input.campaignRevision >= 0
       ? input.campaignRevision
       : 0,
@@ -307,14 +301,7 @@ export function towCombatContext(input = {}) {
         }]),
       ),
     },
-    rewardPolicy: {
-      proficiencyId: input.rewardPolicy?.proficiencyId ?? null,
-      rerolls: Number.isSafeInteger(input.rewardPolicy?.rerolls)
-        && input.rewardPolicy.rerolls >= 0
-        && input.rewardPolicy.rerolls <= MAX_TOW_REWARD_REROLLS
-        ? input.rewardPolicy.rerolls
-        : 0,
-    },
+    rewardPolicy: { proficiencyId: input.rewardPolicy?.proficiencyId ?? null },
     // What this fight decided not to carry, and why. Durable so that "the companion held
     // back" and "the ability was superseded by the package" survive a reload as recorded
     // facts rather than as things nobody wrote down.
@@ -337,27 +324,6 @@ export function participantIsLethal(context, actorId) {
   return context?.lethalPolicy === "lethal";
 }
 
-export function towSettlementContextForSession(session) {
-  return {
-    encounterId: session.sessionId,
-    campaignId: session.context.campaignId,
-    campaignRevision: session.context.campaignRevision,
-    proficiencyId: session.context.rewardPolicy.proficiencyId,
-    npcIds: Object.fromEntries(
-      Object.entries(session.context.participantBindings)
-        .filter(([, binding]) => binding.campaignEntityId)
-        .map(([actorId, binding]) => [actorId, binding.campaignEntityId]),
-    ),
-    lethal: session.context.lethalPolicy !== "nonlethal",
-    worldFates: Object.fromEntries(
-      (session.terminalReceipt?.participants || []).map((outcome) => [
-        outcome.participantId,
-        outcome.worldFate,
-      ]),
-    ),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Genesis — the immutable opening
 // ---------------------------------------------------------------------------
@@ -367,7 +333,6 @@ function isGenesis(value) {
   if (!current && !exactKeys(value, LEGACY_GENESIS_KEYS)) return false;
   return isSeedManifest(value.seedManifest)
     && value.rngVersion === TOW_RNG_VERSION
-    && TOW_SESSION_MODES.includes(value.mode)
     && Boolean(value.playerSnapshot)
     && typeof value.playerSnapshot === "object"
     && !Array.isArray(value.playerSnapshot)
@@ -472,9 +437,6 @@ export function towStreamEndpoints(session) {
 export function markTowSessionSettled(session, settlementId) {
   if (!identifier(settlementId)) return { ok: false, reason: "invalid-settlement-id", session };
   if (session.status === "active") return { ok: false, reason: "encounter-not-terminal", session };
-  if (session.terminalReceipt === null) {
-    return { ok: false, reason: "missing-terminal-receipt", session };
-  }
   if (session.settlementId !== null) {
     return session.settlementId === settlementId
       ? { ok: true, reason: null, session, duplicate: true }
@@ -542,7 +504,6 @@ export function isTowSession(value) {
   if (!Number.isSafeInteger(value.revision) || value.revision < 0) return false;
   if (!isContext(value.context)) return false;
   if (!isGenesis(value.genesis)) return false;
-  if (value.genesis.mode !== value.mode) return false;
   if (!Array.isArray(value.commands) || value.commands.length > MAX_TOW_COMMANDS) return false;
   // The revision *is* the accepted-command count. Keeping them equal by construction means a
   // forged revision cannot make a stale command look current.
@@ -564,8 +525,7 @@ export function isTowSession(value) {
   const terminal = value.encounter.phase !== "player";
   if (value.status === "active" && (terminal || value.terminalReceipt !== null)) return false;
   if (value.status !== "active" && !terminal) return false;
-  if (value.status === "settled"
-    && (value.settlementId === null || value.terminalReceipt === null)) return false;
+  if (value.status === "settled" && value.settlementId === null) return false;
   if (value.status !== "settled" && value.settlementId !== null) return false;
   return true;
 }
@@ -612,7 +572,6 @@ export function createTowSession(input = {}) {
     genesis = cloneJsonData({
       seedManifest: deriveSeedManifest(rootSeed),
       rngVersion: TOW_RNG_VERSION,
-      mode,
       playerSnapshot: player,
       // Each ally carries their own actor line and their own build. Holding them in genesis
       // is what lets a party fight replay exactly, down to which companion was already hurt

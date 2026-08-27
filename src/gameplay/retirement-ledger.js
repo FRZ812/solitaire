@@ -64,6 +64,23 @@ export const RETIREMENT_LEDGER = Object.freeze([
     why: "Frozen verifier-only deployed-v1.2 semantics; retained solely to authenticate "
       + "historical combat and never registered as a playable runtime.",
   })),
+  ...[
+    "character-abilities-v13.js",
+    "combat-items-v13.js",
+    "commands-v13.js",
+    "encounter-v13.js",
+    "movement-v13.js",
+    "outcomes-v13.js",
+    "replay-v13.js",
+    "ruleset-v13.js",
+    "session-v13.js",
+    "skills-v13.js",
+    "targeting-v13.js",
+    "weapon-techniques-v13.js",
+  ].map((module) => entry(`tow/${module}`, DESTINATION.KEEP, {
+    why: "Externally source-verified, frozen deployed-v1.3 replay closure; reachable only "
+      + "through the full-session historical verifier and never through playable runtime APIs.",
+  })),
   entry("kernel/tow-damage.js", DESTINATION.KEEP, {
     why: "The live damage resolver. Per-hit resolution is what makes Steelskin, Thorn and "
       + "Burn behave differently against a flurry than against one heavy blow.",

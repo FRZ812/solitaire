@@ -66,6 +66,8 @@ describe("opening a session", () => {
   it("carries the context the encounter deliberately does not know", () => {
     const opened = open({
       context: {
+        campaignId: "campaign-a",
+        campaignRevision: 7,
         location: "The Broken Wheel",
         lethalPolicy: "nonlethal",
         source: { kind: "narrator", note: "a barfight" },
@@ -73,6 +75,8 @@ describe("opening a session", () => {
       },
     });
     expect(opened.session.context.location).toBe("The Broken Wheel");
+    expect(opened.session.context.campaignId).toBe("campaign-a");
+    expect(opened.session.context.campaignRevision).toBe(7);
     expect(opened.session.context.participantBindings["foe-0"].campaignEntityId).toBe("npc-hale");
     expect(opened.session.context.source.note).toBe("a barfight");
   });
@@ -242,9 +246,29 @@ describe("settling the session", () => {
     expect(settled.reason).toBe("encounter-not-terminal");
   });
 
+  it("requires a sealed terminal receipt before the settled marker", () => {
+    const { session } = open();
+    const terminal = {
+      ...session,
+      status: "terminal",
+      encounter: { ...session.encounter, phase: "victory" },
+    };
+
+    expect(markTowSessionSettled(terminal, "settle-1")).toMatchObject({
+      ok: false,
+      reason: "missing-terminal-receipt",
+      session: terminal,
+    });
+  });
+
   it("absorbs a repeat of the same settlement and refuses a different one", () => {
     const { session } = open();
-    const terminal = { ...session, status: "terminal", encounter: { ...session.encounter, phase: "victory" } };
+    const terminal = {
+      ...session,
+      status: "terminal",
+      encounter: { ...session.encounter, phase: "victory" },
+      terminalReceipt: { reason: "victory" },
+    };
     const first = markTowSessionSettled(terminal, "settle-1");
     expect(first.ok).toBe(true);
     expect(first.session.status).toBe("settled");

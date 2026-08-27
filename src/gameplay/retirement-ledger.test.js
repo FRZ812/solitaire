@@ -28,7 +28,7 @@ function modulesOnDisk() {
     }
   }
   for (const file of readdirSync(join(ROOT, "tow"))) {
-    if (!file.endsWith("-v12.js")) continue;
+    if (!/-v1(?:2|3)\.js$/.test(file)) continue;
     found.push(`tow/${file}`);
   }
   return found.sort();

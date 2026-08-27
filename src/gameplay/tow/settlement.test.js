@@ -74,9 +74,19 @@ describe("settling a victory", () => {
   it("writes a receipt and narrates the outcome", () => {
     const encounter = wonFight();
     expect(encounter.phase).toBe("victory");
-    const result = settleTowEncounter(campaign(), encounter, { encounterId: "fight-1" });
+    const result = settleTowEncounter(campaign(), encounter, {
+      encounterId: "fight-1",
+      campaignId: "campaign-a",
+      campaignRevision: 7,
+    });
     expect(result.ok).toBe(true);
-    expect(result.receipt).toMatchObject({ sessionId: "fight-1", outcome: "victory", fallen: 1 });
+    expect(result.receipt).toMatchObject({
+      sessionId: "fight-1",
+      campaignId: "campaign-a",
+      campaignRevision: 7,
+      outcome: "victory",
+      fallen: 1,
+    });
     expect(result.state.beats.at(-1).content).toContain("The fight is over");
   });
 
@@ -277,6 +287,21 @@ describe("idempotence", () => {
     expect(second.receipt).toEqual(first.receipt);
     // No second helping of proficiency.
     expect(second.state.character.proficiencies).toEqual(first.state.character.proficiencies);
+  });
+
+  it("rejects a duplicate receipt when the campaign lacks its actual postconditions", () => {
+    const encounter = wonFight();
+    const first = settleTowEncounter(campaign(), encounter, { encounterId: "fight-postcondition" });
+    const stale = JSON.parse(JSON.stringify(first.state));
+    stale.character.vitality = 1;
+
+    expect(settleTowEncounter(stale, encounter, { encounterId: "fight-postcondition" }))
+      .toMatchObject({
+        ok: false,
+        reason: "tow-settlement-postcondition-mismatch",
+        state: stale,
+        duplicate: false,
+      });
   });
 
   it("settles a different encounter alongside the first", () => {

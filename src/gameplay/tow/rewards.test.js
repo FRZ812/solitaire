@@ -7,6 +7,7 @@ import {
   compileRewardOffer,
   grantRune,
   isRewardOffer,
+  isValidRewardClaimLedger,
   migrateRewardOfferToCurrentRuleset,
   rerollRewardOffer,
   rewardCandidates,
@@ -420,6 +421,19 @@ describe("claiming", () => {
     expect(claimed.build.skills).toContainEqual({ id: choice.id, rank: 1 });
     expect(claimed.build.skills.map((skill) => skill.id)).not.toContain(replacedId);
     expect(claimed.provenance.replacedId).toBe(replacedId);
+    expect(claimed.claim).toMatchObject({
+      version: 1,
+      sourceReceiptId: offer.sourceReceiptId,
+      offerId: offer.id,
+      claimedId: choice.id,
+      kind: "skill",
+      rank: 1,
+      replacedSkill: target.skills[2],
+    });
+    expect(isValidRewardClaimLedger(claimed.build, [claimed.claim])).toBe(true);
+    const forgedClaim = JSON.parse(JSON.stringify(claimed.claim));
+    forgedClaim.replacedSkill.rank += 1;
+    expect(isValidRewardClaimLedger(claimed.build, [forgedClaim])).toBe(false);
     expect(claimReward(claimed.build, claimed.offer, choice.id))
       .toMatchObject({ ok: true, duplicate: true, build: claimed.build });
   });

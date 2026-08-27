@@ -15,7 +15,7 @@ import {
   stripTowLegacyProgression,
   usesLegacyCharacterProgression,
 } from "../../engine/progression.js";
-import { cloneJsonData } from "../kernel/json-data.js";
+import { cloneJsonData, equalJsonData } from "../kernel/json-data.js";
 import { settleCombatItems, spentCombatItems } from "./combat-items.js";
 import { activeTowItemIds, towItemActorBonuses } from "./start-items.js";
 
@@ -49,7 +49,12 @@ function proficiencyGains(encounter, proficiencyId) {
 }
 
 export function deriveTowSettlementReceipt(state, encounter, context = {}) {
-  const { encounterId, proficiencyId = null } = context;
+  const {
+    encounterId,
+    campaignId = null,
+    campaignRevision = 0,
+    proficiencyId = null,
+  } = context;
   const player = encounter.actors[encounter.playerId];
   const gains = usesLegacyCharacterProgression(state.character)
     ? proficiencyGains(encounter, proficiencyId)
@@ -57,6 +62,8 @@ export function deriveTowSettlementReceipt(state, encounter, context = {}) {
   return {
     version: 1,
     sessionId: encounterId,
+    campaignId,
+    campaignRevision,
     outcome: encounter.phase,
     rounds: encounter.round,
     sequence: encounter.sequence,
@@ -66,6 +73,39 @@ export function deriveTowSettlementReceipt(state, encounter, context = {}) {
     fallen: encounter.enemyIds.filter((enemyId) => encounter.actors[enemyId].hp <= 0).length,
     proficiencyGains: gains,
   };
+}
+
+function duplicateSettlementMatches(state, encounter, context, receipt) {
+  let expectedReceipt;
+  try {
+    expectedReceipt = deriveTowSettlementReceipt(state, encounter, context);
+    if (!equalJsonData(receipt, expectedReceipt)) return false;
+  } catch {
+    return false;
+  }
+  const player = encounter.actors[encounter.playerId];
+  const vitalityMax = Math.max(1, Math.round(state.character?.vitalityMax ?? player.maxHp));
+  const mapped = player.hp > 0
+    ? Math.max(1, Math.round(vitalityMax * (player.hp / player.maxHp)))
+    : 0;
+  const expectedVitality = encounter.phase === "defeat"
+    ? 1
+    : Math.max(0, Math.min(vitalityMax, mapped));
+  if (state.character?.vitality !== expectedVitality) return false;
+  if (Number.isFinite(player.resolve)) {
+    const expectedResolve = Math.max(
+      0,
+      Math.min(Math.max(1, Math.round(player.resolveMax)), Math.round(player.resolve)),
+    );
+    if (state.character?.resolve !== expectedResolve) return false;
+  }
+  if (!(state.beats || []).some((beat) => beat?.id === `tow-combat:${context.encounterId}:settled`)) {
+    return false;
+  }
+  return Object.entries(receipt.proficiencyGains).every(([id, amount]) => (
+    Number.isFinite(state.character?.proficiencies?.[id])
+    && state.character.proficiencies[id] >= amount
+  ));
 }
 
 /**
@@ -85,9 +125,22 @@ export function settleTowEncounter(state, encounter, context = {}) {
   // brawl and a duel to the death resolve identically on the kernel and differ only in
   // what zero health means afterwards. Defaulting to lethal keeps a caller that has not
   // been taught the distinction behaving as it always did.
-  const { encounterId, proficiencyId = null, npcIds = {}, lethal = true, worldFates = {} } = context;
+  const {
+    encounterId,
+    campaignId = null,
+    campaignRevision = 0,
+    proficiencyId = null,
+    npcIds = {},
+    lethal = true,
+    worldFates = {},
+  } = context;
   if (typeof encounterId !== "string" || encounterId.length === 0) {
     return rejected("invalid-encounter-id", state);
+  }
+  if ((campaignId !== null && (typeof campaignId !== "string" || campaignId.length === 0))
+    || !Number.isSafeInteger(campaignRevision)
+    || campaignRevision < 0) {
+    return rejected("invalid-campaign-settlement-authority", state);
   }
   if (!encounter || !["victory", "defeat", "retreated"].includes(encounter.phase)) {
     return rejected("tow-encounter-not-terminal", state);
@@ -102,7 +155,11 @@ export function settleTowEncounter(state, encounter, context = {}) {
   if (!Array.isArray(priorReceipts)) return rejected("invalid-tow-settlement-receipts", state);
 
   const prior = priorReceipts.find((receipt) => receipt?.sessionId === encounterId);
-  if (prior) return rejected("tow-encounter-already-settled", state, ownedReceipt(prior));
+  if (prior) {
+    return duplicateSettlementMatches(state, encounter, context, prior)
+      ? rejected("tow-encounter-already-settled", state, ownedReceipt(prior))
+      : rejected("tow-settlement-postcondition-mismatch", state);
+  }
   if (priorReceipts.length >= MAX_TOW_SETTLEMENT_RECEIPTS) {
     return rejected("tow-settlement-receipt-limit-exceeded", state);
   }

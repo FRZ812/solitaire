@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
 import { applyBeat } from "./beat.js";
 import {
+  canRewindToTurn,
   deleteBeat,
   editBeat,
   finalizeTurnCheckpoint,
@@ -33,6 +34,24 @@ function completedTurn(playerLines = ["Wait here."]) {
 }
 
 describe("queued player messages and rewind", () => {
+  it("quarantines an unsealed legacy checkpoint after a durable settlement", () => {
+    const { recorded } = completedTurn();
+    const legacy = {
+      ...recorded,
+      turns: recorded.turns.map(({ mechanicsSeal: _seal, ...checkpoint }) => checkpoint),
+      combatSettlementReceipts: [{
+        version: 1,
+        sessionId: "legacy-settlement",
+        outcome: "victory",
+      }],
+    };
+
+    expect(canRewindToTurn(legacy, 0)).toEqual({
+      ok: false,
+      reason: "unsealed-legacy-checkpoint",
+    });
+  });
+
   it("persists exact narrator policy options with a turn checkpoint", () => {
     const { base } = completedTurn();
     const policyOptions = {

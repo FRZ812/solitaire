@@ -25,6 +25,21 @@ describe("the verifier-only deployed v1.2 boundary", () => {
       .toEqual({ ok: true, reason: null, divergence: null });
   });
 
+  it("snapshots a caller Proxy once without reading through it again", () => {
+    const session = sourceSession();
+    let directReads = 0;
+    const proxy = new Proxy(session, {
+      get() {
+        directReads += 1;
+        throw new Error("caller proxy was re-read");
+      },
+    });
+
+    expect(verifyRetiredTowV12Session(proxy))
+      .toEqual({ ok: true, reason: null, divergence: null });
+    expect(directReads).toBe(0);
+  });
+
   it("does not route a current identity through frozen rules", () => {
     const session = sourceSession();
     session.rulesetId = "solitaire-tow-v1.4";

@@ -53,6 +53,8 @@ const SPATIAL_COMMAND_KEYS = Object.freeze([...COMMAND_KEYS, "anchorCell"].sort(
 const SPATIAL_LEGACY_COMMAND_KEYS = Object.freeze([...LEGACY_COMMAND_KEYS, "anchorCell"].sort());
 
 const RECEIPT_KEYS = Object.freeze([
+  "campaignId",
+  "campaignRevision",
   "encounterChecksum",
   "eventCount",
   "loser",
@@ -168,6 +170,10 @@ function receiptFailure(session) {
   if (receipt === null) return null;
   if (!exactKeys(receipt, RECEIPT_KEYS)) return "invalid-terminal-receipt";
   if (receipt.sessionId !== session.sessionId) return "terminal-receipt-session-mismatch";
+  if (receipt.campaignId !== session.context.campaignId) return "terminal-receipt-campaign-mismatch";
+  if (receipt.campaignRevision !== session.context.campaignRevision) {
+    return "terminal-receipt-revision-mismatch";
+  }
   if (receipt.rulesetId !== session.rulesetId) return "terminal-receipt-ruleset-mismatch";
   if (!["victory", "defeat", "retreated"].includes(receipt.reason)) return "invalid-terminal-receipt";
   if (receipt.reason !== session.encounter.phase) return "terminal-receipt-phase-mismatch";

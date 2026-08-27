@@ -1,3 +1,5 @@
+// Frozen verifier-only Tower v1.3 semantics from deployed commit 1dd86f8.
+// Never route playable/current combat through this module.
 // The Tower of Winter encounter loop.
 //
 // This is where traits stop being data and start being the fight. A trait grants a
@@ -32,7 +34,7 @@ import {
 } from "../kernel/status-stack.js";
 import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
-import { getCombatItem, normalizeCombatItems } from "./combat-items.js";
+import { getCombatItem, normalizeCombatItems } from "./combat-items-v13.js";
 import { effectRecipient } from "./ability-targeting.js";
 import {
   MOVING_FORMATION_RULES_VERSION,
@@ -40,8 +42,8 @@ import {
   isFormationRulesVersion,
   normalizeFormation,
 } from "./formation.js";
-import { reflowTowFormations } from "./movement.js";
-import { legalSkillAnchors, resolveSkillTargets } from "./targeting.js";
+import { reflowTowFormations } from "./movement-v13.js";
+import { legalSkillAnchors, resolveSkillTargets } from "./targeting-v13.js";
 import {
   createSkillState,
   effectMagnitude,
@@ -53,7 +55,7 @@ import {
   spendSkill,
   tickSkillCooldown,
   UNLIMITED_USES,
-} from "./skills.js";
+} from "./skills-v13.js";
 import {
   combatTraitCadenceAtRank,
   combatTraitValueAtRank,
@@ -63,7 +65,7 @@ import {
   isWeaponAttackSnapshot,
   normalizeWeaponAttackSnapshot,
   weaponAttackAtRank,
-} from "./weapon-techniques.js";
+} from "./weapon-techniques-v13.js";
 
 export const TOW_ENCOUNTER_VERSION = 1;
 export const MAX_ENCOUNTER_EVENTS = 20_000;
@@ -149,55 +151,12 @@ function push(state, type, detail) {
   };
 }
 
-function lastCommittedSkill(state, actorId, round = null) {
-  for (let index = state.events.length - 1; index >= 0; index -= 1) {
-    const entry = state.events[index];
-    if (round !== null && entry.round < round) break;
-    if (entry.type !== "skill-committed" || entry.actorId !== actorId) continue;
-    if (round !== null && entry.round !== round) continue;
-    return entry;
-  }
-  return null;
-}
-
-function committedSkillCost(entry) {
-  if (!entry) return null;
-  try {
-    return resolveCost(entry.skillId, entry.rank);
-  } catch {
-    return null;
-  }
-}
-
-function encounterSkillLegality(
-  state,
-  actorId,
-  skillState,
-  { turnAvailable, resolveEconomy = "free-basic-v1.4" },
-) {
-  const legality = skillLegality(skillState, {
-    turnAvailable,
-    resolveAvailable: state.actors[actorId]?.resolve,
-  });
-  if (!legality.ok) return legality;
-  const cost = resolveCost(skillState.id, skillState.rank);
-  if (resolveEconomy !== "per-round-v1.3"
-    && Number.isFinite(state.actors[actorId]?.resolve)
-    && cost > 0
-    && committedSkillCost(lastCommittedSkill(state, actorId)) > 0) {
-    return { ok: false, reason: "basic-recovery-required" };
-  }
-  return legality;
-}
-
-function regenerateResolve(state, closedRound, { resolveEconomy = "free-basic-v1.4" } = {}) {
+function regenerateResolve(state) {
   let next = state;
   const actorIds = [state.playerId, ...(state.allyIds || []), ...(state.enemyIds || [])];
   for (const actorId of actorIds) {
     const actor = next.actors[actorId];
     if (!actor || actor.hp <= 0 || !Number.isFinite(actor.resolve) || actor.resolveRegen <= 0) continue;
-    if (resolveEconomy !== "per-round-v1.3"
-      && committedSkillCost(lastCommittedSkill(next, actorId, closedRound)) !== 0) continue;
     const after = Math.min(actor.resolveMax, actor.resolve + actor.resolveRegen);
     const amount = after - actor.resolve;
     if (amount <= 0) continue;
@@ -1004,15 +963,15 @@ function enemySkillReserved(state, enemyId, skillState) {
   });
 }
 
-function availableEnemySchedule(state, enemyId, options = {}) {
+function availableEnemySchedule(state, enemyId) {
   const schedule = state.intentSchedules[enemyId];
   const build = state.enemyBuilds?.[enemyId];
   if (!schedule || !build) return schedule;
 
   const legal = build.skills.filter((skillState) => (
-    encounterSkillLegality(state, enemyId, skillState, {
+    skillLegality(skillState, {
       turnAvailable: true,
-      resolveEconomy: options.resolveEconomy,
+      resolveAvailable: state.actors[enemyId]?.resolve,
     }).ok
     && !enemySkillReserved(state, enemyId, skillState)
   ));
@@ -1111,14 +1070,14 @@ function reflowRoundFormations(state) {
  * group's declarations are reproducible and a foe added to the middle of a line-up cannot
  * silently re-roll the others.
  */
-function declareRoundIntents(state, options = {}) {
+function declareRoundIntents(state) {
   let next = state;
   let rng = state.intentRng;
   const intents = { ...state.intents };
 
   for (const enemyId of state.enemyIds) {
     const enemy = next.actors[enemyId];
-    const schedule = availableEnemySchedule(next, enemyId, options);
+    const schedule = availableEnemySchedule(next, enemyId);
     // A foe with no action index has nothing to telegraph, and a dead one has nothing left
     // to say. Both drop their declaration rather than keeping a stale one.
     if (!schedule || enemy.hp <= 0) {
@@ -1151,8 +1110,8 @@ function declareRoundIntents(state, options = {}) {
 }
 
 /** Move one foe's telegraph on to the next step of its rotation. */
-function advanceEnemyIntent(state, enemyId, options = {}) {
-  const schedule = availableEnemySchedule(state, enemyId, options);
+function advanceEnemyIntent(state, enemyId) {
+  const schedule = availableEnemySchedule(state, enemyId);
   const held = state.intents[enemyId];
   if (!held) return state;
   if (!schedule) {
@@ -2456,8 +2415,9 @@ export function combatSkillLegality(state, skillId, actorId = state.playerId) {
   if (!build) return { ok: false, reason: "unknown-actor" };
   const skillState = build.skills.find((entry) => entry.id === skillId);
   if (!skillState) return { ok: false, reason: "skill-not-held" };
-  const legality = encounterSkillLegality(state, actorId, skillState, {
+  const legality = skillLegality(skillState, {
     turnAvailable: actionsLeftFor(state, actorId) > 0,
+    resolveAvailable: actor.resolve,
   });
   if (!legality.ok) return legality;
   const definition = getSkill(skillId);
@@ -2474,13 +2434,12 @@ export function combatSkillLegality(state, skillId, actorId = state.playerId) {
 /**
  * Use one of the player's skills. Turn-free skills leave the primary action open.
  */
-function useSkillWithPolicy(
+export function useSkill(
   state,
   skillId,
   targetId = null,
   actorId = state.playerId,
   anchorCell = null,
-  options = {},
 ) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
   const actor = state.actors[actorId];
@@ -2493,9 +2452,9 @@ function useSkillWithPolicy(
   const index = build.skills.findIndex((entry) => entry.id === skillId);
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = build.skills[index];
-  const legality = encounterSkillLegality(state, actorId, skillState, {
+  const legality = skillLegality(skillState, {
     turnAvailable: actionsLeftFor(state, actorId) > 0,
-    resolveEconomy: options.resolveEconomy,
+    resolveAvailable: actor.resolve,
   });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
 
@@ -2528,16 +2487,6 @@ function useSkillWithPolicy(
   if (definition.consumesTurn) next = spendAction(next, actorId);
   next = applyResolvedSkillEffects(next, definition, skillState.rank, actorId, resolvedTargets);
   return { ok: true, reason: null, state: settle(next) };
-}
-
-export function useSkill(
-  state,
-  skillId,
-  targetId = null,
-  actorId = state.playerId,
-  anchorCell = null,
-) {
-  return useSkillWithPolicy(state, skillId, targetId, actorId, anchorCell, {});
 }
 
 /** Whether one carried combat consumable can be committed by this actor now. */
@@ -2910,15 +2859,15 @@ function resolveActorTurnEnd(state, actorId, { includeMisfortune = false } = {})
   return decayActorStatusesAtBoundary(damaged, actorId);
 }
 
-function useEnemySkill(state, enemyId, skillId, targetId, options = {}) {
+function useEnemySkill(state, enemyId, skillId, targetId) {
   const build = state.enemyBuilds?.[enemyId];
   const index = build?.skills.findIndex((entry) => entry.id === skillId) ?? -1;
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = build.skills[index];
   const enemy = state.actors[enemyId];
-  const legality = encounterSkillLegality(state, enemyId, skillState, {
+  const legality = skillLegality(skillState, {
     turnAvailable: true,
-    resolveEconomy: options.resolveEconomy,
+    resolveAvailable: enemy?.resolve,
   });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
   const definition = getSkill(skillId);
@@ -2954,7 +2903,7 @@ function useEnemySkill(state, enemyId, skillId, targetId, options = {}) {
  * End the player's turn: every living enemy acts, then boundary statuses tick, then the
  * round advances and cadence traits fire.
  */
-function endTurnWithPolicy(state, options = {}) {
+export function endTurn(state) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
 
   // Every living foe's declaration is checked against its own action index before anything
@@ -2969,9 +2918,9 @@ function endTurnWithPolicy(state, options = {}) {
       ? enemySkillState(state, enemyId, declared.skillId)
       : null;
     if (!declared || (declared.skillId && (
-      !skillState || !encounterSkillLegality(state, enemyId, skillState, {
+      !skillState || !skillLegality(skillState, {
         turnAvailable: true,
-        resolveEconomy: options.resolveEconomy,
+        resolveAvailable: enemy.resolve,
       }).ok
     ))) {
       return { ok: false, reason: "intent-desync", state };
@@ -3080,7 +3029,7 @@ function endTurnWithPolicy(state, options = {}) {
         const definition = getSkill(declared.skillId);
         const hasteBefore = statusCount(next.actors[enemyId].statuses, "haste");
         const priorityBefore = priorityAdvantageFor(next, enemyId);
-        const used = useEnemySkill(next, enemyId, declared.skillId, targetId, options);
+        const used = useEnemySkill(next, enemyId, declared.skillId, targetId);
         if (!used.ok) return { ok: false, reason: "intent-desync", state };
         const hasteAfter = statusCount(used.state.actors[enemyId].statuses, "haste");
         const priorityAfter = priorityAdvantageFor(used.state, enemyId);
@@ -3092,7 +3041,7 @@ function endTurnWithPolicy(state, options = {}) {
         // Advance from the declaration that was actually honoured. Availability is
         // evaluated after spending it, so a cooling-down Chi Liberation cannot be selected
         // repeatedly inside the newly-created Priority sequence.
-        next = advanceEnemyIntent(used.state, enemyId, options);
+        next = advanceEnemyIntent(used.state, enemyId);
         if (definition.consumesTurn) {
           if (spendingPriority) {
             next = consumeActorPriority(next, enemyId);
@@ -3140,7 +3089,7 @@ function endTurnWithPolicy(state, options = {}) {
         attackId: attack.id,
         hits: resolved.hits,
       });
-      if (declared) next = advanceEnemyIntent(next, enemyId, options);
+      if (declared) next = advanceEnemyIntent(next, enemyId);
       if (spendingPriority) {
         next = consumeActorPriority(next, enemyId);
         priorityRemaining = Math.max(0, priorityRemaining - 1);
@@ -3174,10 +3123,9 @@ function endTurnWithPolicy(state, options = {}) {
   for (const [enemyId, build] of Object.entries(next.enemyBuilds || {})) {
     tickedEnemyBuilds[enemyId] = { ...build, skills: build.skills.map(tickSkillCooldown) };
   }
-  const closedRound = next.round;
   next = {
     ...next,
-    round: closedRound + 1,
+    round: next.round + 1,
     build: {
       ...next.build,
       skills: next.build.skills.map(tickSkillCooldown),
@@ -3185,7 +3133,7 @@ function endTurnWithPolicy(state, options = {}) {
     allyBuilds: tickedAllyBuilds,
     enemyBuilds: tickedEnemyBuilds,
   };
-  next = regenerateResolve(next, closedRound, options);
+  next = regenerateResolve(next);
 
   // Cadence traits still fire before the action count is read, so a Swift proc this round is
   // an extra action this round rather than next. Moving formations reflow once afterwards,
@@ -3196,12 +3144,8 @@ function endTurnWithPolicy(state, options = {}) {
     next = reflowRoundFormations(next);
     next = retargetHeldIntents(next);
   }
-  next = declareRoundIntents(withFreshTurn(next), options);
+  next = declareRoundIntents(withFreshTurn(next));
   return { ok: true, reason: null, state: settle(next) };
-}
-
-export function endTurn(state) {
-  return endTurnWithPolicy(state, {});
 }
 
 /** Remaining combat resource; legacy encounters still report their captured charge total. */
