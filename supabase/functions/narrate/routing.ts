@@ -1,4 +1,4 @@
-export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731";
+export const DEFAULT_MODEL = "z-ai/glm-5.3-flash";
 export const DEFAULT_EFFORT = "max";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -10,6 +10,7 @@ export const NARRATOR_MODEL_IDS = [
   "openai/gpt-5.6-luna",
   "x-ai/grok-4.5",
   "openai/gpt-5.6-terra",
+  "z-ai/glm-5.3-flash",
   "moonshotai/kimi-k3",
 ] as const;
 
@@ -29,6 +30,7 @@ const MODEL_PRICE_CEILINGS = new Map<string, { prompt: number; completion: numbe
   ["openai/gpt-5.6-luna", { prompt: 0.2, completion: 0.9 }],
   ["x-ai/grok-4.5", { prompt: 4, completion: 12 }],
   ["openai/gpt-5.6-terra", { prompt: 2, completion: 9 }],
+  ["z-ai/glm-5.3-flash", { prompt: 0.075, completion: 0.25 }],
   ["moonshotai/kimi-k3", { prompt: 2.9, completion: 14 }],
 ]);
 
@@ -46,6 +48,7 @@ const MODEL_EFFORT_VALUES = new Map<string, Record<string, string>>([
   ["minimax/minimax-m3", { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" }],
   ["deepseek/deepseek-v4-flash-0731", { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" }],
   ["z-ai/glm-5.2", { low: "high", medium: "high", high: "high", xhigh: "xhigh", max: "xhigh" }],
+  ["z-ai/glm-5.3-flash", { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" }],
   ["x-ai/grok-4.5", { low: "low", medium: "medium", high: "high", xhigh: "high", max: "high" }],
   ["openai/gpt-5.6-luna", { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" }],
   ["openai/gpt-5.6-terra", { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" }],

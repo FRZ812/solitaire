@@ -12,16 +12,10 @@ import {
 } from "./continent.js";
 import { PROFESSIONS } from "./professions.js";
 import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
-import {
-  emptyMechanicsSidecar,
-  emptyTowMechanics,
-  hasMechanicsSidecar,
-} from "../engine/campaign-migration.js";
 import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./playable-roster.js";
 import { migrateProgressionState } from "../engine/progression.js";
 import { normalizeMemoryBank } from "../engine/memory.js";
 import { DEFAULT_NARRATOR_SETTINGS, normalizeNarratorSettings } from "../engine/narrator-settings.js";
-import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -202,18 +196,6 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             worn: [],
             knows: [],
             bodyWeight: 14, ridingOn: null, riders: [],
-          },
-          "threshold-voice": {
-            id: "threshold-voice",
-            kind: "npc",
-            name: "The Threshold Voice",
-            race: null,
-            profession: "limbo-guide",
-            age: null,
-            agingMode: "out-of-time",
-            description: "The patient, disembodied interviewer at the threshold between unbeing and Avarra.",
-            worn: [],
-            knows: [],
           },
 
           // Every ready-made creation character also lives somewhere in Avarra.
@@ -916,22 +898,6 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
       },
     },
     party: [], // recruited companion ids (full people in world.codex.characters)
-    // The production deterministic combat sidecar is campaign-owned so an
-    // accepted encounter survives autosave, reload, and device handoff.
-    activeCombatSession: null,
-    pendingCombatDirective: null,
-    pendingTravelCombat: null,
-    productionCombatSequence: 0,
-    combatSettlementReceipts: [],
-    // The Tower of Winter sidecar: the durable build, and the fight in progress. A fight
-    // used to live in component state, so it lasted exactly as long as the tab did.
-    mechanics: emptyMechanicsSidecar(),
-    // Prose the campaign owes and has not yet paid: settlement records the debt in the same
-    // commit as its receipt, so a crash between the two costs the scene and not the outcome.
-    presentationJobs: [],
-    // A reward earned and not yet chosen. Durable, so a win survives a reload with its
-    // offer intact rather than quietly evaporating.
-    pendingReward: null,
     portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
@@ -1013,41 +979,6 @@ function migrateWorldVersions(world) {
   };
 }
 
-const WANTED_BY_KEY = new Map(WANTED_POOL.map((person) => [person.key, person]));
-
-function wantedPersonForActiveBounty(quest) {
-  if (quest?.type !== "bounty" || quest.status !== "active") return null;
-  if (WANTED_BY_KEY.has(quest.targetKey)) return WANTED_BY_KEY.get(quest.targetKey);
-  const characterKey = typeof quest.targetCharacterId === "string"
-    ? quest.targetCharacterId.replace(/^wanted-/, "")
-    : null;
-  if (WANTED_BY_KEY.has(characterKey)) return WANTED_BY_KEY.get(characterKey);
-  return WANTED_POOL.find((person) => (
-    String(quest.id || "").endsWith(`-${person.key}`) || quest.target === person.name
-  )) || null;
-}
-
-function backfillActiveBountyTargets(world) {
-  const characters = world.codex?.characters;
-  if (!characters || !Array.isArray(world.quests)) return;
-  for (const quest of world.quests) {
-    const person = wantedPersonForActiveBounty(quest);
-    if (!person) continue;
-    const targetCharacterId = `wanted-${person.key}`;
-    if (!quest.targetKey) quest.targetKey = person.key;
-    if (!quest.targetCharacterId) quest.targetCharacterId = targetCharacterId;
-    const existing = characters[targetCharacterId];
-    if (!existing) {
-      characters[targetCharacterId] = wantedCodexEntry(person);
-      continue;
-    }
-    if (!existing.kind) existing.kind = "wanted";
-    if (typeof existing.portraitKey !== "string" || !existing.portraitKey.trim()) {
-      existing.portraitKey = `wanted:${person.key}`;
-    }
-  }
-}
-
 // Merge any codex entries that exist in the fresh initial state but are
 // missing from a loaded campaign — races, professions, named NPCs, etc.
 // added to initial-state.js after the campaign was created. The player's
@@ -1056,24 +987,6 @@ function backfillActiveBountyTargets(world) {
 export function migrateCodex(state) {
   if (!state?.world) return state;
   const next = JSON.parse(JSON.stringify(state));
-  if (next.activeCombatSession === undefined) next.activeCombatSession = null;
-  if (next.pendingCombatDirective === undefined) next.pendingCombatDirective = null;
-  if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
-  if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
-  if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
-  if (!Array.isArray(next.presentationJobs)) next.presentationJobs = [];
-  if (next.pendingReward === undefined) next.pendingReward = null;
-  // Backfilled in two steps because a campaign can predate either the sidecar or just its
-  // combat slot: the build migration shipped first and left the slot for this one.
-  if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
-  if (!next.mechanics.tow) next.mechanics = { ...next.mechanics, tow: emptyTowMechanics() };
-  if (
-    !Number.isSafeInteger(next.productionCombatSequence)
-    || next.productionCombatSequence < 0
-    || !Array.isArray(next.combatSettlementReceipts)
-  ) {
-    throw new RangeError("Invalid production combat campaign lineage.");
-  }
   migratePortraitOverrides(next);
   next.world = migrateLegacyWorldLocation(next.world);
   if (Array.isArray(next.turns)) {
@@ -1121,7 +1034,6 @@ export function migrateCodex(state) {
       if (!ownCodex[sub][k]) ownCodex[sub][k] = v;
     }
   }
-  backfillActiveBountyTargets(next.world);
   // One-time cleanup for saves made before the creation dedup fix: a self-fact
   // could be filed twice. Collapse every character's knowledge to unique facts.
   for (const ch of Object.values(ownCodex.characters || {})) {

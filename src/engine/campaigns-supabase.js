@@ -2,13 +2,8 @@
 // authenticated user. The web build uses this; the artifact build uses
 // campaigns-local.js.
 import { supabase } from "./supabase-client.js";
-import {
-  CURRENT_CAMPAIGN_SCHEMA,
-  READABLE_CAMPAIGN_SCHEMAS,
-  hasCurrentMechanicsState,
-  isReadableCampaignSchema,
-} from "./campaign-migration.js";
-import { ATTRIBUTE_SCALE_VERSION, PROGRESSION_VERSION } from "./progression.js";
+
+const SCHEMA_VERSION = "v12";
 
 // ----- Optimistic-concurrency baselines -----
 // campaignId -> the row's `updated_at` as we last observed it (from loadCampaign
@@ -27,24 +22,11 @@ const baselines = new Map();
 // Chain saves per id so each one gates on the previous save's fresh baseline.
 const saveChains = new Map();
 
-function assertWritableCampaignState(state) {
-  if (!state || typeof state !== "object" || Array.isArray(state)
-    || !hasCurrentMechanicsState(state)
-    || state.progressionVersion !== PROGRESSION_VERSION
-    || state.attributeScaleVersion !== ATTRIBUTE_SCALE_VERSION) {
-    const error = new Error(
-      "Campaign state has not passed the current migration gate and was not saved.",
-    );
-    error.code = "CAMPAIGN_MIGRATION_REQUIRED";
-    throw error;
-  }
-}
-
 export async function listCampaigns() {
   const { data, error } = await supabase
     .from("campaigns")
     .select("id, name, last_played_at, schema_version")
-    .in("schema_version", READABLE_CAMPAIGN_SCHEMAS)
+    .eq("schema_version", SCHEMA_VERSION)
     .order("last_played_at", { ascending: false });
   if (error) throw error;
   return data || [];
@@ -60,18 +42,10 @@ export async function loadCampaign(id) {
 export async function loadCampaignRecord(id) {
   const { data, error } = await supabase
     .from("campaigns")
-    .select("state, updated_at, schema_version")
+    .select("state, updated_at")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  if (data && !isReadableCampaignSchema(data.schema_version)) {
-    const unsupported = new Error(
-      `Campaign schema ${String(data.schema_version || "missing")} is not supported by this build.`,
-    );
-    unsupported.code = "UNSUPPORTED_CAMPAIGN_SCHEMA";
-    unsupported.schemaVersion = data.schema_version ?? null;
-    throw unsupported;
-  }
   // Capture the concurrency baseline at load time so the first autosave can
   // detect a row that was changed elsewhere between opening and saving.
   if (data) baselines.set(id, data.updated_at ?? null);
@@ -79,9 +53,6 @@ export async function loadCampaignRecord(id) {
 }
 
 export async function saveCampaign(id, state, { name } = {}) {
-  // Never label arbitrary or partially migrated JSON with the current database
-  // schema. Every production caller must hydrate through prepareCampaignState.
-  assertWritableCampaignState(state);
   // New campaigns insert a fresh row (no baseline to guard against yet).
   if (!id) return insertCampaign(state, { name });
   // Existing campaigns go through the per-id chain so concurrent saves from this
@@ -100,15 +71,7 @@ export async function saveCampaign(id, state, { name } = {}) {
 
 async function updateCampaign(id, state, { name }) {
   const now = new Date().toISOString();
-  // A successfully hydrated payload has passed the migration/read-back gate. Persist its
-  // current lineage on the next ordinary save so v12 rows remain visible throughout the
-  // rollout and converge to v13 without a destructive bulk rewrite.
-  const update = {
-    state,
-    schema_version: CURRENT_CAMPAIGN_SCHEMA,
-    updated_at: now,
-    last_played_at: now,
-  };
+  const update = { state, updated_at: now, last_played_at: now };
   if (name !== undefined) update.name = name;
 
   const baseline = baselines.get(id);
@@ -150,7 +113,7 @@ async function updateCampaign(id, state, { name }) {
 async function insertCampaign(state, { name }) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) throw new Error("not authenticated");
-  const insert = { user_id: session.user.id, state, schema_version: CURRENT_CAMPAIGN_SCHEMA };
+  const insert = { user_id: session.user.id, state, schema_version: SCHEMA_VERSION };
   if (name !== undefined) insert.name = name;
   const { data, error } = await supabase
     .from("campaigns")

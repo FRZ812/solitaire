@@ -276,7 +276,13 @@ export function applyTravelNarrationPresentation(state, beat) {
       truncated: index === story.length - 1 && !!beat._truncated,
     };
     return item.type === "beat"
-      ? { id: `n${stamp}-${index}`, type: "narration", content: item.text, ...shared }
+      ? {
+        id: `n${stamp}-${index}`,
+        type: "narration",
+        ...(item.actor_id ? { actorId: item.actor_id } : {}),
+        content: item.text,
+        ...shared,
+      }
       : {
         id: `d${stamp}-${index}`,
         type: "dialogue",

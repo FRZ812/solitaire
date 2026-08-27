@@ -2,6 +2,12 @@ import { itemTemplate } from "../data/catalog.js";
 import { MOUNTS } from "../data/mounts.js";
 import { CAPTIVE_POOL } from "../data/slaves.js";
 import { PRISONER_POOL } from "../data/gaol.js";
+
+import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
+import {
+  DEFAULT_MEMORY_POLICY,
+  validateMemoryProposal,
+} from "./narrator/memory-records.js";
 import {
   NARRATOR_CHARACTER_CUE_ACTIONS,
   NARRATOR_CHARACTER_CUE_MANNERS,
@@ -771,7 +777,7 @@ function isCompleteNewCharacter(character) {
     && character.knows.every((fact) => typeof fact === "string" && fact);
 }
 
-export function compileNarratorCandidate({ candidate, projection, turnPolicy, metadata = null }) {
+export function compileNarratorCandidate({ candidate, projection, turnPolicy, metadata = null, state = null }) {
   const violations = [];
   if (candidate?.contract_version !== projection?.contractVersion) {
     violations.push(violation(
@@ -1153,7 +1159,11 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         && (cue.target_id === null || TARGETABLE_CHARACTER_CUE_ACTIONS.has(cue.action))
         && (cue.manner === null || CHARACTER_CUE_MANNERS.has(cue.manner))
       ) {
-        story.push({ type: "beat", text: renderNarratorCharacterCue(cue, characters) });
+        story.push({
+          type: "beat",
+          actorId: cue.actor_id,
+          text: renderNarratorCharacterCue(cue, characters),
+        });
       }
       continue;
     }
@@ -1199,6 +1209,61 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     ));
   }
 
+  let acceptedReceiptIds = state ? [] : null;
+  if (violations.length === 0 && state) {
+    try {
+      const governed = resolveNarratorIntents(state, candidate, {
+        stateRevision: projection.stateRevision,
+        route: turnPolicy?.id ?? null,
+        turnPolicy,
+      });
+      acceptedReceiptIds = governed.receipts
+        .filter(({ status }) => status === "applied" || status === "passed-through")
+        .map(({ id }) => id);
+      for (const refusal of governed.refusals) {
+        violations.push(violation(
+          "OWNER_REFUSAL",
+          `/${refusal.field}`,
+          `Engine owner rejected ${refusal.field}: ${refusal.reason}.`,
+        ));
+      }
+    } catch {
+      violations.push(violation(
+        "OWNER_VALIDATION_FAILED",
+        "/",
+        "The engine could not validate this response atomically.",
+      ));
+    }
+  }
+
+  const trustedMemoryProposals = [];
+  if (metadata && Object.prototype.hasOwnProperty.call(metadata, "memoryProposals")) {
+    if (!Array.isArray(metadata.memoryProposals)) {
+      violations.push(violation(
+        "MEMORY_PROVENANCE",
+        "/_memoryProposals",
+        "Typed memory proposals must be a list.",
+      ));
+    } else {
+      const knownSubjectIds = [...Object.keys(characters), "campaign"];
+      metadata.memoryProposals.forEach((proposal, index) => {
+        const checked = validateMemoryProposal(proposal, DEFAULT_MEMORY_POLICY, {
+          knownSubjectIds,
+          acceptedReceiptIds,
+        });
+        if (!checked.ok) {
+          violations.push(violation(
+            "MEMORY_PROVENANCE",
+            `/_memoryProposals/${index}`,
+            "Memory proposal evidence or subjects were not accepted by the engine.",
+          ));
+        } else {
+          trustedMemoryProposals.push(checked.proposal);
+        }
+      });
+    }
+  }
+
   if (violations.length) return { ok: false, violations };
   const trustedMetadata = metadata ? {
     _raw: metadata.raw,
@@ -1213,10 +1278,11 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     // They are minted only now, on a candidate that has passed every check above — which is
     // what makes "a rejected turn persists nothing" true rather than hoped for: an attempt
     // that fails validation returns above and never reaches this line.
-    _memories: metadata.memories,
-    _memoryProposals: metadata.memoryProposals,
+    _memories: trustedMemoryProposals.map(({ text }) => text),
+    _memoryProposals: trustedMemoryProposals,
   } : {};
   let materializedCandidate = candidate;
+  let materializedPolicy = turnPolicy;
   if (assassination?.outcome === "detected-combat") {
     const target = characters[assassination.target_id];
     materializedCandidate = {
@@ -1235,13 +1301,18 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         note: `${target.name || assassination.target_id} survives the assassination attempt and fights back.`,
       },
     };
+    materializedPolicy = {
+      ...(turnPolicy || {}),
+      allowedEffects: [...new Set([...(turnPolicy?.allowedEffects || []), "start_combat"])],
+    };
   }
+
   return {
     ok: true,
     turn: mintCompiledTurn(
       { ...materializedCandidate, story, discoveries, ...trustedMetadata },
       projection,
-      turnPolicy,
+      materializedPolicy,
     ),
   };
 }

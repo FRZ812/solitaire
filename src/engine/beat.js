@@ -62,7 +62,13 @@ export function applyBeat(state, beat, options = {}) {
       truncated: index === story.length - 1 && !!beat._truncated,
     };
     if (item.type === "beat") {
-      newBeats.push({ id: `n${storyStamp}-${index}`, type: "narration", content: item.text, ...shared });
+      newBeats.push({
+        id: `n${storyStamp}-${index}`,
+        type: "narration",
+        ...(item.actor_id ? { actorId: item.actor_id } : {}),
+        content: item.text,
+        ...shared,
+      });
     } else {
       newBeats.push({
         id: `d${storyStamp}-${index}`,

@@ -49,3 +49,22 @@ rc[0-9]*-debug.txt
 envcheck.txt
 status-debug-log.txt
 System.Management.Automation.Internal.Host.InternalHost
+
+# Local agent/runtime configuration and generated working sets.
+.agents/
+.codex/
+.tmp/
+Temp Assets/
+NUL
+NUL-shm
+NUL-wal
+**/__pycache__/
+
+# Rendered QA and audit outputs; source harnesses/scripts remain tracked.
+tmp/ability-semantic-audit/
+tmp/combat-ux-probe/
+tmp/*contact-sheet.png
+tmp/south-working-fresh-alpha.png
+
+# Explicitly rejected portrait candidate retained only for local comparison.
+src/assets/generated/character-portraits/codex-individual/special/threshold-voice-portrait-v2-rejected-colored-outline.png

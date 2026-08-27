@@ -28,6 +28,7 @@ import {
   selectedPortraitVariantNumber,
 } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import { characterDossierBackground } from "./character-dossier-background.js";
 import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
 import {
@@ -38,6 +39,10 @@ import {
 } from "../data/progression-paths.js";
 import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
 import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
+import {
+  REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES,
+  REPURPOSED_CODEX_PORTRAIT_IDENTITIES,
+} from "./character-portrait-roster.js";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 
 const progressionLevel = progressionEngine.progressionLevel;
@@ -78,7 +83,11 @@ const CODEX_TABS = [
   { key: "glossary",    label: "Glossary",    group: "reference",  column: 1, row: 2 },
 ];
 
-const IMPORTANT_CHARACTER_IDS = new Set(CODEX_PORTRAIT_IDS);
+const IMPORTANT_CHARACTER_IDS = new Set([
+  ...CODEX_PORTRAIT_IDS,
+  ...REPURPOSED_CODEX_PORTRAIT_IDENTITIES.map(({ id }) => id),
+  ...REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES.map(({ id }) => id),
+]);
 
 // Reusable styles inside this view.
 const subtleMeta = {
@@ -119,6 +128,10 @@ function CharacterPortrait({ entry, portraitOverride, detail = false }) {
   const atlasPortrait = !portrait ? resolveCodexPortrait(entry) : null;
   const detailPortrait = detail && !imageFailed ? atlasPortrait?.detailSrc : null;
   const resolvedImage = portrait || detailPortrait;
+  const backdrop = characterDossierBackground(entry);
+  const customPortrait = typeof portraitOverride === "string"
+    && portraitOverride.trim()
+    && !isPortraitVariantToken(portraitOverride);
   return (
     <div
       className={`codex-entry__portrait${resolvedImage ? " has-image" : atlasPortrait ? " has-atlas" : " is-placeholder"}`}
@@ -129,8 +142,18 @@ function CharacterPortrait({ entry, portraitOverride, detail = false }) {
       role={!resolvedImage && !atlasPortrait ? "img" : undefined}
       aria-label={!resolvedImage && !atlasPortrait ? `${entry.name} portrait placeholder` : undefined}
     >
+      <img
+        className="codex-entry__portrait-backdrop"
+        src={backdrop}
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+        loading={detail ? "eager" : "lazy"}
+        decoding="async"
+        data-dossier-background-for={entry.id}
+      />
       {resolvedImage
-        ? <img src={resolvedImage} alt={`${entry.name} portrait`} draggable="false" loading={detail ? "eager" : "lazy"} decoding="async" onError={() => setImageFailed(true)} />
+        ? <img className={`codex-entry__portrait-figure${customPortrait ? " is-custom" : ""}`} src={resolvedImage} alt={`${entry.name} portrait`} draggable="false" loading={detail ? "eager" : "lazy"} decoding="async" onError={() => setImageFailed(true)} />
         : atlasPortrait
           ? <AtlasIcon src={atlasPortrait.atlas} columns={atlasPortrait.grid.columns} rows={atlasPortrait.grid.rows} column={atlasPortrait.cell.column} row={atlasPortrait.cell.row} size="100%" shape="portrait" label={`${entry.name} portrait`} iconKey={`codex-portrait:${entry.id}`} className="codex-entry__portrait-sprite" />
           : <><Icon name={entry.kind === "mount" ? "compass" : "user"} size={25} strokeWidth={1.25} /><strong>{portraitInitials(entry.name)}</strong></>}
