@@ -273,11 +273,11 @@ describe("the simple grid-to-preview flow", () => {
     expect(metadata).toBeTruthy();
     expect(metadata.classList.contains("ability-tactical-meta")).toBe(true);
     expect(metadata.querySelectorAll(".ability-tactical-meta__role")).toHaveLength(3);
-    expect(metadata.querySelector(".ability-tactical-meta__cost").textContent).toBe("4 Resolve");
+    expect(metadata.querySelector(".ability-tactical-meta__cost").textContent).toBe("5 Resolve");
     expect(metadata.querySelector(".ability-tactical-meta__target").textContent)
       .toBe("One party member");
     expect(metadata.textContent)
-      .toBe("4 Resolve · Guard / control + Empower + Cleanse · One party member · uses action");
+      .toBe("5 Resolve · Guard / control + Empower + Cleanse · One party member · uses action");
     expect(metadata.getAttribute("aria-label")).toBe(metadata.textContent);
   });
 

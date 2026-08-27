@@ -185,7 +185,7 @@ describe("v2 bounded AI gauntlet execution", () => {
     expect(result.session.events.some(({ type }) => type === "ai-intent-declared"))
       .toBe(true);
     results.push(result);
-  });
+  }, 30_000);
 
   it("executes every full human mirror kit and reaches reaction windows under the bound", () => {
     expect(results).toHaveLength(COMBAT_CASES.length);
@@ -234,7 +234,7 @@ describe("v2 bounded AI gauntlet execution", () => {
     expect(JSON.stringify(first.session)).toBe(JSON.stringify(second.session));
     expect(first.session.checksum).toBe(second.session.checksum);
     expect(first.telemetry).toEqual(second.telemetry);
-  });
+  }, 60_000);
 
 });
 

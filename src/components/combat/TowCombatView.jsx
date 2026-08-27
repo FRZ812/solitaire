@@ -5,6 +5,7 @@ import { Icon } from "../Icon.jsx";
 import {
   combatSkillLegality,
   combatItemLegality,
+  controlNullifiesActor,
   declaredIntents,
   priorityAdvantageFor,
   retreatOdds,
@@ -21,7 +22,6 @@ import {
   usesPerAct,
 } from "../../gameplay/tow/skills.js";
 import { abilityTargeting, presentationTier } from "../../gameplay/tow/ability-targeting.js";
-import { combatPolicyClausesForSkill } from "../../gameplay/tow/combat-policy.js";
 import {
   encounterFormations,
   formationCellForActor,
@@ -180,7 +180,6 @@ export function towSkillDetail(definition, skillState, weaponPresentation = null
     effectDetail(definition, effect, index, skillState.rank)
   ));
   if (definition.note) effects.push(definition.note.replace(/-/g, " "));
-  effects.push(...combatPolicyClausesForSkill(definition));
   effects.push(...skillContractClauses(definition));
   return effects.join(" · ") || "No immediate combat effect";
 }
@@ -530,6 +529,9 @@ function CombatantDossier({ actor, art, abilityRows, onClose }) {
   const stats = [
     ["HP", `${actor.hp}/${actor.maxHp}`],
     ...(hasResolve ? [["Resolve", `${actor.resolve}/${actor.resolveMax}`]] : []),
+    ...(hasResolve && Number.isFinite(actor.resolveRegen)
+      ? [["Resolve recovery", `${actor.resolveRegen}/round`]]
+      : []),
     ["Ward", actor.shield || 0],
     ["Attack", actor.stats?.attack ?? 0],
     ["Defense", actor.stats?.defense ?? 0],
@@ -1192,7 +1194,7 @@ export function TowCombatView({
     (most, enemy) => Math.max(most, priorityAdvantageFor(encounter, enemy.id)),
     0,
   );
-  const forcedWindow = activeControl
+  const forcedWindow = activeControl && controlNullifiesActor(encounter, activeCommander.id)
     ? { kind: "control", label: activeControl.type.replace(/\b\w/g, (letter) => letter.toUpperCase()) }
     : hostilePriority > 0
       ? { kind: "priority", label: `Enemy Priority ${hostilePriority}` }

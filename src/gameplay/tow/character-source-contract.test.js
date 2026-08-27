@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  CHARACTER_ABILITY_ADAPTATION_TYPES,
   CHARACTER_ABILITIES,
   TOW_STATUS_ID_TO_TYPE,
   describeCharacterAbilityEffect,
@@ -291,6 +292,27 @@ function expectedDefinition(row) {
   };
 }
 
+const MAGNITUDE_KEYS = Object.freeze(["percentByRank", "countByRank", "factorByRank"]);
+const EXPLICIT_ADAPTATION_SOURCE_IDS = Object.freeze({
+  "source-shape": Object.freeze([1031206]),
+  "encounter-scale": Object.freeze([1030820, 1030823]),
+  "resolve-generation": Object.freeze([1030316, 1030914, 1031223]),
+  "mythical-signature": Object.freeze([
+    1030122, 1030123, 1030222, 1030223, 1030322, 1030522, 1030523, 1030619, 1030723,
+  ]),
+});
+
+function effectShape(effect) {
+  const shape = { ...effect };
+  for (const key of MAGNITUDE_KEYS) delete shape[key];
+  return shape;
+}
+
+function magnitudeTable(effect) {
+  const key = MAGNITUDE_KEYS.find((candidate) => Array.isArray(effect[candidate]));
+  return key ? { key, values: effect[key] } : null;
+}
+
 describe("shipped character ability source contract", () => {
   it("pins the exact generated source tables used for this proof", () => {
     expect(TOW_CHARACTER_ABILITY_SOURCE_ROWS).toHaveLength(276);
@@ -301,7 +323,7 @@ describe("shipped character ability source contract", () => {
       .toBe("58b72aa06c464d0e27865913d8d319d37e1eba575ab450a26408f77d45e0bbf7");
   });
 
-  it("compiles every raw tuple into the independently expected ranked contract", () => {
+  it("keeps direct rows exact and proves each adapted row against its declared boundary", () => {
     const failures = [];
     let ranks = 0;
     let effects = 0;
@@ -313,15 +335,45 @@ describe("shipped character ability source contract", () => {
       effects += expected.effects.length;
       effectRanks += expected.effects.length * expected.rankCount;
       try {
-        expect(actual).toMatchObject(expected);
+        const { effects: expectedEffects, ...expectedMetadata } = expected;
+        expect(actual).toMatchObject(expectedMetadata);
         expect(actual.description).toBe(
-          `${expected.effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`,
+          `${actual.effects.map((effect) => describeCharacterAbilityEffect(effect)).join("; ")}.`,
         );
         expect(actual.source).toMatchObject({
           sourceId: row[0],
           characterId: row[2],
-          fidelity: row[0] === 1031206 ? "adapted" : "direct",
+          fidelity: actual.source.adaptations.length > 0 ? "adapted" : "direct",
+          adaptations: expect.any(Array),
         });
+        expect(actual.source.adaptations.every((id) => (
+          CHARACTER_ABILITY_ADAPTATION_TYPES.includes(id)
+        ))).toBe(true);
+
+        if (actual.source.adaptations.length === 0) {
+          expect(actual.effects).toEqual(expectedEffects);
+        } else if (actual.source.adaptations.every((id) => id === "functional-promotions")) {
+          expect(actual.effects.map(effectShape)).toEqual(expectedEffects.map(effectShape));
+          expect(actual.effects).toHaveLength(expectedEffects.length);
+          for (const [index, sourceEffect] of expectedEffects.entries()) {
+            const sourceTable = magnitudeTable(sourceEffect);
+            const actualTable = magnitudeTable(actual.effects[index]);
+            expect(actualTable?.key).toBe(sourceTable?.key);
+            if (sourceTable) {
+              expect(actualTable.values).toHaveLength(expected.rankCount);
+              const fullRemovalProgression = sourceEffect.type === "scale-status"
+                && sourceTable.values.every((value) => value === 0);
+              if (fullRemovalProgression) {
+                expect(actualTable.values.at(-1)).toBe(0);
+                expect(actualTable.values.every((value, at, values) => (
+                  at === 0 || value <= values[at - 1]
+                ))).toBe(true);
+              } else {
+                expect(actualTable.values[0]).toBe(sourceTable.values[0]);
+              }
+            }
+          }
+        }
       } catch (error) {
         failures.push(`${expected.id}: ${error.message}`);
       }
@@ -331,18 +383,20 @@ describe("shipped character ability source contract", () => {
     expect(failures, failures.join("\n")).toEqual([]);
   });
 
-  it("permits only the two explicit source-shape translations", () => {
-    const structuralTranslations = TOW_CHARACTER_ABILITY_SOURCE_ROWS
-      .filter(([sourceId]) => [1030820, 1031206].includes(sourceId))
-      .map(([, id]) => id);
-    const adaptedFidelity = Object.values(CHARACTER_ABILITIES)
-      .filter((ability) => ability.source.fidelity === "adapted")
-      .map((ability) => ability.id);
-    expect(structuralTranslations).toEqual([
-      "witch-forbidden-ritual",
-      "automaton-interception",
-    ]);
-    expect(adaptedFidelity).toEqual(["automaton-interception"]);
+  it("pins the complete machine-readable adaptation manifest", () => {
+    for (const [adaptation, sourceIds] of Object.entries(EXPLICIT_ADAPTATION_SOURCE_IDS)) {
+      expect(Object.values(CHARACTER_ABILITIES)
+        .filter((ability) => ability.source.adaptations.includes(adaptation))
+        .map((ability) => ability.source.sourceId)
+        .sort((left, right) => left - right))
+        .toEqual([...sourceIds].sort((left, right) => left - right));
+    }
+    const manifest = Object.values(CHARACTER_ABILITIES)
+      .filter((ability) => ability.source.adaptations.length > 0)
+      .map((ability) => ({ id: ability.id, adaptations: ability.source.adaptations }));
+    expect(manifest).toHaveLength(139);
+    expect(createHash("sha256").update(JSON.stringify(manifest)).digest("hex"))
+      .toBe("6a9736ba6d2b7cdb403af9a68f8be335e47ac20b7acc3c7588d7b47441928382");
   });
 
   it("resolves every source status id and every factor-status id to a runtime type", () => {

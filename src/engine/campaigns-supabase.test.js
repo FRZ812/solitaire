@@ -93,7 +93,13 @@ describe("campaigns optimistic-concurrency guard", () => {
       level: 31,
     };
     legacy.mechanics.bootstrapId = "0123456789abcdef";
-    legacy.mechanics.build = { version: 1, marker: "keep-build" };
+    legacy.mechanics.build = {
+      version: 1,
+      professionId: "fighter",
+      traits: { ironclad: 1 },
+      skills: ["strike", "block"],
+      runes: [],
+    };
     legacy.mechanics.tow.activeCombat = null;
     legacy.mechanics.tow.readiness = { strike: 2 };
     legacy.mechanics.tow.companionReadiness = { ally: { block: 1 } };
@@ -109,7 +115,13 @@ describe("campaigns optimistic-concurrency guard", () => {
 
     expect(prepared.mechanics).toMatchObject({
       bootstrapId: "0123456789abcdef",
-      build: { version: 1, marker: "keep-build" },
+      build: {
+        version: 2,
+        professionId: "fighter",
+        traits: { ironclad: 1 },
+        skills: [{ id: "strike", rank: 1 }, { id: "block", rank: 1 }],
+        runes: [],
+      },
       tow: {
         activeCombat: null,
         readiness: { strike: 2 },
@@ -239,6 +251,15 @@ describe("campaigns optimistic-concurrency guard", () => {
     const futureFormation = writableState(4);
     futureFormation.mechanics.tow.formation = { version: 2, cells: Array(9).fill(null) };
     await expect(saveCampaign("future-formation", futureFormation)).rejects.toMatchObject({
+      code: "CAMPAIGN_MIGRATION_REQUIRED",
+    });
+
+    const malformedReward = writableState(5);
+    malformedReward.pendingReward = {
+      rulesetId: "solitaire-tow-v1.3",
+      candidates: null,
+    };
+    await expect(saveCampaign("malformed-reward", malformedReward)).rejects.toMatchObject({
       code: "CAMPAIGN_MIGRATION_REQUIRED",
     });
     expect(h.state.recorded).toEqual([]);

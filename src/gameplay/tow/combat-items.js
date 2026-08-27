@@ -24,7 +24,12 @@ function combatItem(id, effect) {
 
 export const STARTING_COMBAT_ITEMS = Object.freeze([
   combatItem("crimson-vial", { type: "heal-max-percent", percent: 25, target: "self" }),
-  combatItem("lucid-tonic", { type: "restore-resolve", amount: 3, target: "self" }),
+  combatItem("lucid-tonic", {
+    type: "restore-resolve",
+    amount: 3,
+    regenMinimum: 2,
+    target: "self",
+  }),
   combatItem("warding-ash", { type: "shield-defense-percent", percent: 150, target: "self" }),
   combatItem("fire-pot", { type: "damage-attack-percent", percent: 150, target: "enemy" }),
 ]);
@@ -99,7 +104,12 @@ export function describeCombatItemEffect(itemOrId) {
   const effect = item?.effect;
   if (!effect) return "No combat effect";
   if (effect.type === "heal-max-percent") return `Restore ${effect.percent}% max HP`;
-  if (effect.type === "restore-resolve") return `Restore ${effect.amount} Resolve`;
+  if (effect.type === "restore-resolve") {
+    const recovery = effect.regenMinimum
+      ? ` · raise recovery to ${effect.regenMinimum} Resolve/round`
+      : "";
+    return `Restore ${effect.amount} Resolve${recovery}`;
+  }
   if (effect.type === "shield-defense-percent") return `Raise ${effect.percent}% DEF ward`;
   if (effect.type === "damage-attack-percent") return `Strike for ${effect.percent}% ATK`;
   return "Unknown combat effect";

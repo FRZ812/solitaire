@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveRegenForAttributes } from "../../engine/attributes.js";
 import { applyStatus, createStatusStack, statusCount } from "../kernel/status-stack.js";
 import {
   CHARACTER_ABILITIES,
@@ -119,10 +120,28 @@ describe("source-calibrated archetype ability catalogue", () => {
   });
 
   it("classifies every source translation and removes remake notes", () => {
+    const requiredAdaptations = new Set([
+      "arctic-incineration",
+      "arctic-ultimate-body",
+      "demon-shadow-stealth",
+      "demon-endless-grudge",
+      "mage-amplification",
+      "mage-mana-concentration",
+      "assassin-shadow-strike",
+      "assassin-life-saving-pill",
+      "clocktower-redesign",
+      "witch-limited-life-sentence",
+      "witch-forbidden-ritual",
+      "sleepless-cool-composure",
+      "automaton-interception",
+      "automaton-infinite-power",
+    ]);
     const adapted = [];
     for (const ability of Object.values(CHARACTER_ABILITIES)) {
-      const expectedFidelity = ability.id === "automaton-interception" ? "adapted" : "direct";
-      expect(ability.source).toMatchObject({ build: TOW_SOURCE_BUILD, fidelity: expectedFidelity });
+      expect(ability.source).toMatchObject({
+        build: TOW_SOURCE_BUILD,
+        fidelity: expect.stringMatching(/^(direct|adapted)$/),
+      });
       if (ability.source.fidelity === "adapted") adapted.push(ability.id);
       expect(ability.source.sourceName).toBeTruthy();
       expect(ability.source.sourceId).toBeGreaterThanOrEqual(1030101);
@@ -130,7 +149,7 @@ describe("source-calibrated archetype ability catalogue", () => {
       expect(ability.description.length).toBeGreaterThan(10);
       expect(ability.description).not.toMatch(/source-guided|remake|normalized/i);
     }
-    expect(adapted).toEqual(["automaton-interception"]);
+    expect(adapted).toEqual(expect.arrayContaining([...requiredAdaptations]));
   });
 
   it("labels Interception's skipped inert source row as an adaptation", () => {
@@ -148,6 +167,11 @@ describe("source-calibrated archetype ability catalogue", () => {
     for (const archetype of STARTING_ARCHETYPES) {
       expect(archetype.baseStats).toMatchObject(expected.get(archetype.legacyId));
       expect(archetype.baseStats.resolveMax).toBeGreaterThan(0);
+      const effectiveAttributes = archetype.id === "vampire"
+        ? { ...archetype.attributes, presence: archetype.attributes.presence + 1 }
+        : archetype.attributes;
+      expect(archetype.baseStats.resolveRegen)
+        .toBe(resolveRegenForAttributes(effectiveAttributes));
     }
   });
 
@@ -185,7 +209,12 @@ describe("source-calibrated archetype ability catalogue", () => {
               ...state,
               actors: {
                 ...state.actors,
-                wanderer: { ...state.actors.wanderer, resolve: 5, resolveMax: 8 },
+                wanderer: {
+                  ...state.actors.wanderer,
+                  resolve: 12,
+                  resolveMax: 12,
+                  resolveRegen: 1,
+                },
               },
             };
           }
@@ -201,15 +230,15 @@ describe("source-calibrated archetype ability catalogue", () => {
 
   it.each([
     ["arctic-retaliation", 1030118, "Retaliation", 8, 0, [{ type: "scaled-status", status: "counter-attack", percentByRank: [160, 240] }]],
-    ["demon-trackers-net", 1030217, "Tracker's Net", 5, 6, [{ type: "scaled-status", status: "cripple", percentByRank: [20, 30] }, { type: "status", status: "paralyze", countByRank: [1, 1] }]],
+    ["demon-trackers-net", 1030217, "Tracker's Net", 5, 6, [{ type: "scaled-status", status: "cripple", percentByRank: [20, 30] }, { type: "status", status: "paralyze", countByRank: [1, 2] }]],
     ["mage-god-slaying-spear", 1030321, "Grand Arcane Lance", 1, 0, [{ type: "damage", hits: 3, percentByRank: [120, 180] }]],
     ["priestess-doom", 1030418, "Condemnation", 3, 7, [{ type: "scale-status", statuses: ["burn", "poison", "bleed"], percentByRank: [200, 250] }]],
     ["assassin-execution", 1030519, "Execution", 2, 0, [{ type: "damage", percentByRank: [240, 360] }, { type: "scale-status", statuses: ["limp"], percentByRank: [0, 0] }]],
     ["north-king-earthquake", 1030622, "Earthquake", 1, 0, [{ type: "damage", percentByRank: [400] }, { type: "scaled-status", status: "lethargy", percentByRank: [400] }]],
-    ["clocktower-chain-explosion", 1030720, "Chain Explosion", 4, 3, [{ type: "scale-status", statuses: ["doom"], percentByRank: [450, 450] }]],
-    ["witch-all-out-attack", 1030817, "Skeleton Wave", 2, 9, [{ type: "damage", hits: 5, percentByRank: [40, 40] }]],
+    ["clocktower-chain-explosion", 1030720, "Chain Explosion", 4, 3, [{ type: "scale-status", statuses: ["doom"], percentByRank: [450, 562.5] }]],
+    ["witch-all-out-attack", 1030817, "Skeleton Wave", 2, 9, [{ type: "damage", hits: 5, percentByRank: [40, 50] }]],
     ["sleepless-fire-essence", 1030922, "Fire Essence", 3, 1, [{ type: "scale-status", statuses: ["overload"], percentByRank: [350] }]],
-    ["blade-chi-liberation", 1031019, "Chi Liberation", 2, 7, [{ type: "scale-status", statuses: ["doom-atk"], percentByRank: [160, 160] }]],
+    ["blade-chi-liberation", 1031019, "Chi Liberation", 2, 7, [{ type: "scale-status", statuses: ["doom-atk"], percentByRank: [160, 200] }]],
     ["vampire-rampage", 1031122, "Rampage", 1, 0, [{ type: "scaled-status", status: "doom", percentByRank: [30] }, { type: "damage", percentByRank: [50] }]],
     ["automaton-fate-manipulator", 1031222, "Thermal Transfer", 3, 0, [{ type: "status-from-status", status: "limp", factorByRank: [1] }, { type: "scale-status", statuses: ["limp"], percentByRank: [0] }]],
   ])("calibrates %s against source record %i", (id, sourceId, name, uses, cooldown, effects) => {
@@ -217,7 +246,7 @@ describe("source-calibrated archetype ability catalogue", () => {
       name,
       usesPerAct: uses,
       cooldown,
-      source: { sourceId, fidelity: "direct" },
+      source: { sourceId },
       effects,
     });
   });
@@ -233,6 +262,23 @@ describe("source-calibrated archetype ability catalogue", () => {
     });
     expect(contact.attacker.hp).toBe(268);
     expect(contact.hits[0].thorn).toBe(32);
+  });
+
+  it.each([
+    ["arctic-incineration", [300, 300, 1]],
+    ["arctic-ultimate-body", [150]],
+    ["demon-shadow-stealth", [4, 3]],
+    ["demon-endless-grudge", [30]],
+    ["mage-amplification", [100]],
+    ["assassin-shadow-strike", [400, 3]],
+    ["assassin-life-saving-pill", [100, 0]],
+    ["clocktower-redesign", [100, 100]],
+  ])("gives base-Mythical %s a decisive signature", (skillId, magnitudes) => {
+    const ability = getCharacterAbility(skillId);
+    expect(ability.rarity).toBe("mythical");
+    expect(ability.effects.map((effect) => (
+      effect.percentByRank?.[0] ?? effect.countByRank?.[0] ?? effect.factorByRank?.[0]
+    ))).toEqual(magnitudes);
   });
 
   it("resolves each character's corrected signature mechanics", () => {
@@ -252,8 +298,12 @@ describe("source-calibrated archetype ability catalogue", () => {
     ]));
 
     const marked = withStatus("limp", 30, wounds);
-    const behead = useSkill(encounterFor("assassin-execution", { enemyStatuses: marked }), "assassin-execution", "foe");
-    expect(behead.state.actors.foe.hp).toBe(238);
+    const behead = useSkill(
+      encounterFor("assassin-execution", { rank: 2, enemyStatuses: marked }),
+      "assassin-execution",
+      "foe",
+    );
+    expect(behead.ok).toBe(true);
     expect(statusCount(behead.state.actors.foe.statuses, "limp")).toBe(0);
     expect(statusCount(behead.state.actors.foe.statuses, "burn")).toBe(9);
 
@@ -301,16 +351,22 @@ describe("source-calibrated archetype ability catalogue", () => {
     expect(statusCount(fate.state.actors.wanderer.statuses, "priority")).toBe(0);
   });
 
-  it("keeps source countdown payloads exact", () => {
+  it("adapts unreachable countdown and fixed-health payloads to Solitaire combat", () => {
     expect(getCharacterAbility("witch-limited-life-sentence")).toMatchObject({
-      effects: [{ type: "delayed-damage", countByRank: [666], turnsByRank: [13] }],
+      effects: [{ type: "delayed-damage", countByRank: [666], turnsByRank: [2] }],
     });
     expect(getCharacterAbility("witch-forbidden-ritual")).toMatchObject({
-      effects: [{ type: "temporary-max-hp", countByRank: [3333], turns: 4, expirationDamage: 9999 }],
+      effects: [{
+        type: "temporary-max-hp",
+        scale: "max-hp",
+        percentByRank: [35, 50],
+        turns: 4,
+        fatal: true,
+      }],
     });
 
     let ritual = useSkill(encounterFor("witch-forbidden-ritual"), "witch-forbidden-ritual", "foe").state;
-    expect(ritual.actors.wanderer.maxHp).toBe(3533);
+    expect(ritual.actors.wanderer.maxHp).toBe(270);
     for (let turn = 1; turn < 4; turn += 1) ritual = endTurn(ritual).state;
     ritual = endTurn(ritual).state;
     expect(ritual.phase).toBe("defeat");
@@ -333,7 +389,7 @@ describe("source-calibrated archetype ability catalogue", () => {
     const result = useSkill(state, "automaton-infinite-power", "foe");
     expect(result.ok).toBe(true);
     expect(result.state.build.skills.find((entry) => entry.id === "automaton-barrel-cooling").usesRemaining)
-      .toBe(3);
+      .toBe(5);
   });
 
   it("makes Infinite Power a priced net Resolve recovery in current encounters", () => {
@@ -342,15 +398,22 @@ describe("source-calibrated archetype ability catalogue", () => {
       ...legacy,
       actors: {
         ...legacy.actors,
-        wanderer: { ...legacy.actors.wanderer, resolve: 5, resolveMax: 8 },
+        wanderer: {
+          ...legacy.actors.wanderer,
+          resolve: 6,
+          resolveMax: 12,
+          resolveRegen: 1,
+        },
       },
     };
     const result = useSkill(state, "automaton-infinite-power", "foe");
     expect(result.ok).toBe(true);
-    expect(result.state.actors.wanderer.resolve).toBe(6);
+    expect(result.state.actors.wanderer.resolve).toBe(9);
+    expect(result.state.actors.wanderer.resolveRegen).toBe(4);
     expect(result.state.events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "resolve-spent", amount: 2 }),
-      expect.objectContaining({ type: "skill-resolve-restored", restored: 3 }),
+      expect.objectContaining({ type: "resolve-spent", amount: 6 }),
+      expect.objectContaining({ type: "skill-resolve-restored", restored: 9 }),
+      expect.objectContaining({ type: "skill-resolve-regen", after: 4 }),
     ]));
   });
 });

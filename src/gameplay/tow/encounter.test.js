@@ -266,7 +266,7 @@ describe("using skills", () => {
     expect(strike.state.actors["arctic-knight"].resolve).toBe(5);
   });
 
-  it("caps source-scale direct damage against Solitaire-sized health pools", () => {
+  it("keeps source-scale direct damage unchanged against peer health pools", () => {
     const state = start({
       player: {
         resolve: 8,
@@ -277,11 +277,12 @@ describe("using skills", () => {
     });
     const result = useSkill(state, "mortal-blow");
     expect(result.ok).toBe(true);
-    expect(190 - result.state.actors.gatekeeper.hp).toBeLessThanOrEqual(Math.floor(190 * 0.45));
-    expect(result.state.actors.gatekeeper.hp).toBeGreaterThan(0);
+    expect(result.state.events.find((event) => event.type === "skill-damage"))
+      .toMatchObject({ amount: 2_100 });
+    expect(result.state.actors.gatekeeper.hp).toBe(0);
   });
 
-  it("shares the direct-damage cap across every packet of one ability", () => {
+  it("keeps each source-authored direct-damage packet unchanged", () => {
     const state = start({
       player: {
         resolve: 8,
@@ -292,11 +293,12 @@ describe("using skills", () => {
     });
     const result = useSkill(state, "mage-arrow-of-harmony");
     expect(result.ok).toBe(true);
-    expect(190 - result.state.actors.gatekeeper.hp).toBeLessThanOrEqual(Math.floor(190 * 0.45));
-    expect(result.state.events.filter((event) => event.type === "skill-damage")).toHaveLength(1);
+    expect(result.state.events.filter((event) => event.type === "skill-damage"))
+      .toEqual([expect.objectContaining({ amount: 800 })]);
+    expect(result.state.actors.gatekeeper.hp).toBe(0);
   });
 
-  it("caps attack-payload wounds after the shared damage kernel applies them", () => {
+  it("keeps complete source-authored attack-payload wounds", () => {
     const state = start({
       player: {
         resolve: 8,
@@ -309,10 +311,10 @@ describe("using skills", () => {
     const result = useSkill(state, "strike");
     expect(result.ok).toBe(true);
     expect(statusCount(result.state.actors.gatekeeper.statuses, "doom"))
-      .toBe(Math.floor(190 * 0.30));
+      .toBe(500);
   });
 
-  it("rescales boss-sized delayed damage but preserves the authored countdown", () => {
+  it("lands Pact Sentence inside the adapted two-round window", () => {
     const state = start({
       player: { resolve: 8, resolveMax: 8 },
       build: { skills: ["witch-limited-life-sentence"] },
@@ -321,8 +323,8 @@ describe("using skills", () => {
     expect(result.ok).toBe(true);
     expect(result.state.scheduledEffects).toContainEqual(expect.objectContaining({
       skillId: "witch-limited-life-sentence",
-      turnsRemaining: 13,
-      amount: Math.floor(190 * 0.65),
+      turnsRemaining: 2,
+      amount: 666,
     }));
 
     const legacy = useSkill(start({
@@ -331,16 +333,16 @@ describe("using skills", () => {
     expect(legacy.state.scheduledEffects).toContainEqual(expect.objectContaining({ amount: 666 }));
   });
 
-  it("keeps temporary health ceilings on the peer-scale ruleset", () => {
+  it("scales Forbidden Ritual from the caster's maximum health", () => {
     const state = start({
       player: { resolve: 8, resolveMax: 8 },
       build: { skills: ["witch-forbidden-ritual"] },
     });
     const result = useSkill(state, "witch-forbidden-ritual");
     expect(result.ok).toBe(true);
-    expect(result.state.actors["arctic-knight"].maxHp).toBe(255);
+    expect(result.state.actors["arctic-knight"].maxHp).toBe(229);
     expect(result.state.scheduledEffects).toContainEqual(expect.objectContaining({
-      type: "fatal", turnsRemaining: 4,
+      type: "fatal", turnsRemaining: 4, maxHpGain: 59,
     }));
   });
 
@@ -378,14 +380,15 @@ describe("using combat items", () => {
 
   it("restores Resolve without exceeding its shared maximum", () => {
     const state = start({
-      player: { resolve: 6, resolveMax: 8 },
+      player: { resolve: 6, resolveMax: 8, resolveRegen: 1 },
       build: { combatItems: [{ id: "lucid-tonic", quantity: 1 }] },
     });
     const used = useCombatItem(state, "lucid-tonic");
     expect(used.ok).toBe(true);
     expect(used.state.actors["arctic-knight"].resolve).toBe(8);
+    expect(used.state.actors["arctic-knight"].resolveRegen).toBe(2);
     expect(used.state.events).toContainEqual(expect.objectContaining({
-      type: "combat-item-used", itemId: "lucid-tonic", amount: 2,
+      type: "combat-item-used", itemId: "lucid-tonic", amount: 2, resolveRegen: 2,
     }));
   });
 });
@@ -459,6 +462,22 @@ describe("retreat", () => {
 });
 
 describe("ending the turn", () => {
+  it("regenerates each living current actor's snapshotted Resolve at round open", () => {
+    const result = endTurn(start({
+      player: { resolve: 2, resolveMax: 8, resolveRegen: 2 },
+      enemies: [foe({ resolve: 1, resolveMax: 8, resolveRegen: 3 })],
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.state.actors["arctic-knight"].resolve).toBe(4);
+    expect(result.state.actors.gatekeeper.resolve).toBe(4);
+    expect(result.state.events.filter((event) => event.type === "resolve-regenerated"))
+      .toEqual([
+        expect.objectContaining({ actorId: "arctic-knight", amount: 2, before: 2, after: 4 }),
+        expect.objectContaining({ actorId: "gatekeeper", amount: 3, before: 1, after: 4 }),
+      ]);
+  });
+
   it("lets the enemy answer and advances the round", () => {
     const result = endTurn(start());
     expect(result.ok).toBe(true);
@@ -706,6 +725,27 @@ describe("ending the turn", () => {
       .toMatchObject({ critical: true, chargeSpent: 0 });
   });
 
+  it("never turns Mythical Skull Throw's Skeleton retention into generation", () => {
+    const opened = start({
+      build: { traits: {}, skills: [{ id: "witch-skull-throw", rank: 6 }] },
+    });
+    const primed = {
+      ...opened,
+      actors: {
+        ...opened.actors,
+        "arctic-knight": {
+          ...opened.actors["arctic-knight"],
+          statuses: applyStatus(opened.actors["arctic-knight"].statuses, "skeleton", 100),
+        },
+      },
+    };
+
+    const used = useSkill(primed, "witch-skull-throw");
+
+    expect(used.ok).toBe(true);
+    expect(statusCount(used.state.actors["arctic-knight"].statuses, "skeleton")).toBe(100);
+  });
+
   it("automatically spends control when the affected player window is skipped", () => {
     const state = start({
       player: { ...knight(), statuses: [{ type: "paralyze", count: 1 }] },
@@ -734,6 +774,123 @@ describe("ending the turn", () => {
       actorId: state.playerId,
       controls: ["paralyze"],
     }));
+  });
+
+  it("does not let ordinary Priority bypass external player control", () => {
+    const state = start({
+      player: {
+        ...knight(),
+        statuses: [
+          { type: "priority", count: 2 },
+          { type: "stun", count: 1 },
+        ],
+      },
+    });
+
+    expect(useSkill(state, "strike")).toMatchObject({
+      ok: false,
+      reason: "action-nullified",
+    });
+  });
+
+  it("does not let ordinary Priority bypass external enemy control", () => {
+    const state = start({
+      enemies: [foe({
+        statuses: [
+          { type: "priority", count: 2 },
+          { type: "stun", count: 1 },
+        ],
+      })],
+    });
+
+    const after = endTurn(state).state;
+    expect(after.events.some((event) => event.type === "enemy-attack")).toBe(false);
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "enemy-nullified",
+      enemyId: "gatekeeper",
+      controls: ["stun"],
+    }));
+  });
+
+  it.each([
+    ["clocktower-mysterious-stopwatch", 2, 2, 1],
+    ["clocktower-time-machine", 1, 6, 6],
+  ])("lets %s spend its gained Priority before self-Paralyze", (
+    skillId,
+    rank,
+    priority,
+    paralyze,
+  ) => {
+    let state = start({
+      player: { ...knight(), resolve: 20, resolveMax: 20 },
+      build: { skills: ["strike", { id: skillId, rank }] },
+    });
+    const cast = useSkill(state, skillId);
+    expect(cast.ok).toBe(true);
+    expect(statusCount(cast.state.actors[state.playerId].statuses, "priority")).toBe(priority);
+    expect(statusCount(cast.state.actors[state.playerId].statuses, "paralyze")).toBe(paralyze);
+
+    state = JSON.parse(JSON.stringify(cast.state));
+    expect(isTowEncounter(state)).toBe(true);
+    for (let command = 0; command < priority; command += 1) {
+      const used = useSkill(state, "strike");
+      expect(used.ok, `${skillId} priority command ${command + 1}`).toBe(true);
+      state = used.state;
+    }
+    expect(statusCount(state.actors[state.playerId].statuses, "priority")).toBe(0);
+    expect(statusCount(state.actors[state.playerId].statuses, "paralyze")).toBe(paralyze);
+    expect(state.turn.actionsRemaining).toBe(0);
+    expect(useSkill(state, "strike")).toMatchObject({
+      ok: false,
+      reason: "action-nullified",
+    });
+
+    state = endTurn(state).state;
+    expect(state.turn.actionsRemaining).toBe(1);
+    expect(useSkill(state, "strike")).toMatchObject({
+      ok: false,
+      reason: "action-nullified",
+    });
+
+    const skipped = skipTurn(state, state.playerId);
+    expect(skipped.ok).toBe(true);
+    expect(statusCount(skipped.state.actors[state.playerId].statuses, "paralyze"))
+      .toBe(paralyze - 1);
+  });
+
+  it("lets Mythical Peace Declaration break its universal ceasefire first", () => {
+    let state = start({
+      player: { ...knight(), resolve: 20, resolveMax: 20 },
+      enemies: [foe({ maxHp: 1_000 })],
+      build: { skills: ["strike", { id: "peace-declaration", rank: 2 }] },
+    });
+
+    const cast = useSkill(state, "peace-declaration");
+    expect(cast.ok).toBe(true);
+    state = JSON.parse(JSON.stringify(cast.state));
+    expect(statusCount(state.actors[state.playerId].statuses, "paralyze")).toBe(3);
+    expect(statusCount(state.actors.gatekeeper.statuses, "paralyze")).toBe(3);
+    expect(statusCount(state.actors[state.playerId].statuses, "priority")).toBe(2);
+
+    for (let command = 0; command < 2; command += 1) {
+      const used = useSkill(state, "strike");
+      expect(used.ok).toBe(true);
+      state = used.state;
+    }
+    expect(useSkill(state, "strike")).toMatchObject({ ok: false, reason: "action-nullified" });
+  });
+
+  it("turns Mythical Blood Truce into a protected offensive setup", () => {
+    const state = start({
+      player: { ...knight(), resolve: 20, resolveMax: 20 },
+      build: { skills: [{ id: "north-king-natures-intervention", rank: 2 }] },
+    });
+
+    const cast = useSkill(state, "north-king-natures-intervention");
+    expect(cast.ok).toBe(true);
+    expect(statusCount(cast.state.actors[state.playerId].statuses, "invincible")).toBe(3);
+    expect(statusCount(cast.state.actors.gatekeeper.statuses, "invincible")).toBe(3);
+    expect(statusCount(cast.state.actors[state.playerId].statuses, "strength")).toBe(30);
   });
 
   it("keeps freshly inflicted Stun for the player's next command window", () => {
@@ -1107,6 +1264,13 @@ describe("Priority and Haste", () => {
       enemies: [foe({ statuses: [{ type: "priority", count: 2 }] })],
     });
     expect(state.turn.actionsRemaining).toBe(2);
+    const first = useSkill(state, "strike").state;
+    const handedOver = useSkill(first, "strike").state;
+    const resolved = endTurn(handedOver).state;
+
+    expect(resolved.events.filter((event) => event.type === "enemy-attack")).toHaveLength(1);
+    expect(statusCount(resolved.actors[resolved.playerId].statuses, "priority")).toBe(1);
+    expect(statusCount(resolved.actors.gatekeeper.statuses, "priority")).toBe(1);
   });
 
   it("never drops below one action when the enemy out-prioritises you", () => {

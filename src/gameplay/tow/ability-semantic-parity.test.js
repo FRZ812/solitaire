@@ -73,6 +73,7 @@ const EVENT_TYPE_BY_EFFECT = Object.freeze({
   "modify-status": "skill-status-modified",
   "reduce-statuses": "skill-cleanse",
   "restore-skill-uses": "skill-resolve-restored",
+  "resolve-regen": "skill-resolve-regen",
   "scale-status": "skill-status-scaled",
   "scaled-status": "skill-status",
   "scaled-status-enemy-lost-hp": "skill-status",
@@ -296,6 +297,7 @@ describe("ability text-to-mechanics parity", () => {
           if (event.type === "skill-max-hp") {
             if (!event.targetId) failures.push(`${skillId}@${rank}: maximum-health event missing targetId`);
             expected[event.targetId || event.actorId].maxHp += event.amount;
+            expected[event.targetId || event.actorId].hp += event.amount;
           }
           if (event.type === "skill-status-modified" && event.after - event.before !== event.delta) {
             failures.push(`${skillId}@${rank}: ${event.status} ${event.before}→${event.after} != ${event.delta}`);
@@ -456,6 +458,48 @@ describe("ability text-to-mechanics parity", () => {
       .toEqual({ ok: false, reason: "no-effective-outcome", state });
   });
 
+  it("resolves source-authored Feast and Bound Horror base damage before HP clamping", () => {
+    const cases = [
+      {
+        skillId: "vampire-devour",
+        rank: 2,
+        playerStatuses: [{ type: "lifesteal", count: 47 }],
+        enemyHp: 64,
+        enemyMaxHp: 64,
+        authoredBase: 423,
+      },
+      {
+        skillId: "witch-battering-ram",
+        rank: 4,
+        playerStatuses: [],
+        enemyHp: 44,
+        enemyMaxHp: 44,
+        authoredBase: 80,
+      },
+    ];
+
+    for (const entry of cases) {
+      const state = encounterFor(entry.skillId, {
+        rank: entry.rank,
+        playerResolve: 100,
+        playerResolveMax: 100,
+        playerStatuses: entry.playerStatuses,
+        enemyHp: entry.enemyHp,
+        enemyMaxHp: entry.enemyMaxHp,
+      });
+      const result = useSkill(state, entry.skillId, "enemy");
+      const damage = result.state.events.find((event) => (
+        event.type === "skill-damage" && event.skillId === entry.skillId
+      ));
+
+      expect(result.ok, entry.skillId).toBe(true);
+      expect(damage?.amount, entry.skillId).toBe(entry.authoredBase);
+      expect(damage?.hits[0].rawDamage, entry.skillId).toBe(entry.authoredBase);
+      expect(damage?.hits[0].toHp, entry.skillId).toBe(entry.authoredBase);
+      expect(result.state.actors.enemy.hp, entry.skillId).toBe(0);
+    }
+  });
+
   it("rejects Blade Inversion when neither damage nor Initiative removal can change state", () => {
     const state = encounterFor("blade-inversion", {
       playerResolve: 8,
@@ -551,7 +595,7 @@ describe("ability text-to-mechanics parity", () => {
     });
   });
 
-  it("reports only status-from-status stacks actually stored after policy limits", () => {
+  it("stores every source-authored status-from-status stack", () => {
     const opened = encounterFor("automaton-impact-cannon", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -574,11 +618,12 @@ describe("ability text-to-mechanics parity", () => {
     ));
 
     expect(result.ok).toBe(true);
-    expect(stored).toBe(30);
-    expect(event).toMatchObject({ count: 30, requestedCount: 425 });
+    expect(stored).toBe(425);
+    expect(event).toMatchObject({ count: 425 });
+    expect(event).not.toHaveProperty("requestedCount");
   });
 
-  it("rejects status conversion when every recipient is already capped", () => {
+  it("continues adding source-authored damaging statuses above the retired peer cap", () => {
     const state = encounterFor("automaton-impact-cannon", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -592,10 +637,12 @@ describe("ability text-to-mechanics parity", () => {
 
     const result = useSkill(state, "automaton-impact-cannon", "enemy");
 
-    expect(result).toEqual({ ok: false, reason: "no-effective-outcome", state });
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.enemy.statuses)
+      .toContainEqual({ type: "doom", count: 455 });
   });
 
-  it("reports only Judge of Fate stacks actually added below the status ceiling", () => {
+  it("stores every Judge of Fate stack above the retired peer cap", () => {
     const opened = encounterFor("judge-of-fate", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -619,11 +666,12 @@ describe("ability text-to-mechanics parity", () => {
 
     expect(result.ok).toBe(true);
     expect(result.state.actors.enemy.statuses)
-      .toContainEqual({ type: "misfortune", count: 30 });
-    expect(event).toMatchObject({ count: 10, requestedCount: 27 });
+      .toContainEqual({ type: "misfortune", count: 47 });
+    expect(event).toMatchObject({ count: 27 });
+    expect(event).not.toHaveProperty("requestedCount");
   });
 
-  it("rejects Judge of Fate when Misfortune is already capped", () => {
+  it("allows Judge of Fate above the retired peer cap", () => {
     const state = encounterFor("judge-of-fate", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -636,21 +684,45 @@ describe("ability text-to-mechanics parity", () => {
 
     const result = useSkill(state, "judge-of-fate", "enemy");
 
-    expect(result).toEqual({ ok: false, reason: "no-effective-outcome", state });
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.enemy.statuses)
+      .toContainEqual({ type: "misfortune", count: 57 });
   });
 
-  it("rejects Resolve restoration that cannot produce a net gain", () => {
-    const state = encounterFor("automaton-infinite-power", {
-      playerResolve: 8,
-      playerResolveMax: 8,
+  it.each([
+    ["mage-mana-concentration", 2, 3],
+    ["sleepless-cool-composure", 4, 5],
+    ["automaton-infinite-power", 1, 4],
+  ])("lets %s establish a meaningful Resolve recovery floor", (skillId, rank, floor) => {
+    const state = encounterFor(skillId, {
+      rank,
+      playerResolve: 12,
+      playerResolveMax: 12,
     });
+    const result = useSkill(state, skillId, "player");
 
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.player.resolveRegen).toBe(floor);
+    expect(result.state.events).toContainEqual(expect.objectContaining({
+      type: "skill-resolve-regen",
+      actorId: "player",
+      skillId,
+      after: floor,
+    }));
+  });
+
+  it("makes Mythical Reserve Cell recover more Resolve than it costs", () => {
+    const state = encounterFor("automaton-infinite-power", {
+      playerResolve: 6,
+      playerResolveMax: 12,
+    });
     const result = useSkill(state, "automaton-infinite-power", "player");
 
-    expect(result).toEqual({ ok: false, reason: "no-effective-outcome", state });
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.player.resolve).toBe(9);
   });
 
-  it("reports the damaging status stacks actually stored after policy limits", () => {
+  it("stores the complete source-authored damaging status payload", () => {
     const opened = encounterFor("blade-one-flash", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -672,11 +744,11 @@ describe("ability text-to-mechanics parity", () => {
       && entry.skillId === "blade-one-flash"
       && entry.status === "doom"
     ));
-    expect(stored).toBeGreaterThan(0);
-    expect(event?.count).toBe(stored);
+    expect(stored).toBe(200);
+    expect(event?.count).toBe(200);
   });
 
-  it("rejects an already-capped damaging status before payment", () => {
+  it("adds a damaging status above the retired peer cap", () => {
     const state = encounterFor("blade-one-flash", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -687,7 +759,9 @@ describe("ability text-to-mechanics parity", () => {
 
     const result = useSkill(state, "blade-one-flash", "enemy");
 
-    expect(result).toEqual({ ok: false, reason: "no-effective-outcome", state });
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.enemy.statuses)
+      .toContainEqual({ type: "doom", count: 230 });
   });
 
   it("converts each full 100 Initiative into immediate Priority", () => {
@@ -741,7 +815,7 @@ describe("ability text-to-mechanics parity", () => {
     ]);
   });
 
-  it("records scaled-status changes after damaging-status ceilings", () => {
+  it("records complete source-authored damaging-status scaling", () => {
     const opened = encounterFor("priestess-doom", {
       playerResolve: 8,
       playerResolveMax: 8,
@@ -763,17 +837,13 @@ describe("ability text-to-mechanics parity", () => {
       entry.type === "skill-status-scaled" && entry.skillId === "priestess-doom"
     ));
 
-    expect(event?.changed).toBe(30);
+    expect(event?.changed).toBe(60);
     expect(event?.changes).toEqual([
-      { status: "burn", before: 20, after: 30 },
-      { status: "poison", before: 20, after: 30 },
-      { status: "bleed", before: 20, after: 30 },
-    ]);
-    expect(event?.requestedChanges).toEqual([
       { status: "burn", before: 20, after: 40 },
       { status: "poison", before: 20, after: 40 },
       { status: "bleed", before: 20, after: 40 },
     ]);
+    expect(event).not.toHaveProperty("requestedChanges");
   });
 
   it.each([
@@ -813,6 +883,25 @@ describe("ability text-to-mechanics parity", () => {
     });
   });
 
+  it.each([
+    "blade-latent-power",
+    "automaton-emergency-fuel",
+  ])("keeps Mythical %s delayed self-damage integer and replay-valid", (skillId) => {
+    const state = encounterFor(skillId, {
+      rank: 2,
+      playerResolve: 12,
+      playerResolveMax: 12,
+    });
+    const result = useSkill(state, skillId, "player");
+
+    expect(result.ok).toBe(true);
+    expect(result.state.scheduledEffects).toContainEqual(expect.objectContaining({
+      amount: 9_999,
+      turnsRemaining: 4,
+    }));
+    expect(isTowEncounter(result.state)).toBe(true);
+  });
+
   it("reports fatal boundary damage as an exact canonical delta", () => {
     let state = encounterFor("witch-forbidden-ritual", {
       playerResolve: 8,
@@ -831,6 +920,46 @@ describe("ability text-to-mechanics parity", () => {
     expect(event?.total).toBe(event?.fatalDamage);
   });
 
+  it("scales Mythical Forbidden Ritual to half the caster's maximum health", () => {
+    const state = encounterFor("witch-forbidden-ritual", {
+      rank: 2,
+      playerResolve: 10,
+      playerResolveMax: 10,
+      playerHp: 200,
+      playerMaxHp: 200,
+    });
+    const result = useSkill(state, "witch-forbidden-ritual", "player");
+
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.player).toMatchObject({ hp: 300, maxHp: 300 });
+    expect(result.state.scheduledEffects).toContainEqual(expect.objectContaining({
+      type: "fatal",
+      maxHpGain: 100,
+      turnsRemaining: 4,
+    }));
+  });
+
+  it("lands Pact Sentence inside a normal two-round combat window", () => {
+    let state = encounterFor("witch-limited-life-sentence", {
+      playerResolve: 10,
+      playerResolveMax: 10,
+      enemyHp: 1_000,
+      enemyMaxHp: 1_000,
+    });
+    const used = useSkill(state, "witch-limited-life-sentence", "enemy");
+
+    expect(used.ok).toBe(true);
+    expect(used.state.scheduledEffects).toContainEqual(expect.objectContaining({
+      type: "damage",
+      amount: 666,
+      turnsRemaining: 2,
+    }));
+    state = endTurn(used.state).state;
+    expect(state.actors.enemy.hp).toBe(1_000);
+    state = endTurn(state).state;
+    expect(state.actors.enemy.hp).toBe(334);
+  });
+
   it("removes Forbidden Ritual's temporary maximum health at expiration", () => {
     let state = encounterFor("witch-forbidden-ritual", {
       playerResolve: 8,
@@ -839,7 +968,7 @@ describe("ability text-to-mechanics parity", () => {
       playerMaxHp: 100,
     });
     state = useSkill(state, "witch-forbidden-ritual", "player").state;
-    expect(state.actors.player.maxHp).toBe(150);
+    expect(state.actors.player.maxHp).toBe(135);
     for (let turn = 0; turn < 4; turn += 1) state = endTurn(state).state;
 
     const event = [...state.events].reverse().find((entry) => (
@@ -847,8 +976,8 @@ describe("ability text-to-mechanics parity", () => {
     ));
     expect(state.actors.player.maxHp).toBe(100);
     expect(event).toMatchObject({
-      maxHpExpired: 50,
-      maxHpBefore: 150,
+      maxHpExpired: 35,
+      maxHpBefore: 135,
       maxHpAfter: 100,
     });
   });
@@ -880,6 +1009,7 @@ describe("ability text-to-mechanics parity", () => {
     });
     state = useSkill(state, "witch-forbidden-ritual", "player").state;
     state = JSON.parse(JSON.stringify(state));
+    state.actors.player.maxHp = 150;
     delete state.scheduledEffects[0].maxHpGain;
     expect(isTowEncounter(state)).toBe(true);
 

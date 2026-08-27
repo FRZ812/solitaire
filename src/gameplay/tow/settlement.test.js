@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import { createTowEncounter, endTurn, useCombatItem, useSkill } from "./encounter.js";
 import { settleTowEncounter } from "./settlement.js";
+import { towPlayerFromCharacter } from "./solitaire-bridge.js";
 
 function player(overrides = {}) {
   return {
@@ -110,11 +111,46 @@ describe("settling a victory", () => {
     before.character.inventory.carried.push({ itemId: "fire-pot", quantity: 1 });
 
     const result = settleTowEncounter(before, encounter, { encounterId: "fight-item" });
-    expect(result.state.character.resolve).toBe(6);
+    expect(encounter.actors.wanderer.resolve).toBe(7);
+    expect(result.state.character.resolve).toBe(encounter.actors.wanderer.resolve);
+    expect(result.receipt.playerResolve).toBe(encounter.actors.wanderer.resolve);
     expect(result.state.character.inventory.carried).not.toContainEqual(
       expect.objectContaining({ itemId: "fire-pot" }),
     );
     expect(result.receipt.combatItemsSpent).toEqual({ "fire-pot": 1 });
+  });
+
+  it("never refills equipment capacity when a depleted character reopens combat", () => {
+    let state = campaign();
+    state.character.id = "wanderer";
+    state.character.resolve = 0;
+    state.character.resolveMax = 8;
+    state.world.codex.characters.wanderer = {
+      ...(state.world.codex.characters.wanderer || {}),
+      worn: ["quarterstaff", "homespun-robe"],
+    };
+
+    for (const [cycle, expectedOpening] of [3, 2, 1].entries()) {
+      const actor = towPlayerFromCharacter(state.character, state.world.codex, { id: "wanderer" });
+      expect(actor.resolve, `opening ${cycle + 1}`).toBe(expectedOpening);
+      expect(actor.resolveMax).toBe(11);
+      let encounter = createTowEncounter({
+        seed: `equipment-resolve-${cycle}`,
+        player: actor,
+        enemies: [foe("brigand", { maxHp: 500 })],
+        build: { traits: {}, skills: ["block"] },
+      });
+      encounter = useSkill(encounter, "block").state;
+      encounter = { ...encounter, phase: "retreated" };
+      const settled = settleTowEncounter(state, encounter, { encounterId: `gear-${cycle}` });
+      expect(settled.ok).toBe(true);
+      state = settled.state;
+      expect(state.character.resolve).toBe(expectedOpening - 1);
+      expect(state.character.resolveMax).toBe(11);
+      expect(state.character.towResolveMaxBonus).toBe(3);
+    }
+
+    expect(towPlayerFromCharacter(state.character, state.world.codex).resolve).toBe(0);
   });
 
   it("awards proficiency and progression from what was actually done", () => {

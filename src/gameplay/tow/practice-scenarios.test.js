@@ -174,6 +174,7 @@ describe("authored practice formations", () => {
           maxHp: archetype.baseStats.maxHp + bonus.maxHp,
           resolve: archetype.baseStats.resolveMax,
           resolveMax: archetype.baseStats.resolveMax,
+          resolveRegen: archetype.baseStats.resolveRegen + bonus.resolveRegen,
           stats: {
             attack: archetype.baseStats.attack + bonus.attack,
             defense: archetype.baseStats.defense + bonus.defense,
@@ -233,7 +234,7 @@ describe("opening a practice fight", () => {
     const practice = createPracticeSession(receiptFor("fighter"));
     expect(practice.ok).toBe(true);
     expect(practice.session.mode).toBe("practice");
-    expect(practice.session.rulesetId).toBe("solitaire-tow-v1.2");
+    expect(practice.session.rulesetId).toBe("solitaire-tow-v1.3");
     // The real reducer means the real telegraph, so practice teaches the actual fight.
     expect(practice.session.encounter.intents).not.toEqual({});
   });
@@ -253,7 +254,28 @@ describe("opening a practice fight", () => {
     const receipt = receiptFor("cleric");
     const practice = createPracticeSession(receipt);
     expect(practice.session.encounter.build.skills.map((entry) => entry.id))
-      .toEqual(receipt.build.skills);
+      .toEqual(receipt.build.skills.map((entry) => entry.id));
+  });
+
+  it("rehydrates a durable promoted rank into the production encounter", () => {
+    const compiled = compileCharacterBootstrap({
+      professionId: "fighter",
+      origin: "custom",
+      build: {
+        traits: { ironclad: 1 },
+        skills: [{ id: "strike", rank: 6 }, { id: "block", rank: 2 }],
+        runes: [],
+      },
+    });
+    const restored = JSON.parse(JSON.stringify(compiled.receipt));
+    const practice = createPracticeSession(restored);
+
+    expect(practice.ok).toBe(true);
+    expect(practice.session.encounter.build.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "strike", rank: 6 }),
+      expect.objectContaining({ id: "block", rank: 2 }),
+    ]));
+    expect(verifyTowSession(practice.session)).toMatchObject({ ok: true });
   });
 
   it("starts every selected ability at its chosen rarity and fingerprints the promotion", () => {
@@ -429,12 +451,12 @@ describe("opening a practice fight", () => {
       final = result;
     }
 
-    // Ranger's combat-start Priority grants one action before its ordinary action. Both
-    // declarations resolve against legal formation targets in the same hostile window.
+    // Opposing combat-start Priority cancels before either side can reuse the same stacks.
+    // The Ranger therefore resolves only its ordinary legal formation-targeted command.
     const rangerCommands = final.events.filter((event) => (
       event.type === "skill-committed" && event.actorId === "foe-1"
     ));
-    expect(rangerCommands).toHaveLength(2);
+    expect(rangerCommands).toHaveLength(1);
     expect(final.session.commands.map((command) => command.type)).toEqual([
       "stand-down",
       "stand-down",
@@ -487,7 +509,7 @@ describe("the result screen has everything needed to reproduce it", () => {
     expect(result.scenarioVersion).toBe(4);
     expect(result.allyGroupId).toBe("solo");
     expect(result.allyGroupVersion).toBe(2);
-    expect(result.seed).toContain("practice::solitaire-tow-v1.2::fighter@1::training-yard@4::solo@2");
+    expect(result.seed).toContain("practice::solitaire-tow-v1.3::fighter@1::training-yard@4::solo@2");
     expect(result.genesisChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.terminalChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.replayVerified).toBe(true);

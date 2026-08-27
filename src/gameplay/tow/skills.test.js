@@ -31,7 +31,7 @@ import {
   useSkill,
 } from "./encounter.js";
 import { towBuildForCharacter } from "./professions.js";
-import { startingPackageIds } from "./starting-packages.js";
+import { startingPackage, startingPackageIds } from "./starting-packages.js";
 
 describe("the catalogue", () => {
   it("holds five slots, as the wiki records", () => {
@@ -130,38 +130,268 @@ describe("the catalogue", () => {
     expect([1, 2, 3, 4].map((rank) => usesPerAct("warcry", rank))).toEqual([4, 5, 6, 7]);
   });
 
-  it("prices old allowances into one shared Resolve economy", () => {
+  it("prices limited abilities by current rarity and keeps only unlimited attacks free", () => {
+    const tierCost = {
+      common: 1,
+      uncommon: 2,
+      rare: 3,
+      epic: 4,
+      legendary: 5,
+      mythical: 6,
+    };
+
     expect(resolveCost("strike")).toBe(0);
     expect(resolveCost("block")).toBe(1);
-    expect(resolveCost("defensive-stance", 1)).toBe(5);
-    expect(resolveCost("penetration")).toBe(3);
-    expect(resolveCost("warcry")).toBe(6);
-    expect(resolveCost("mortal-blow")).toBe(4);
+    expect(resolveCost("defensive-stance", 1)).toBe(2);
+    expect(resolveCost("penetration")).toBe(2);
+    expect(resolveCost("warcry")).toBe(3);
+    expect(resolveCost("mortal-blow")).toBe(2);
     expect(resolveCost("incineration")).toBe(6);
-    expect(resolveCost("automaton-infinite-power")).toBe(2);
-  });
-
-  it("turns every use-only promotion into a real Resolve discount", () => {
-    expect([1, 2, 3, 4, 5].map((rank) => resolveCost("defensive-stance", rank)))
-      .toEqual([5, 4, 3, 2, 1]);
-    expect([1, 2, 3, 4].map((rank) => resolveCost("warcry", rank)))
-      .toEqual([6, 5, 4, 3]);
+    expect(resolveCost("automaton-infinite-power")).toBe(6);
 
     for (const id of skillIds()) {
       for (let rank = 1; rank <= maxRankOf(id); rank += 1) {
         const limit = usesPerAct(id, rank);
-        expect(resolveCost(id, rank) === 0).toBe(limit === UNLIMITED_USES);
-        if (rank === 1 || usesPerAct(id, rank - 1) === limit) continue;
-        const definition = getSkill(id);
-        const effectChanged = definition.effects.some((effect, index) => (
-          effectMagnitude(id, index, rank) !== effectMagnitude(id, index, rank - 1)
-          || (effect.turnsByRank
-            && effect.turnsByRank[Math.min(rank - 1, effect.turnsByRank.length - 1)]
-              !== effect.turnsByRank[Math.min(rank - 2, effect.turnsByRank.length - 1)])
-        ));
-        if (!effectChanged) expect(resolveCost(id, rank)).toBeLessThan(resolveCost(id, rank - 1));
+        const expected = limit === UNLIMITED_USES
+          ? 0
+          : tierCost[skillRarityAtRank(id, rank)];
+        expect(resolveCost(id, rank), `${id}@${rank}`).toBe(expected);
+        if (rank > 1) {
+          expect(resolveCost(id, rank), `${id}@${rank}`)
+            .toBeGreaterThanOrEqual(resolveCost(id, rank - 1));
+        }
       }
     }
+  });
+
+  it("gives every promoted Mythical a mechanical capstone beyond its price", () => {
+    const inert = [];
+    for (const id of skillIds()) {
+      const definition = getSkill(id);
+      const rank = maxRankOf(id);
+      if (rank <= 1 || skillRarityAtRank(id, rank) !== "mythical") continue;
+      const signature = (at) => JSON.stringify(definition.effects.map((effect, index) => ({
+        type: effect.type,
+        target: effect.target,
+        status: effect.status ?? null,
+        magnitude: effectMagnitude(id, index, at),
+        turns: effect.turnsByRank
+          ? effect.turnsByRank[Math.min(at - 1, effect.turnsByRank.length - 1)]
+          : effect.turns ?? null,
+      })));
+      if (signature(rank) === signature(rank - 1)) inert.push(id);
+    }
+
+    expect(inert).toEqual([]);
+  });
+
+  it("gives every promotion edge a mechanical upgrade rather than a price-only change", () => {
+    const inert = [];
+    let edges = 0;
+    for (const id of skillIds()) {
+      const definition = getSkill(id);
+      const signature = (rank) => JSON.stringify(definition.effects.map((effect, index) => ({
+        type: effect.type,
+        value: effectMagnitude(id, index, rank),
+        turns: effect.turnsByRank?.[Math.min(rank - 1, effect.turnsByRank.length - 1)] ?? null,
+      })));
+      for (let rank = 2; rank <= maxRankOf(id); rank += 1) {
+        edges += 1;
+        if (signature(rank) === signature(rank - 1)) inert.push(`${id}:${rank - 1}->${rank}`);
+      }
+    }
+
+    expect(edges).toBe(891);
+    expect(inert).toEqual([]);
+  });
+
+  it("never makes an audited Mythical capstone worse than its Legendary rank", () => {
+    const cases = [
+      ["defensive-stance", [0], []],
+      ["mage-blink", [0, 1], []],
+      ["priestess-hour-of-judgment", [0], []],
+      ["priestess-purification", [], [0]],
+      ["assassin-feint", [0], []],
+      ["assassin-cold-blood", [], [0]],
+      ["clocktower-grappling-hook", [0], []],
+      ["clocktower-high-voltage", [0, 1], []],
+      ["witch-demons-sigil", [0, 1], []],
+      ["blade-double-slash", [0], []],
+      ["vampire-super-regeneration", [0], []],
+      ["vampire-transformation", [0], [1]],
+      ["automaton-shock-grenade", [1], [0]],
+    ];
+
+    for (const [id, higherIsBetter, lowerIsBetter] of cases) {
+      const top = maxRankOf(id);
+      let improved = false;
+      for (const index of higherIsBetter) {
+        const before = effectMagnitude(id, index, top - 1);
+        const after = effectMagnitude(id, index, top);
+        expect(after, `${id} effect[${index}]`).toBeGreaterThanOrEqual(before);
+        if (after > before) improved = true;
+      }
+      for (const index of lowerIsBetter) {
+        const before = effectMagnitude(id, index, top - 1);
+        const after = effectMagnitude(id, index, top);
+        expect(after, `${id} effect[${index}]`).toBeLessThanOrEqual(before);
+        if (after < before) improved = true;
+      }
+      expect(improved, id).toBe(true);
+    }
+
+    for (const id of ["blade-latent-power", "automaton-emergency-fuel"]) {
+      const top = maxRankOf(id);
+      expect(effectMagnitude(id, 1, top), id).toBe(effectMagnitude(id, 1, top - 1));
+    }
+  });
+
+  it("keeps promotion costs fixed while their paired payoff improves", () => {
+    const fixedCostCurves = {
+      "witch-human-wave-tactics": [1, [0, 0]],
+      "clocktower-mysterious-stopwatch": [2, [0, 0]],
+      "assassin-decisive-blow": [1, [0, 0, 0, 0]],
+      "assassin-execution": [1, [0, 0]],
+      "blade-breakthrough": [1, [0, 0]],
+    };
+
+    for (const [id, [effectIndex, expected]] of Object.entries(fixedCostCurves)) {
+      const effect = getSkill(id).effects[effectIndex];
+      expect(effect.percentByRank, id).toEqual(expected);
+    }
+
+    expect(getSkill("witch-human-wave-tactics").effects[0].percentByRank).toEqual([40, 50]);
+    expect(getSkill("clocktower-mysterious-stopwatch").effects[0].countByRank).toEqual([1, 2]);
+    expect(getSkill("assassin-decisive-blow").effects[0].percentByRank)
+      .toEqual([170, 200, 230, 260]);
+    expect(getSkill("assassin-execution").effects[0].percentByRank).toEqual([240, 360]);
+    expect(getSkill("blade-breakthrough").effects[2].percentByRank).toEqual([200, 300]);
+  });
+
+  it("reduces Skeleton spend toward full retention without turning it into generation", () => {
+    expect(getSkill("witch-skull-throw").effects[1].percentByRank)
+      .toEqual([80, 84, 88, 92, 96, 100]);
+    expect(getSkill("witch-skeleton-defense").effects[1].percentByRank)
+      .toEqual([80, 86.666667, 93.333333, 100]);
+  });
+
+  it("never strengthens enemy Solidity while improving the controlling effect", () => {
+    expect(getSkill("rapid-cooling").effects.map((effect) => effect.countByRank)).toEqual([
+      [2, 3, 4, 5, 6],
+      [1, 1, 1, 1, 1],
+    ]);
+    expect(getSkill("clocktower-steel-net").effects.map((effect) => effect.countByRank)).toEqual([
+      [3, 4],
+      [2, 2],
+    ]);
+  });
+
+  it("gives symmetric fields an asymmetric Mythical payoff instead of longer stalls", () => {
+    expect(getSkill("peace-declaration").effects.map((effect) => ({
+      target: effect.target,
+      status: effect.status,
+      values: effect.countByRank,
+    }))).toEqual([
+      { target: "all", status: "paralyze", values: [3, 3] },
+      { target: "self", status: "priority", values: [1, 2] },
+    ]);
+    expect(getSkill("north-king-natures-intervention").effects.map((effect) => ({
+      target: effect.target,
+      status: effect.status,
+      values: effect.countByRank,
+    }))).toEqual([
+      { target: "all", status: "invincible", values: [3, 3] },
+      { target: "self", status: "strength", values: [20, 30] },
+    ]);
+  });
+
+  it("pins a decisive signature for every ability that begins at Mythical", () => {
+    const signatures = {
+      incineration: [300, 300, 1],
+      "arctic-incineration": [300, 300, 1],
+      "arctic-ultimate-body": [150],
+      "demon-shadow-stealth": [4, 3],
+      "demon-endless-grudge": [30],
+      "mage-amplification": [100],
+      "mage-regression": [100],
+      "priestess-power-of-god": [250],
+      "priestess-immortality": [6, 6],
+      "assassin-shadow-strike": [400, 3],
+      "assassin-life-saving-pill": [100, 0],
+      "north-king-earthquake": [400, 400],
+      "north-king-beasts-heart": [100, 100],
+      "clocktower-time-machine": [6, 6, 0],
+      "clocktower-redesign": [100, 100],
+      "witch-bone-sphere": [555, 0],
+      "witch-limited-life-sentence": [666],
+      "sleepless-fire-essence": [350],
+      "sleepless-high-speed-flight": [4],
+      "blade-one-flash": [1000],
+      "blade-flowing-water": [200, 1, 1],
+      "vampire-rampage": [30, 50],
+      "vampire-ancestral-blood": [50],
+      "automaton-fate-manipulator": [1, 0],
+      "automaton-infinite-power": [9, 4],
+    };
+    const baseMythicals = skillIds().filter((id) => getSkill(id).rarity === "mythical");
+
+    expect(Object.keys(signatures).sort()).toEqual([...baseMythicals].sort());
+    for (const [id, expected] of Object.entries(signatures)) {
+      expect(getSkill(id).effects.map((effect, index) => effectMagnitude(id, index, 1)), id)
+        .toEqual(expected);
+    }
+  });
+
+  it("lands every enemy delayed-damage ability within two rounds", () => {
+    const late = [];
+    for (const id of skillIds()) {
+      const definition = getSkill(id);
+      for (const effect of definition.effects) {
+        if (effect.type !== "delayed-damage" || effect.target !== "enemy") continue;
+        for (const turns of effect.turnsByRank || []) {
+          if (turns > 2) late.push(`${id}:${turns}`);
+        }
+      }
+    }
+    expect(late).toEqual([]);
+  });
+
+  it("keeps the shared Incineration alias on the same Mythical signature as Arctic Incineration", () => {
+    expect(getSkill("incineration").effects.map((effect, index) => (
+      effectMagnitude("incineration", index, 1)
+    ))).toEqual([300, 300, 1]);
+  });
+
+  it("makes Bleeding Cut stronger than the free basic it replaces at every tier", () => {
+    const cut = getSkill("slaughter");
+    for (let rank = 1; rank <= cut.rankCount; rank += 1) {
+      const cutPressure = effectMagnitude("slaughter", 0, rank)
+        + effectMagnitude("slaughter", 1, rank);
+      const strikeRank = Math.min(rank + 1, maxRankOf("strike"));
+      expect(cutPressure, `slaughter@${rank}`)
+        .toBeGreaterThan(effectMagnitude("strike", 0, strikeRank));
+    }
+    expect(cut.effects.map((effect, index) => effectMagnitude("slaughter", index, 5)))
+      .toEqual([240, 180]);
+  });
+
+  it("makes Shield Bash a real DEF-scaling replacement instead of a weaker Strike", () => {
+    const attack = 14;
+    const defense = 8;
+    for (let rank = 1; rank <= maxRankOf("shield-bash"); rank += 1) {
+      const bash = Math.floor(defense * effectMagnitude("shield-bash", 0, rank) / 100);
+      const strike = Math.floor(
+        attack * effectMagnitude("strike", 0, Math.min(rank + 1, maxRankOf("strike"))) / 100,
+      );
+      expect(bash, `shield-bash@${rank}`).toBeGreaterThan(strike);
+    }
+  });
+
+  it("gives low-damage support packages one offensive answer", () => {
+    expect(startingPackage("wanderer").skills.map((skill) => skill.id))
+      .toContain("sudden-blow");
+    expect(startingPackage("cleric").skills.map((skill) => skill.id))
+      .toContain("sudden-blow");
   });
 
   it("reports no scalar magnitude for a fixed-policy effect", () => {
@@ -307,12 +537,12 @@ describe("acquiring skills", () => {
   });
 
   it("promotes a General ability with its source use progression", () => {
-    // Sleep Grenade advances from four to five source uses while duration remains 3.
+    // Sleep Grenade advances from four to five source uses and gains a stronger Epic duration.
     const spent = [{ ...createSkillState("sleep-grenade"), usesRemaining: 1, cooldownRemaining: 4 }];
     const result = acquireSkill(spent, "sleep-grenade");
     expect(result.loadout[0]).toMatchObject({ rank: 2, usesRemaining: 5, cooldownRemaining: 0 });
     expect(skillRarityAtRank("sleep-grenade", 2)).toBe("epic");
-    expect(effectMagnitude("sleep-grenade", 0, 2)).toBe(3);
+    expect(effectMagnitude("sleep-grenade", 0, 2)).toBe(4);
   });
 
   it("stops upgrading at the top rank", () => {

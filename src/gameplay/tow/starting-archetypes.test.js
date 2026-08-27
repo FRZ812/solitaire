@@ -39,7 +39,8 @@ describe("source-roster starting grants", () => {
     const before = JSON.stringify(compiled.receipt.build);
     const effective = effectiveTowBuild(compiled.receipt.build, archetype.gear);
 
-    expect(effective.skills).toEqual(archetype.build.skills);
+    expect(effective.skills.map((skill) => skill.id)).toEqual(archetype.build.skills);
+    expect(effective.skills.every((skill) => skill.rank === 1)).toBe(true);
     expect(towItemActorBonuses(archetype.gear)).toMatchObject({
       attack: expect.any(Number),
       defense: expect.any(Number),
@@ -48,20 +49,47 @@ describe("source-roster starting grants", () => {
     expect(JSON.stringify(compiled.receipt.build)).toBe(before);
   });
 
+  it("lets caster gear and mythical keepsakes deepen and regenerate Resolve", () => {
+    expect(towItemActorBonuses(["quarterstaff", "homespun-robe"]))
+      .toMatchObject({ resolveMax: 3, resolveRegen: 0 });
+    expect(towItemActorBonuses(["scholars-circlet"]))
+      .toMatchObject({ resolveMax: 3, resolveRegen: 1 });
+    expect(towItemActorBonuses(["heart-of-still-winter"]))
+      .toMatchObject({ resolveMax: 6, resolveRegen: 2 });
+  });
+
   it("takes every character's source base-stat chassis into practice", () => {
     for (const archetype of STARTING_ARCHETYPES) {
       const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
       const actor = practiceActor(compiled.receipt);
       const bonus = towItemActorBonuses(archetype.gear);
       expect(actor.maxHp, archetype.id).toBe(archetype.baseStats.maxHp + bonus.maxHp);
-      expect(actor.resolveMax, archetype.id).toBe(archetype.baseStats.resolveMax);
+      expect(actor.resolveMax, archetype.id)
+        .toBe(archetype.baseStats.resolveMax + bonus.resolveMax);
       expect(actor.resolve, archetype.id).toBe(actor.resolveMax);
+      expect(actor.resolveRegen, archetype.id)
+        .toBe(archetype.baseStats.resolveRegen + bonus.resolveRegen);
       expect(actor.stats, archetype.id).toEqual({
         attack: archetype.baseStats.attack + bonus.attack,
         defense: archetype.baseStats.defense + bonus.defense,
         critRate: archetype.baseStats.critRate + bonus.critRate,
         dodgeRate: archetype.baseStats.dodgeRate + bonus.dodgeRate,
       });
+    }
+  });
+
+  it("lets every starter fund Mythical Resolve costs and recover another cast within four rounds", () => {
+    const mythicalCost = 6;
+    for (const archetype of STARTING_ARCHETYPES) {
+      const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
+      const actor = practiceActor(compiled.receipt);
+      expect(actor.resolveMax, archetype.id).toBeGreaterThanOrEqual(mythicalCost);
+      expect(actor.resolveRegen, archetype.id).toBeGreaterThanOrEqual(1);
+
+      const afterFirstCast = actor.resolveMax - mythicalCost;
+      const missingForAnother = Math.max(0, mythicalCost - afterFirstCast);
+      const roundsToAnother = Math.ceil(missingForAnother / actor.resolveRegen);
+      expect(roundsToAnother, archetype.id).toBeLessThanOrEqual(4);
     }
   });
 });

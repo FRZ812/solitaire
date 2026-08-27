@@ -33,10 +33,6 @@ import {
 import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
 import { getCombatItem, normalizeCombatItems } from "./combat-items.js";
-import {
-  TOW_COMBAT_BALANCE_POLICY,
-  TOW_DAMAGING_STATUS_TYPES,
-} from "./combat-policy.js";
 import { effectRecipient } from "./ability-targeting.js";
 import {
   MOVING_FORMATION_RULES_VERSION,
@@ -78,12 +74,11 @@ export const RETREAT_CHANCE_MIN = 10;
 export const RETREAT_CHANCE_MAX = 90;
 export const RETREAT_BASE_CHANCE = 50;
 
-export { TOW_COMBAT_BALANCE_POLICY } from "./combat-policy.js";
-
-const DAMAGING_STATUS_TYPES = new Set(TOW_DAMAGING_STATUS_TYPES);
-
 const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep", "confuse"]);
 const MAX_ENEMY_COMMANDS_PER_WINDOW = 96;
+// Compatibility only: v1.2 saved Forbidden Ritual schedules omitted the applied max-HP
+// gain, so recovery must reconstruct the retired 50% cap before removing that old gain.
+const LEGACY_TEMPORARY_MAX_HP_FRACTION = 0.50;
 
 function convertInitiativeToPriority(statuses) {
   const initiative = statusCount(statuses, "initiative");
@@ -96,21 +91,7 @@ function convertInitiativeToPriority(statuses) {
 }
 
 function actorWithStatuses(actor, statuses) {
-  // The source catalogue expected bosses with thousands of HP. Current Solitaire actors
-  // are peer-scale, so a translated damage stack cannot carry a boss-sized payload into one
-  // boundary tick. Actors without Resolve are legacy replay snapshots and remain untouched.
-  const balancedStatuses = Number.isFinite(actor.resolve)
-    ? statuses.map((entry) => DAMAGING_STATUS_TYPES.has(entry.type)
-      ? {
-        ...entry,
-        count: Math.min(
-          entry.count,
-          Math.max(1, Math.floor(actor.maxHp * TOW_COMBAT_BALANCE_POLICY.damagingStatusFraction)),
-        ),
-      }
-      : entry)
-    : statuses;
-  const convertedStatuses = convertInitiativeToPriority(balancedStatuses);
+  const convertedStatuses = convertInitiativeToPriority(statuses);
   const growDelta = statusCount(convertedStatuses, "grow") - statusCount(actor.statuses, "grow");
   const maxHp = Math.max(1, actor.maxHp + growDelta);
   return {
@@ -166,6 +147,32 @@ function push(state, type, detail) {
     sequence: state.sequence + 1,
     events: [...state.events, event(state, type, detail)],
   };
+}
+
+function regenerateResolve(state) {
+  let next = state;
+  const actorIds = [state.playerId, ...(state.allyIds || []), ...(state.enemyIds || [])];
+  for (const actorId of actorIds) {
+    const actor = next.actors[actorId];
+    if (!actor || actor.hp <= 0 || !Number.isFinite(actor.resolve) || actor.resolveRegen <= 0) continue;
+    const after = Math.min(actor.resolveMax, actor.resolve + actor.resolveRegen);
+    const amount = after - actor.resolve;
+    if (amount <= 0) continue;
+    next = {
+      ...next,
+      actors: {
+        ...next.actors,
+        [actorId]: { ...actor, resolve: after },
+      },
+    };
+    next = push(next, "resolve-regenerated", {
+      actorId,
+      amount,
+      before: actor.resolve,
+      after,
+    });
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,10 +389,11 @@ function consumeActorPriority(state, actorId, amount = 1) {
   if (!actor || amount <= 0) return state;
   const statuses = consumeStatusCount(actor.statuses, "priority", amount);
   if (statuses === actor.statuses) return state;
-  return {
+  const next = {
     ...state,
     actors: { ...state.actors, [actorId]: { ...actor, statuses } },
   };
+  return consumePriorityBeforeControl(next, actorId, amount);
 }
 
 function activeControlStatuses(actor) {
@@ -461,8 +469,41 @@ function withFreshTurn(state) {
   for (const allyId of state.allyIds || []) allies[allyId] = actionsForRound(state, allyId);
   return {
     ...state,
-    turn: { actionsRemaining: actionsForRound(state, state.playerId), allies },
+    turn: {
+      actionsRemaining: actionsForRound(state, state.playerId),
+      allies,
+      priorityBeforeControl: {},
+    },
   };
+}
+
+function priorityBeforeControlFor(state, actorId) {
+  const value = state.turn.priorityBeforeControl?.[actorId];
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
+function addPriorityBeforeControl(state, actorId, amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) return state;
+  return {
+    ...state,
+    turn: {
+      ...state.turn,
+      priorityBeforeControl: {
+        ...state.turn.priorityBeforeControl,
+        [actorId]: priorityBeforeControlFor(state, actorId) + amount,
+      },
+    },
+  };
+}
+
+function consumePriorityBeforeControl(state, actorId, amount) {
+  const current = priorityBeforeControlFor(state, actorId);
+  if (current <= 0 || amount <= 0) return state;
+  const remaining = Math.max(0, current - amount);
+  const priorityBeforeControl = { ...state.turn.priorityBeforeControl };
+  if (remaining > 0) priorityBeforeControl[actorId] = remaining;
+  else delete priorityBeforeControl[actorId];
+  return { ...state, turn: { ...state.turn, priorityBeforeControl } };
 }
 
 /**
@@ -564,35 +605,40 @@ function authoredAttackDamage(actor, amount) {
  * `withFreshTurn` made a Swift Priority ability leak one enemy attack before its tempo
  * existed. Only the newly gained net Priority is added; hostile Priority still cancels it.
  */
-function applyImmediatePriorityBudget(state, actorId, priorityBefore) {
+function applyImmediatePriorityBudget(
+  state,
+  actorId,
+  priorityBefore,
+  { protectBeforeControl = false } = {},
+) {
   const actor = state.actors[actorId];
-  if (state.phase !== "player" || actor?.side !== "player") return state;
+  if (state.phase !== "player" || !actor) return state;
   const priorityAfter = statusCount(actor.statuses, "priority");
-  const enemyPriority = state.enemyIds.reduce((most, enemyId) => {
-    const enemy = state.actors[enemyId];
-    if (!enemy || enemy.hp <= 0) return most;
-    return Math.max(most, statusCount(enemy.statuses, "priority"));
-  }, 0);
-  const beforeNet = Math.max(0, priorityBefore - enemyPriority);
-  const afterNet = Math.max(0, priorityAfter - enemyPriority);
+  const opposing = opposingPriority(state, actorId);
+  const beforeNet = Math.max(0, priorityBefore - opposing);
+  const afterNet = Math.max(0, priorityAfter - opposing);
   const gainedActions = Math.max(0, afterNet - beforeNet);
   if (gainedActions <= 0) return state;
+  let next = protectBeforeControl
+    ? addPriorityBeforeControl(state, actorId, gainedActions)
+    : state;
+  if (actor.side !== "player") return next;
   if (actorId === state.playerId) {
     return {
-      ...state,
+      ...next,
       turn: {
-        ...state.turn,
-        actionsRemaining: state.turn.actionsRemaining + gainedActions,
+        ...next.turn,
+        actionsRemaining: next.turn.actionsRemaining + gainedActions,
       },
     };
   }
   return {
-    ...state,
+    ...next,
     turn: {
-      ...state.turn,
+      ...next.turn,
       allies: {
-        ...state.turn.allies,
-        [actorId]: (state.turn.allies?.[actorId] ?? 0) + gainedActions,
+        ...next.turn.allies,
+        [actorId]: (next.turn.allies?.[actorId] ?? 0) + gainedActions,
       },
     },
   };
@@ -677,37 +723,20 @@ function projectedSkillDamage(state, actorId, skillId, targetId) {
   const target = state.actors[targetId];
   const rank = buildFor(state, actorId)?.skills.find((entry) => entry.id === skillId)?.rank ?? 1;
   if (!definition || !actor || !target) return { damage: 0, hits: 1 };
-  let budget = Number.isFinite(actor.resolve)
-    ? Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.directSkillDamageFraction))
-    : Number.POSITIVE_INFINITY;
   const packets = [];
   definition.effects.forEach((effect, index) => {
     const magnitude = effectMagnitude(skillId, index, rank);
     if (effect.type === "damage") {
       const hits = effect.hits ?? 1;
       const authored = sourcedMagnitudeAmount(actor, target, effect, magnitude);
-      const amount = Math.min(authored, Number.isFinite(budget) ? Math.floor(budget / hits) : authored);
-      if (amount > 0) {
-        packets.push({ amount, hits });
-        budget = Math.max(0, budget - amount * hits);
-      }
+      if (authored > 0) packets.push({ amount: authored, hits });
     } else if (effect.type === "damage-enemy-lost-hp" || effect.type === "damage-self-lost-hp") {
       const source = effect.type === "damage-self-lost-hp" ? actor : target;
       const authored = Math.floor((Math.max(0, source.maxHp - source.hp) * magnitude) / 100);
-      const amount = Math.min(authored, budget);
-      if (amount > 0) {
-        packets.push({ amount, hits: 1 });
-        budget = Math.max(0, budget - amount);
-      }
+      if (authored > 0) packets.push({ amount: authored, hits: 1 });
     } else if (effect.type === "damage-enemy-max-hp") {
       const authored = Math.floor((target.maxHp * magnitude) / 100);
-      const amount = Number.isFinite(actor.resolve)
-        ? Math.min(
-          authored,
-          Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.maxHpSkillDamageFraction)),
-        )
-        : authored;
-      if (amount > 0) packets.push({ amount, hits: 1 });
+      if (authored > 0) packets.push({ amount: authored, hits: 1 });
     }
   });
   if (packets.length === 1) return { damage: packets[0].amount, hits: packets[0].hits };
@@ -853,7 +882,7 @@ export function createTowEncounter({
     build: playerBuild,
     allyBuilds,
     ...(formationSnapshot ? { formations: formationSnapshot } : {}),
-    turn: { actionsRemaining: 1, allies: {} },
+    turn: { actionsRemaining: 1, allies: {}, priorityBeforeControl: {} },
     scheduledEffects: [],
     statusDecayProtection: {},
     events: [],
@@ -1324,8 +1353,18 @@ function settle(state) {
 }
 
 // A control status nullifies the actor's action unless Unstoppable answers it.
-function isControlled(actor) {
-  return activeControlStatuses(actor).length > 0;
+function isControlled(state, actorId) {
+  const actor = state.actors[actorId];
+  const protectedPriority = Math.min(
+    priorityBeforeControlFor(state, actorId),
+    priorityAdvantageFor(state, actorId),
+  );
+  return protectedPriority <= 0 && activeControlStatuses(actor).length > 0;
+}
+
+/** Read-only authority query for presentation and policy layers. */
+export function controlNullifiesActor(state, actorId) {
+  return isControlled(state, actorId);
 }
 
 /**
@@ -1351,6 +1390,7 @@ export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
   "modify-status",
   "reduce-statuses",
   "restore-skill-uses",
+  "resolve-regen",
   "scale-status",
   "scaled-status",
   "scaled-status-enemy-lost-hp",
@@ -1359,6 +1399,18 @@ export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
   "status-from-status",
   "temporary-max-hp",
 ]);
+
+function priorityPrecedesSelfControl(definition, effect) {
+  return effect.type === "status"
+    && effect.status === "priority"
+    && effect.target === "self"
+    && definition.effects.some((candidate) => (
+      candidate !== effect
+      && ["status", "scaled-status"].includes(candidate.type)
+      && (candidate.target === "self" || candidate.target === "all")
+      && CONTROL_STATUS_TYPES.includes(candidate.status)
+    ));
+}
 
 function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexes = null) {
   const definition = getSkill(skillId);
@@ -1384,17 +1436,6 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
     : playerId;
   const shieldBeforeSkill = next.actors[shieldSubjectId]?.shield || 0;
   let shieldRaisedBySkill = 0;
-  const openingTarget = next.actors[targetId];
-  // Some authored abilities deal separate ATK-, DEF-, and HP-scaled packets. They are one
-  // committed technique, so current rules give the whole ability one direct-damage budget;
-  // applying the peer-health ceiling independently to every packet would restore one-shots.
-  let directDamageBudget = Number.isFinite(next.actors[playerId]?.resolve) && openingTarget
-    ? Math.max(
-      1,
-      Math.floor(openingTarget.maxHp * TOW_COMBAT_BALANCE_POLICY.directSkillDamageFraction),
-    )
-    : Number.POSITIVE_INFINITY;
-
   definition.effects.forEach((effect, index) => {
     if (selectedEffects !== null && !selectedEffects.has(index)) return;
     // Asked for per branch rather than up front: not every effect carries a rank table, and
@@ -1419,12 +1460,8 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
         ? Math.floor((statOf(player, effect.scale) * weaponAttack.damagePercent) / 100)
         : sourcedMagnitudeAmount(player, target, effect, magnitude());
       const hitCount = weaponAttack?.hits ?? effect.hits ?? 1;
-      const currentBudget = Number.isFinite(directDamageBudget)
-        ? Math.floor(directDamageBudget / hitCount)
-        : authoredAmount;
-      const amount = Math.min(authoredAmount, currentBudget);
+      const amount = authoredAmount;
       if (amount <= 0) return;
-      directDamageBudget = Math.max(0, directDamageBudget - amount * hitCount);
       const hit = resolveAttack({
         attacker: player,
         defender: target,
@@ -1548,11 +1585,8 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
       const source = effect.type === "damage-self-lost-hp" ? player : target;
       const lost = Math.max(0, source.maxHp - source.hp);
       const authoredAmount = Math.floor((lost * magnitude()) / 100);
-      const amount = Number.isFinite(directDamageBudget)
-        ? Math.min(authoredAmount, directDamageBudget)
-        : authoredAmount;
+      const amount = authoredAmount;
       if (amount <= 0) return;
-      directDamageBudget = Math.max(0, directDamageBudget - amount);
       const applied = Math.min(target.hp, amount);
       next = {
         ...next,
@@ -1588,12 +1622,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
       const target = next.actors[targetId];
       if (!target || target.hp <= 0) return;
       const authoredAmount = Math.floor((target.maxHp * magnitude()) / 100);
-      const amount = Number.isFinite(player.resolve)
-        ? Math.min(
-          authoredAmount,
-          Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.maxHpSkillDamageFraction)),
-        )
-        : authoredAmount;
+      const amount = authoredAmount;
       if (amount <= 0) return;
       // Reaper's Scythe is max-health based, but it remains a real attack: critical and
       // Vulnerable modifiers resolve through the same per-hit path as weapon damage.
@@ -1863,6 +1892,29 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
       return;
     }
 
+    if (effect.type === "resolve-regen") {
+      const currentActor = next.actors[subjectId];
+      if (!Number.isFinite(currentActor?.resolveRegen)) return;
+      const before = currentActor.resolveRegen;
+      const after = Math.max(before, magnitude());
+      if (after <= before) return;
+      next = {
+        ...next,
+        actors: {
+          ...next.actors,
+          [subjectId]: { ...currentActor, resolveRegen: after },
+        },
+      };
+      next = push(next, "skill-resolve-regen", {
+        actorId: playerId,
+        targetId: subjectId,
+        skillId,
+        before,
+        after,
+      });
+      return;
+    }
+
     if (effect.type === "amplify-statuses") {
       const target = next.actors[subjectId];
       if (!target || target.hp <= 0) return;
@@ -1891,21 +1943,11 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
     }
 
     if (effect.type === "delayed-damage") {
-      const delayedTargetId = subjectId;
+      const delayedTargetId = effect.target === "self" ? playerId : targetId;
       const target = next.actors[delayedTargetId];
       if (!target || target.hp <= 0) return;
       const authoredAmount = magnitude();
-      const amount = Number.isFinite(player.resolve) && delayedTargetId !== playerId
-        ? Math.min(
-          authoredAmount,
-          Math.max(
-            1,
-            Math.floor(
-              target.maxHp * TOW_COMBAT_BALANCE_POLICY.delayedSkillDamageFraction,
-            ),
-          ),
-        )
-        : authoredAmount;
+      const amount = authoredAmount;
       const delayedStatus = effect.status || "limited-life-sentence";
       const turns = effect.turnsByRank
         ? effect.turnsByRank[Math.min(rank - 1, effect.turnsByRank.length - 1)]
@@ -1943,14 +1985,8 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
 
     if (effect.type === "temporary-max-hp") {
       const authoredAmount = magnitude();
-      const amount = Number.isFinite(player.resolve)
-        ? Math.min(
-          authoredAmount,
-          Math.max(
-            1,
-            Math.floor(player.maxHp * TOW_COMBAT_BALANCE_POLICY.temporaryMaxHpFraction),
-          ),
-        )
+      const amount = effect.scale === "max-hp"
+        ? Math.max(1, Math.floor((player.maxHp * authoredAmount) / 100))
         : authoredAmount;
       const turns = effect.turns;
       next = {
@@ -1973,6 +2009,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
           ...next.actors,
           [playerId]: {
             ...player,
+            hp: player.hp + amount,
             maxHp: player.maxHp + amount,
             statuses: applyStatus(player.statuses, "forbidden-ritual", turns),
           },
@@ -2060,7 +2097,9 @@ function applySkillEffects(state, skillId, rank, targetId, actorId, effectIndexe
           next = protectStatusDecay(next, subjectId, effect.status, count, effect.stackDownDelay);
         }
         if (priorityGained > 0 || effect.status === "priority") {
-          next = applyImmediatePriorityBudget(next, subjectId, priorityBefore);
+          next = applyImmediatePriorityBudget(next, subjectId, priorityBefore, {
+            protectBeforeControl: priorityPrecedesSelfControl(definition, effect),
+          });
         }
         if (effect.status === "haste") {
           if (definition.consumesTurn) {
@@ -2222,6 +2261,9 @@ function hasContextualSkillOutcome(state, definition, rank, actorId, resolvedTar
         return restoreUses(entry, magnitude).usesRemaining > entry.usesRemaining;
       }) || false;
     }
+    if (effect.type === "resolve-regen") {
+      return Number.isFinite(actor.resolveRegen) && magnitude > actor.resolveRegen;
+    }
     if (effect.type === "status" || effect.type === "scaled-status") {
       const recipient = effectRecipient(definition, effect, effectIndex);
       return contextualEffectSubjectIds(
@@ -2366,7 +2408,7 @@ export function combatSkillLegality(state, skillId, actorId = state.playerId) {
   const actor = state.actors[actorId];
   if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor" };
   if (actor.hp <= 0) return { ok: false, reason: "actor-down" };
-  if (isControlled(actor)) return { ok: false, reason: "action-nullified" };
+  if (isControlled(state, actorId)) return { ok: false, reason: "action-nullified" };
   const build = buildFor(state, actorId);
   if (!build) return { ok: false, reason: "unknown-actor" };
   const skillState = build.skills.find((entry) => entry.id === skillId);
@@ -2401,7 +2443,7 @@ export function useSkill(
   const actor = state.actors[actorId];
   if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor", state };
   if (actor.hp <= 0) return { ok: false, reason: "actor-down", state };
-  if (isControlled(actor)) return { ok: false, reason: "action-nullified", state };
+  if (isControlled(state, actorId)) return { ok: false, reason: "action-nullified", state };
 
   const build = buildFor(state, actorId);
   if (!build) return { ok: false, reason: "unknown-actor", state };
@@ -2451,7 +2493,7 @@ export function combatItemLegality(state, itemId, actorId = state.playerId) {
   const actor = state.actors[actorId];
   if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor" };
   if (actor.hp <= 0) return { ok: false, reason: "actor-down" };
-  if (isControlled(actor)) return { ok: false, reason: "action-nullified" };
+  if (isControlled(state, actorId)) return { ok: false, reason: "action-nullified" };
   if (actionsLeftFor(state, actorId) <= 0) return { ok: false, reason: "turn-already-spent" };
   const item = getCombatItem(itemId);
   if (!item) return { ok: false, reason: "unknown-combat-item" };
@@ -2461,7 +2503,9 @@ export function combatItemLegality(state, itemId, actorId = state.playerId) {
     return { ok: false, reason: "health-full" };
   }
   if (item.effect.type === "restore-resolve"
-    && (!Number.isFinite(actor.resolve) || actor.resolve >= actor.resolveMax)) {
+    && (!Number.isFinite(actor.resolve)
+      || (actor.resolve >= actor.resolveMax
+        && actor.resolveRegen >= (item.effect.regenMinimum || 0)))) {
     return { ok: false, reason: "resolve-full" };
   }
   return { ok: true, reason: null };
@@ -2499,11 +2543,16 @@ export function useCombatItem(state, itemId, targetId = null, actorId = state.pl
     };
   } else if (item.effect.type === "restore-resolve") {
     amount = Math.min(item.effect.amount, actor.resolveMax - actor.resolve);
+    const resolveRegen = Math.max(actor.resolveRegen, item.effect.regenMinimum || 0);
     next = {
       ...next,
       actors: {
         ...next.actors,
-        [actorId]: { ...next.actors[actorId], resolve: actor.resolve + amount },
+        [actorId]: {
+          ...next.actors[actorId],
+          resolve: actor.resolve + amount,
+          resolveRegen,
+        },
       },
     };
   } else if (item.effect.type === "shield-defense-percent") {
@@ -2541,6 +2590,9 @@ export function useCombatItem(state, itemId, targetId = null, actorId = state.pl
     effect: item.effect.type,
     targetId: target.id,
     amount,
+    ...(item.effect.type === "restore-resolve"
+      ? { resolveRegen: next.actors[actorId].resolveRegen }
+      : {}),
     ...(hits ? { hits } : {}),
   });
   if (item.consumesTurn) next = spendAction(next, actorId);
@@ -2590,7 +2642,7 @@ export function attemptRetreat(state, actorId = state.playerId) {
   const actor = state.actors[actorId];
   if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor", state };
   if (actor.hp <= 0) return { ok: false, reason: "actor-down", state };
-  if (isControlled(actor)) return { ok: false, reason: "action-nullified", state };
+  if (isControlled(state, actorId)) return { ok: false, reason: "action-nullified", state };
   if (actionsLeftFor(state, actorId) <= 0) {
     return { ok: false, reason: "turn-already-spent", state };
   }
@@ -2662,16 +2714,15 @@ function scheduledMaxHpGain(state, actor, entry) {
   if (effectIndex < 0) return 0;
   const rank = buildFor(state, entry.sourceId)?.skills
     .find((skill) => skill.id === entry.skillId)?.rank ?? 1;
-  const authored = effectMagnitude(entry.skillId, effectIndex, rank);
-  if (!Number.isFinite(actor.resolve)) return Math.min(authored, Math.max(0, actor.maxHp - 1));
+  if (!Number.isFinite(actor.resolve)) return Math.min(3_333, Math.max(0, actor.maxHp - 1));
 
-  const fraction = TOW_COMBAT_BALANCE_POLICY.temporaryMaxHpFraction;
+  const fraction = LEGACY_TEMPORARY_MAX_HP_FRACTION;
   const approximate = Math.max(1, Math.floor((actor.maxHp * fraction) / (1 + fraction)));
   for (let offset = -2; offset <= 2; offset += 1) {
     const gain = approximate + offset;
     const baseMaxHp = actor.maxHp - gain;
     if (gain < 1 || baseMaxHp < 1) continue;
-    const applied = Math.min(authored, Math.max(1, Math.floor(baseMaxHp * fraction)));
+    const applied = Math.max(1, Math.floor(baseMaxHp * fraction));
     if (applied === gain) return gain;
   }
   return 0;
@@ -2882,10 +2933,18 @@ export function endTurn(state) {
   // who still have an action are affected: self-control applied after an action (Mortal
   // Blow, Incineration) belongs to the *next* command window and must not disappear early.
   for (const actorId of playerSideIds(next)) {
-    if (actionsLeftFor(next, actorId) <= 0 || !isControlled(next.actors[actorId])) continue;
+    if (actionsLeftFor(next, actorId) <= 0 || !isControlled(next, actorId)) continue;
     const skipped = skipTurn(next, actorId);
     if (skipped.ok) next = skipped.state;
   }
+
+  // Freeze the opposed Priority arithmetic before player-side end-of-turn decay. Otherwise
+  // tied stacks can help the player, lose one on this boundary, then help the enemy again in
+  // the same round. Priority newly granted inside an enemy window is still added below.
+  const enemyPriorityAtWindowOpen = Object.fromEntries(next.enemyIds.map((enemyId) => [
+    enemyId,
+    priorityAdvantageFor(next, enemyId),
+  ]));
 
   // This call is the player side handing its command window over. Resolve every player-side
   // holder's persistent wounds now, before the enemy can apply a new one. In particular, a
@@ -2920,7 +2979,7 @@ export function endTurn(state) {
     // grants Priority (Chi Liberation), its newly won actions join this same window before
     // control can return to the player.
     let regularRemaining = regularActionsFor(next.actors[enemyId]);
-    let priorityRemaining = priorityAdvantageFor(next, enemyId);
+    let priorityRemaining = enemyPriorityAtWindowOpen[enemyId] || 0;
     let commandsResolved = 0;
 
     while (
@@ -2934,7 +2993,7 @@ export function endTurn(state) {
       }
 
       const enemy = next.actors[enemyId];
-      if (isControlled(enemy)) {
+      if (isControlled(next, enemyId)) {
         // Control forfeits the whole actor window and consumes one stack of every active
         // control family. The held telegraph remains the promise for its next legal window.
         const consumed = consumeControlWindow(next, enemyId);
@@ -3072,6 +3131,7 @@ export function endTurn(state) {
     allyBuilds: tickedAllyBuilds,
     enemyBuilds: tickedEnemyBuilds,
   };
+  next = regenerateResolve(next);
 
   // Cadence traits still fire before the action count is read, so a Swift proc this round is
   // an extra action this round rather than next. Moving formations reflow once afterwards,

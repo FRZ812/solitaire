@@ -17,19 +17,21 @@
 // mean changing how the harness picks a skill changes what damage the fight rolls.
 
 import { createRng, nextInt } from "../kernel/rng.js";
-import { getStatusDefinition, statusCount } from "../kernel/status-stack.js";
-import { TOW_COMBAT_BALANCE_POLICY } from "./combat-policy.js";
+import { statusCount } from "../kernel/status-stack.js";
 import {
   actorScaleValue,
+  combatSkillLegality,
+  controlNullifiesActor,
   createTowEncounter,
   declaredIntents,
   endTurn,
   useSkill,
 } from "./encounter.js";
 import { towBuildForCharacter } from "./professions.js";
-import { effectMagnitude, getSkill, skillLegality } from "./skills.js";
+import { effectMagnitude, getSkill } from "./skills.js";
+import { legalSkillAnchors, resolveSkillTargets } from "./targeting.js";
 
-export const TOW_SIMULATION_VERSION = 3;
+export const TOW_SIMULATION_VERSION = 5;
 
 /** A fight that has run this long has stopped being a fight; the run is recorded as a draw. */
 export const MAX_SIMULATED_ROUNDS = 200;
@@ -108,11 +110,43 @@ const BOUNDARY_DAMAGE_STATUSES = new Set([
 
 /** Which of the player's skills can legally be used right now. */
 export function legalSkills(state) {
-  const turnAvailable = state.turn.actionsRemaining > 0;
-  return state.build.skills.filter((skillState) => skillLegality(skillState, {
-    turnAvailable,
-    resolveAvailable: state.actors[state.playerId]?.resolve,
-  }).ok);
+  return state.build.skills.filter((skillState) => (
+    combatSkillLegality(state, skillState.id).ok
+  ));
+}
+
+/** Exact accepted skill commands, including authoritative spatial anchors and targets. */
+export function legalSkillCommands(state) {
+  return legalSkills(state).flatMap((skillState) => {
+    const definition = getSkill(skillState.id);
+    return legalSkillAnchors(state, definition, state.playerId).flatMap((anchorCell) => {
+      const resolved = resolveSkillTargets(state, definition, state.playerId, { anchorCell });
+      if (!resolved.ok) return [];
+      const probe = useSkill(
+        state,
+        skillState.id,
+        resolved.primaryTargetId,
+        state.playerId,
+        anchorCell,
+      );
+      if (!probe.ok) return [];
+      return [{
+        skillState,
+        targetId: resolved.primaryTargetId,
+        targetIds: resolved.targetIds,
+        anchorCell,
+      }];
+    });
+  });
+}
+
+function policyCommand(option) {
+  return {
+    type: "use-skill",
+    skillId: option.skillState.id,
+    targetId: option.targetId,
+    anchorCell: option.anchorCell,
+  };
 }
 
 /**
@@ -174,39 +208,24 @@ export function projectedDamage(state, skillState, targetId) {
   const player = state.actors[state.playerId];
   const target = state.actors[targetId];
   if (!definition || !target) return 0;
-  let directBudget = Number.isFinite(player.resolve)
-    ? Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.directSkillDamageFraction))
-    : Number.POSITIVE_INFINITY;
-  const spendDirectBudget = (authoredPerHit, hits = 1) => {
-    const amount = Math.min(
-      authoredPerHit,
-      Number.isFinite(directBudget) ? Math.floor(directBudget / hits) : authoredPerHit,
-    );
-    const applied = Math.max(0, amount) * hits;
-    directBudget = Math.max(0, directBudget - applied);
-    return applied;
-  };
+  const authoredDirectDamage = (authoredPerHit, hits = 1) => (
+    Math.max(0, authoredPerHit) * hits
+  );
   return definition.effects.reduce((total, effect, index) => {
     if (effect.type === "damage-enemy-lost-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
       const authored = Math.floor(((target.maxHp - target.hp) * magnitude) / 100);
-      return total + spendDirectBudget(authored);
+      return total + authoredDirectDamage(authored);
     }
     if (effect.type === "damage-self-lost-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
       const authored = Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
-      return total + spendDirectBudget(authored);
+      return total + authoredDirectDamage(authored);
     }
     if (effect.type === "damage-enemy-max-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
       const authored = Math.floor((target.maxHp * magnitude) / 100);
-      const applied = Number.isFinite(player.resolve)
-        ? Math.min(
-          authored,
-          Math.max(1, Math.floor(target.maxHp * TOW_COMBAT_BALANCE_POLICY.maxHpSkillDamageFraction)),
-        )
-        : authored;
-      return total + applied;
+      return total + authored;
     }
     if (effect.type === "delayed-damage") {
       return total + effectMagnitude(skillState.id, index, skillState.rank);
@@ -236,7 +255,7 @@ export function projectedDamage(state, skillState, targetId) {
     }
     if (effect.type !== "damage") return total;
     const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-    return total + spendDirectBudget(
+    return total + authoredDirectDamage(
       projectedSourceAmount(player, target, effect, magnitude),
       effect.hits || 1,
     );
@@ -285,6 +304,17 @@ export function projectedRecovery(state, skillState) {
   }, 0);
 }
 
+function consecutiveDefensiveRounds(state) {
+  const defendedRounds = new Set(state.events
+    .filter((event) => event.type === "skill-committed"
+      && event.actorId === state.playerId
+      && classifySkill(event.skillId).defensive)
+    .map((event) => event.round));
+  let streak = 0;
+  for (let round = state.round - 1; defendedRounds.has(round); round -= 1) streak += 1;
+  return streak;
+}
+
 function isFreshDefensiveSetup(state, skillState) {
   const definition = getSkill(skillState.id);
   const player = state.actors[state.playerId];
@@ -294,30 +324,6 @@ function isFreshDefensiveSetup(state, skillState) {
     && ["guard", "protection", "solidity", "steelskin"].includes(effect.status)
     && statusCount(player.statuses, effect.status) <= 0
   ));
-}
-
-function effectWouldChangeBoard(state, skillState, targetId) {
-  const definition = getSkill(skillState.id);
-  const player = state.actors[state.playerId];
-  const target = state.actors[targetId];
-  if (!definition || !player || !target) return false;
-  return definition.effects.some((effect, index) => {
-    if (effect.type === "damage" || effect.type.startsWith("damage-")) return true;
-    if (effect.type === "shield") return projectedShield(state, skillState) > player.shield;
-    if (effect.type.startsWith("heal")) return player.hp < player.maxHp;
-    if (!effect.type.includes("status")) return true;
-
-    if (effect.target === "enemy") {
-      // Lethargy is intentionally stackable until the target's current ATK reaches zero.
-      if (effect.status === "lethargy") return actorScaleValue(target, "attack") > 0;
-      return statusCount(target.statuses, effect.status) <= 0;
-    }
-    // Permanent encounter buffs are allowed to stack while the player decides the extra
-    // commitment is worth its Resolve. Temporary evasion/guard-like statuses instead wait
-    // until the live stack is spent.
-    if (getStatusDefinition(effect.status)?.permanent) return true;
-    return statusCount(player.statuses, effect.status) <= 0;
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -334,19 +340,17 @@ export const randomLegalPolicy = Object.freeze({
   id: "random-legal",
   usesIntent: false,
   decide(state, rng) {
-    const options = legalSkills(state);
-    const targets = livingEnemyIds(state);
-    if (options.length === 0 || targets.length === 0) {
+    const options = legalSkillCommands(state);
+    if (options.length === 0) {
       return { command: { type: "end-turn" }, rng };
     }
     // End-turn is one option among the skills, so the policy does not simply spend every
     // action it has every round.
     const pick = nextInt(rng, 0, options.length);
     if (pick.value === options.length) return { command: { type: "end-turn" }, rng: pick.rng };
-    const target = nextInt(pick.rng, 0, targets.length - 1);
     return {
-      command: { type: "use-skill", skillId: options[pick.value].id, targetId: targets[target.value] },
-      rng: target.rng,
+      command: policyCommand(options[pick.value]),
+      rng: pick.rng,
     };
   },
 });
@@ -369,11 +373,20 @@ export const intentAwarePolicy = Object.freeze({
   usesIntent: true,
   decide(state, rng) {
     if (state.turn.actionsRemaining <= 0) return { command: { type: "end-turn" }, rng };
-    const options = legalSkills(state);
+    const commandOptions = legalSkillCommands(state);
+    const options = [...new Map(commandOptions.map((option) => (
+      [option.skillState.id, option.skillState]
+    ))).values()];
     const targets = livingEnemyIds(state);
     if (options.length === 0 || targets.length === 0) {
       return { command: { type: "end-turn" }, rng };
     }
+    const optionFor = (skillState, preferredTargetId = null) => {
+      const matching = commandOptions.filter((option) => option.skillState.id === skillState.id);
+      return matching.find((option) => option.targetIds.includes(preferredTargetId))
+        || matching[0]
+        || null;
+    };
 
     const offensive = options.filter((skillState) => classifySkill(skillState.id).offensive);
     const defensive = options.filter((skillState) => classifySkill(skillState.id).defensive);
@@ -387,8 +400,7 @@ export const intentAwarePolicy = Object.freeze({
     // additional commitment is worth their shared Resolve cost.
     const freeActions = options.filter((skillState) => {
       const definition = getSkill(skillState.id);
-      return definition?.consumesTurn === false
-        && effectWouldChangeBoard(state, skillState, weakest);
+      return definition?.consumesTurn === false;
     });
     if (freeActions.length > 0) {
       const bestFree = freeActions.reduce((best, skillState) => (
@@ -396,17 +408,18 @@ export const intentAwarePolicy = Object.freeze({
           ? skillState
           : best
       ), freeActions[0]);
-      return { command: { type: "use-skill", skillId: bestFree.id, targetId: weakest }, rng };
+      return { command: policyCommand(optionFor(bestFree, weakest)), rng };
     }
 
     // 1. A kill this round is a whole enemy's declared damage removed from the fight.
     for (const targetId of targets) {
       const target = state.actors[targetId];
       const finisher = offensive.find(
-        (skillState) => projectedDamage(state, skillState, targetId) >= target.hp + target.shield,
+        (skillState) => optionFor(skillState, targetId)
+          && projectedDamage(state, skillState, targetId) >= target.hp + target.shield,
       );
       if (finisher) {
-        return { command: { type: "use-skill", skillId: finisher.id, targetId }, rng };
+        return { command: policyCommand(optionFor(finisher, targetId)), rng };
       }
     }
 
@@ -436,7 +449,7 @@ export const intentAwarePolicy = Object.freeze({
     // This distinction keeps Guard useful without letting the one-window shield pool bank.
     const defensiveSetup = defensive.find((skillState) => isFreshDefensiveSetup(state, skillState));
     if (defensiveSetup && incoming < player.hp + player.shield) {
-      return { command: { type: "use-skill", skillId: defensiveSetup.id, targetId: weakest }, rng };
+      return { command: policyCommand(optionFor(defensiveSetup, weakest)), rng };
     }
 
     const recovery = options
@@ -446,9 +459,10 @@ export const intentAwarePolicy = Object.freeze({
     if (recovery) {
       const lethalNow = incoming >= player.hp + player.shield;
       const survivesAfterRecovery = incoming < player.hp + player.shield + recovery.amount;
-      if ((lethalNow && survivesAfterRecovery) || recovery.amount > progress) {
+      const endangered = incoming * DANGER_HORIZON_ROUNDS >= player.hp + player.shield;
+      if ((lethalNow && survivesAfterRecovery) || (endangered && recovery.amount > progress)) {
         return {
-          command: { type: "use-skill", skillId: recovery.skillState.id, targetId: weakest },
+          command: policyCommand(optionFor(recovery.skillState, weakest)),
           rng,
         };
       }
@@ -471,14 +485,17 @@ export const intentAwarePolicy = Object.freeze({
       // needed". Without the second half the policy guards on every round it can afford to,
       // and grinds out fights it should have finished.
       const endangered = incoming * DANGER_HORIZON_ROUNDS >= player.hp + player.shield;
-      if (survivalOverride || (endangered && covers && prevented > progress)) {
-        return { command: { type: "use-skill", skillId: bestGuard.id, targetId: targets[0] }, rng };
+      const defensiveStreak = consecutiveDefensiveRounds(state);
+      const survivalGuardAvailable = survivalOverride && defensiveStreak < 2;
+      const routineGuardAvailable = defensiveStreak === 0;
+      if (survivalGuardAvailable || (routineGuardAvailable && endangered && covers && prevented > progress)) {
+        return { command: policyCommand(optionFor(bestGuard, targets[0])), rng };
       }
     }
 
     // 3. Otherwise press the advantage.
     if (bestAttack) {
-      return { command: { type: "use-skill", skillId: bestAttack.id, targetId: weakest }, rng };
+      return { command: policyCommand(optionFor(bestAttack, weakest)), rng };
     }
 
     return { command: { type: "end-turn" }, rng };
@@ -522,7 +539,11 @@ export function simulateEncounter({
     // The gate is "a capable actor always has something to do". An actor who has already
     // spent their action is not capable this instant, and counting that as a dead end would
     // report every normal turn as a failure.
-    if (options.length === 0 && state.turn.actionsRemaining > 0) turnsWithNoLegalSkill += 1;
+    if (options.length === 0
+      && state.turn.actionsRemaining > 0
+      && !controlNullifiesActor(state, state.playerId)) {
+      turnsWithNoLegalSkill += 1;
+    }
 
     const decision = policy.decide(state, rng);
     rng = decision.rng;
@@ -539,7 +560,13 @@ export function simulateEncounter({
       continue;
     }
 
-    const result = useSkill(state, command.skillId, command.targetId);
+    const result = useSkill(
+      state,
+      command.skillId,
+      command.targetId,
+      state.playerId,
+      command.anchorCell || null,
+    );
     if (!result.ok) {
       // A refused command still costs the policy its decision; ending the turn keeps the
       // fight moving rather than spinning on an illegal choice forever.
@@ -599,6 +626,7 @@ export function standardPlayer(overrides = {}) {
     maxHp: 120,
     resolve: 8,
     resolveMax: 8,
+    resolveRegen: 1,
     stats: { attack: 14, defense: 8, critRate: 5, dodgeRate: 5 },
     ...overrides,
   };
@@ -648,38 +676,38 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "lone-brigand",
     name: "A brigand on the road",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.57, randomWinRate: 0.02 }),
-    enemies: Object.freeze([foe("foe-0", "Brigand", 120, 18, moveSet("foe-0", 11, 18, 28))]),
+    baseline: Object.freeze({ informedWinRate: 0.72, randomWinRate: 0.07 }),
+    enemies: Object.freeze([foe("foe-0", "Brigand", 120, 23, moveSet("foe-0", 14, 23, 36))]),
   }),
   Object.freeze({
     id: "brigand-pair",
     name: "Two brigands",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.976667, randomWinRate: 0.04 }),
+    baseline: Object.freeze({ informedWinRate: 0.97, randomWinRate: 0.12 }),
     enemies: Object.freeze([
-      foe("foe-0", "Brigand", 54, 10, moveSet("foe-0", 7, 10, 15)),
-      foe("foe-1", "Brigand", 54, 10, moveSet("foe-1", 7, 10, 15)),
+      foe("foe-0", "Brigand", 54, 13, moveSet("foe-0", 9, 13, 20)),
+      foe("foe-1", "Brigand", 54, 13, moveSet("foe-1", 9, 13, 20)),
     ]),
   }),
   Object.freeze({
     id: "armoured-duelist",
     name: "An armoured duelist",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.456667, randomWinRate: 0.016667 }),
+    baseline: Object.freeze({ informedWinRate: 0.62, randomWinRate: 0.053333 }),
     enemies: Object.freeze([{
-      ...foe("foe-0", "Duelist", 122, 17, moveSet("foe-0", 11, 17, 27)),
-      stats: { attack: 17, defense: 6, critRate: 6, dodgeRate: 8 },
+      ...foe("foe-0", "Duelist", 122, 22, moveSet("foe-0", 14, 22, 35)),
+      stats: { attack: 22, defense: 6, critRate: 6, dodgeRate: 8 },
     }]),
   }),
   Object.freeze({
     id: "wolf-pack",
     name: "Three wolves",
     tier: "hard",
-    baseline: Object.freeze({ informedWinRate: 0.656667, randomWinRate: 0.013333 }),
+    baseline: Object.freeze({ informedWinRate: 0.60, randomWinRate: 0.01 }),
     enemies: Object.freeze([
-      foe("foe-0", "Wolf", 32, 9, moveSet("foe-0", 6, 9, 13)),
-      foe("foe-1", "Wolf", 32, 9, moveSet("foe-1", 6, 9, 13)),
-      foe("foe-2", "Wolf", 32, 9, moveSet("foe-2", 6, 9, 13)),
+      foe("foe-0", "Wolf", 32, 12, moveSet("foe-0", 8, 12, 17)),
+      foe("foe-1", "Wolf", 32, 12, moveSet("foe-1", 8, 12, 17)),
+      foe("foe-2", "Wolf", 32, 12, moveSet("foe-2", 8, 12, 17)),
     ]),
   }),
 ]);
@@ -696,8 +724,8 @@ export const EQUAL_THREAT_FIXTURES = Object.freeze(
  * change that quietly relaxes its own acceptance test has not been reviewed.
  */
 export const ACCEPTANCE_TARGETS = Object.freeze({
-  // Resolve v3 measures a deliberately harsher fight: informed play wins 0.668 of the
-  // equal-threat cohort while random legal play wins only 0.026. The 0.60–0.80 band keeps
+  // Resolve v5 measures authoritative command/target selection against recalibrated threats:
+  // informed play wins 0.77 while random legal play wins about 0.081. The 0.60–0.80 band keeps
   // good tactics viable without letting equal threats collapse into guaranteed victories.
   informedWinRateMin: 0.60,
   informedWinRateMax: 0.80,
@@ -758,6 +786,7 @@ export function simulateMatchup({ packageId, fixture, policy, seeds, level = 1, 
     medianRounds: median(runs.map((run) => run.rounds)),
     medianPlayerHpFraction: median(runs.map((run) => run.playerHpFraction)),
     turnsWithNoLegalSkill: runs.reduce((total, run) => total + run.turnsWithNoLegalSkill, 0),
+    refusals: runs.reduce((total, run) => total + run.refusals, 0),
     skillUses: spent,
   };
 }

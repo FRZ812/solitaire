@@ -35,14 +35,14 @@ const PACKAGES = Object.freeze({
   wizard: pkg("destructor", "penetration", "rapid-cooling"),
   sorcerer: pkg("ignition", "penetration", "rising-power"),
   warlock: pkg("decay", "sleep-grenade", "judge-of-fate"),
-  cleric: pkg("aegis", "first-aid", "impregnable"),
+  cleric: pkg("aegis", "first-aid", "impregnable", "sudden-blow"),
   druid: pkg("adaptation", "first-aid", "thirst-for-blood"),
   artificer: pkg("venom", "rapid-cooling", "urgent-guard"),
   bard: pkg("luck", "shouting", "elixir-of-wrath"),
 
   // Generalist and civilian professions. They fight, but they fight like people who do
   // something else for a living: an opening trait that keeps them upright and one answer.
-  wanderer: pkg("survival", "emergency-evasion"),
+  wanderer: pkg("survival", "emergency-evasion", "sudden-blow"),
   innkeeper: pkg("endurance", "urgent-guard"),
   farmer: pkg("survival", "urgent-guard"),
   merchant: pkg("luck", "emergency-evasion"),

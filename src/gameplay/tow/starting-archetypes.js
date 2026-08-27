@@ -4,7 +4,7 @@
 // migration aliases so existing saves and replays continue to resolve the same mechanics.
 
 import { itemTemplate } from "../../data/catalog.js";
-import { resolvePoolForMind } from "../../engine/attributes.js";
+import { resolvePoolForMind, resolveRegenForAttributes } from "../../engine/attributes.js";
 import {
   getTowArchetypeIdentity,
   sameTowArchetype,
@@ -72,6 +72,7 @@ function archetype({
   const combatStats = {
     ...baseStats,
     resolveMax: baseStats.resolveMax ?? resolvePoolForMind(attributes.mind || 0),
+    resolveRegen: baseStats.resolveRegen ?? resolveRegenForAttributes(attributes),
   };
   const representative = archetypeRepresentative(identity);
   return Object.freeze({
@@ -219,7 +220,14 @@ export const STARTING_ARCHETYPES = Object.freeze([
     tagline: "Control the hunger and turn every wound into momentum.",
     playstyle: "Every damaging action becomes sustain through Bloodsuck. Blood Thirst recovers without a target, Heartbreaker opens a wound, and Rampage turns repeated hits into a violent recovery sequence.",
     attention: "Medium", attributes: { body: 4, reflex: 4, vigor: 4, mind: 3, wit: 4, presence: 4 },
-    baseStats: { maxHp: 170, attack: 13, defense: 13, critRate: 9, dodgeRate: 4 },
+    baseStats: {
+      maxHp: 170,
+      attack: 13,
+      defense: 13,
+      critRate: 9,
+      dodgeRate: 4,
+      resolveRegen: 2,
+    },
     gear: ["iron-dagger", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#984653",
     portrait: { scale: 1.06, x: "48%" },
   }),

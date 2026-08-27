@@ -76,7 +76,7 @@ describe("spatial ability targeting metadata", () => {
 
   it("allows curated heals and boons to select allies, including the caster", () => {
     expect(new Set(ALLY_TARGET_ABILITY_IDS).size).toBe(ALLY_TARGET_ABILITY_IDS.length);
-    expect(ALLY_TARGET_ABILITY_IDS).toHaveLength(63);
+    expect(ALLY_TARGET_ABILITY_IDS).toHaveLength(61);
     for (const id of ALLY_TARGET_ABILITY_IDS) {
       const definition = getSkill(id);
       expect(definition, id).toBeTruthy();
@@ -106,8 +106,10 @@ describe("spatial ability targeting metadata", () => {
   it("keeps fixed, intrinsic, resource, and fatal self actions on the caster", () => {
     for (const id of [
       "mage-blink",
+      "mage-mana-concentration",
       "witch-forbidden-ritual",
       "automaton-infinite-power",
+      "sleepless-cool-composure",
       "sleepless-high-speed-flight",
     ]) {
       const definition = getSkill(id);

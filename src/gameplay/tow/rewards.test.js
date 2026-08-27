@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTowBuild, startingBuild } from "./build.js";
+import { createTowBuild, isTowBuild, startingBuild } from "./build.js";
 import {
   REWARD_CHOICE_COUNT,
   claimReward,
@@ -10,7 +10,7 @@ import {
   rewardCandidates,
   rewardSeedFor,
 } from "./rewards.js";
-import { SKILL_SLOTS, getSkill } from "./skills.js";
+import { SKILL_SLOTS, getSkill, maxRankOf, skillIds } from "./skills.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { TRAIT_RANK_CAP } from "./traits.js";
 
@@ -64,6 +64,36 @@ describe("compiling an offer", () => {
       .not.toEqual(offerFor().candidates);
   });
 
+  it("accepts a canonical offer after JSON storage reorders candidate keys", () => {
+    const target = build();
+    const offer = offerFor(target, "json-key-order");
+    const reordered = {
+      ...offer,
+      candidates: offer.candidates.map((candidate) => (
+        Object.fromEntries(Object.entries(candidate).reverse())
+      )),
+    };
+
+    expect(reordered.checksum).toBe(offer.checksum);
+    expect(isRewardOffer(reordered)).toBe(true);
+    expect(claimReward(target, reordered, reordered.candidates[0].id).ok).toBe(true);
+  });
+
+  it("rejects a persisted offer whose deterministic candidates were substituted", () => {
+    const target = build();
+    const offer = offerFor(target, "candidate-binding");
+    const offeredIds = new Set(offer.candidates.map((candidate) => candidate.id));
+    const substituted = rewardCandidates().find((candidate) => !offeredIds.has(candidate.id));
+    const tampered = {
+      ...offer,
+      candidates: [{ ...substituted, requiresReplacement: false }],
+    };
+
+    expect(isRewardOffer(tampered)).toBe(false);
+    expect(claimReward(target, tampered, substituted.id))
+      .toMatchObject({ ok: false, reason: "invalid-reward-offer" });
+  });
+
   it("draws from the live registries rather than a curated list", () => {
     // A trait or skill added to the game becomes reachable without anyone editing rewards.
     const kinds = new Set(rewardCandidates().map((entry) => entry.kind));
@@ -84,12 +114,15 @@ describe("compiling an offer", () => {
   });
 
   it("records why a candidate was ruled out", () => {
-    const target = build();
+    const target = createTowBuild({
+      ...build(),
+      skills: build().skills.map((skill) => (
+        skill.id === "strike" ? { ...skill, rank: getSkill(skill.id).rankCount } : skill
+      )),
+    });
     const offer = offerFor(target);
-    // The fighter already holds Strike, so it must appear as ineligible with a real reason
-    // rather than simply being absent.
-    const held = offer.ineligible.find((entry) => entry.id === target.skills[0]);
-    expect(held).toMatchObject({ reason: "skill-already-held" });
+    const held = offer.ineligible.find((entry) => entry.id === "strike");
+    expect(held).toMatchObject({ reason: "skill-at-rank-cap" });
   });
 
   it("offers General and same-character exclusive abilities, never foreign exclusives", () => {
@@ -101,7 +134,7 @@ describe("compiling an offer", () => {
         const skill = getSkill(candidate.id);
         seen.push(skill);
         expect([null, "arctic-knight"]).toContain(skill.exclusiveTo);
-        expect(candidate.requiresReplacement).toBe(true);
+        expect(candidate.requiresReplacement).toBe(candidate.currentRank === undefined);
       }
     }
     expect(seen.some((skill) => skill.abilityType === "general")).toBe(true);
@@ -178,6 +211,56 @@ describe("the reroll", () => {
 });
 
 describe("claiming", () => {
+  it("promotes every live ability through its maximum and survives JSON", () => {
+    for (const id of skillIds()) {
+      let target = createTowBuild({
+        professionId: "fighter",
+        traits: { ironclad: 1 },
+        skills: [{ id, rank: 1 }],
+        runes: [],
+      });
+      let finalUnclaimedOffer = null;
+      for (let rank = 2; rank <= maxRankOf(id); rank += 1) {
+        const { offer } = offerWithSkill(target, (skill) => skill.id === id);
+        if (rank === maxRankOf(id)) finalUnclaimedOffer = offer;
+        const claimed = claimReward(target, offer, id);
+        expect(claimed.ok, `${id} rank ${rank}`).toBe(true);
+        target = claimed.build;
+        expect(target.skills).toEqual([{ id, rank }]);
+      }
+
+      const restored = JSON.parse(JSON.stringify(target));
+      expect(isTowBuild(restored), id).toBe(true);
+      expect(restored.skills).toEqual([{ id, rank: maxRankOf(id) }]);
+      if (finalUnclaimedOffer) {
+        expect(claimReward(target, finalUnclaimedOffer, id), id)
+          .toMatchObject({ ok: false, reason: "skill-at-rank-cap" });
+      }
+    }
+  });
+
+  it("promotes an already-owned skill without consuming or replacing a slot", () => {
+    const target = createTowBuild({
+      professionId: "fighter",
+      traits: { ironclad: 1 },
+      skills: [{ id: "strike", rank: 1 }],
+      runes: [],
+    });
+    const { offer, choice } = offerWithSkill(target, (skill) => skill.id === "strike");
+
+    expect(choice).toMatchObject({
+      id: "strike",
+      currentRank: 1,
+      nextRank: 2,
+      requiresReplacement: false,
+    });
+    const claimed = claimReward(target, offer, "strike", { replacingId: "stale-ui-slot" });
+
+    expect(claimed.ok).toBe(true);
+    expect(claimed.build.skills).toEqual([{ id: "strike", rank: 2 }]);
+    expect(claimed.provenance).toMatchObject({ id: "strike", rank: 2, replacedId: null });
+  });
+
   it("writes the choice into the build with provenance", () => {
     const target = build();
     const offer = offerFor(target);
@@ -189,7 +272,7 @@ describe("claiming", () => {
     expect(claimed.provenance).toMatchObject({
       offerId: offer.id,
       sourceReceiptId: "combat-1",
-      rulesetId: "solitaire-tow-v1.2",
+      rulesetId: "solitaire-tow-v1.3",
       id: choice.id,
     });
     if (choice.kind === "skill") expect(claimed.build.skills).toContain(choice.id);
@@ -234,9 +317,15 @@ describe("claiming", () => {
     const offer = offerFor(target);
     const skillChoice = offer.candidates.find((entry) => entry.kind === "skill");
     if (!skillChoice) return;
-    const alreadyTaken = { ...target, skills: [...target.skills, skillChoice.id] };
+    const alreadyTaken = createTowBuild({
+      ...target,
+      skills: [
+        ...target.skills,
+        { id: skillChoice.id, rank: getSkill(skillChoice.id).rankCount },
+      ],
+    });
     expect(claimReward(alreadyTaken, offer, skillChoice.id))
-      .toMatchObject({ ok: false, reason: "skill-already-held" });
+      .toMatchObject({ ok: false, reason: "skill-at-rank-cap" });
   });
 
   it("takes a shared reward by replacing only one of the three flexible abilities", () => {
@@ -245,18 +334,18 @@ describe("claiming", () => {
 
     expect(claimReward(target, offer, choice.id))
       .toMatchObject({ ok: false, reason: "replacement-required" });
-    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[0] }))
+    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[0].id }))
       .toMatchObject({ ok: false, reason: "protected-ability-slot" });
-    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[1] }))
+    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[1].id }))
       .toMatchObject({ ok: false, reason: "protected-ability-slot" });
 
-    const replacedId = target.skills[2];
+    const replacedId = target.skills[2].id;
     const claimed = claimReward(target, offer, choice.id, { replacingId: replacedId });
     expect(claimed.ok).toBe(true);
     expect(claimed.build.skills).toHaveLength(SKILL_SLOTS);
     expect(claimed.build.skills.slice(0, 2)).toEqual(target.skills.slice(0, 2));
-    expect(claimed.build.skills).toContain(choice.id);
-    expect(claimed.build.skills).not.toContain(replacedId);
+    expect(claimed.build.skills).toContainEqual({ id: choice.id, rank: 1 });
+    expect(claimed.build.skills.map((skill) => skill.id)).not.toContain(replacedId);
     expect(claimed.provenance.replacedId).toBe(replacedId);
   });
 
@@ -268,13 +357,36 @@ describe("claiming", () => {
     );
 
     expect(choice.detail).toContain("replaces the Basic Attack slot");
-    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[2] }))
+    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[2].id }))
       .toMatchObject({ ok: false, reason: "incompatible-ability-slot" });
 
-    const claimed = claimReward(target, offer, choice.id, { replacingId: target.skills[0] });
+    const claimed = claimReward(target, offer, choice.id, { replacingId: target.skills[0].id });
     expect(claimed.ok).toBe(true);
-    expect(claimed.build.skills[0]).toBe(choice.id);
+    expect(claimed.build.skills[0]).toEqual({ id: choice.id, rank: 1 });
     expect(claimed.build.skills.slice(1)).toEqual(target.skills.slice(1));
+  });
+
+  it("replaces a legacy compatibility Basic Attack even before the loadout is full", () => {
+    const target = createTowBuild({
+      professionId: "fighter",
+      traits: { ironclad: 1 },
+      skills: ["strike", "block", "warcry"],
+      runes: [],
+    });
+    const offer = compileRewardOffer(target, {
+      sourceReceiptId: "legacy-fight",
+      seed: "legacy-31",
+    }).offer;
+    const choice = offer.candidates.find((candidate) => candidate.id === "arctic-strike");
+    expect(choice).toBeTruthy();
+
+    const claimed = claimReward(target, offer, choice.id);
+
+    expect(claimed.ok).toBe(true);
+    expect(claimed.build.skills.map((entry) => entry.id)).toEqual([
+      "arctic-strike", "block", "warcry",
+    ]);
+    expect(claimed.provenance.replacedId).toBe("strike");
   });
 
   it("refuses an offer it cannot read", () => {

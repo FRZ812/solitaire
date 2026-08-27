@@ -106,7 +106,7 @@ import { applyCharacterBootstrap, compileCharacterBootstrap } from "./gameplay/t
 import { isTowBuild } from "./gameplay/tow/build.js";
 import { LOCKED_LANE_FORMATION_RULES_VERSION } from "./gameplay/tow/formation.js";
 import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
-import { getSkill, replacementSkillIds, SKILL_SLOTS } from "./gameplay/tow/skills.js";
+import { getSkill, replacementSkillIds } from "./gameplay/tow/skills.js";
 import { refusalNotice } from "./gameplay/campaign/command-gateway.js";
 import {
   claimPresentation,
@@ -3563,7 +3563,7 @@ export function Solitaire() {
     // reward stream, so the three choices are reproducible from the fight that earned them
     // — and, like the spoils, what the draw spent is written back rather than forgotten.
     let pendingReward = next.pendingReward ?? null;
-    if (cs.phase === "victory" && !epicDeath && next.mechanics?.build) {
+    if (cs.phase === "victory" && !epicDeath && next.mechanics?.build && !pendingReward) {
       const sequenced = createTowRuntimeStreamSequencer(closing, "rewards");
       if (!sequenced.ok) {
         setError(`The fight's reward stream could not be read: ${sequenced.reason}.`);
@@ -4287,7 +4287,7 @@ export function Solitaire() {
                   ? replacementSkillIds(buildSkills, candidateSkill)
                   : [];
                 const requiresReplacement = candidate.kind === "skill"
-                  && (candidate.requiresReplacement === true || buildSkills.length >= SKILL_SLOTS);
+                  && candidate.requiresReplacement === true;
                 if (!requiresReplacement) {
                   return (
                     <button

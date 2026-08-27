@@ -45,11 +45,16 @@ export function createTowActor(input = {}) {
   const hp = Math.min(maxHp, boundedInteger(input.hp ?? maxHp, "hp"));
   const statuses = input.statuses ?? [];
   if (!isStatusStack(statuses)) throw new TypeError("invalid-statuses");
-  const hasResolve = Object.hasOwn(input, "resolve") || Object.hasOwn(input, "resolveMax");
+  const hasResolve = Object.hasOwn(input, "resolve")
+    || Object.hasOwn(input, "resolveMax")
+    || Object.hasOwn(input, "resolveRegen");
   const resolveMax = hasResolve ? boundedInteger(input.resolveMax, "resolve-max") : null;
   if (hasResolve && resolveMax <= 0) throw new TypeError("invalid-resolve-max");
   const resolve = hasResolve
     ? Math.min(resolveMax, boundedInteger(input.resolve ?? resolveMax, "resolve"))
+    : null;
+  const resolveRegen = hasResolve
+    ? boundedInteger(input.resolveRegen ?? 1, "resolve-regen")
     : null;
   return {
     id,
@@ -65,7 +70,7 @@ export function createTowActor(input = {}) {
       dodgeRate: boundedRate(input.stats?.dodgeRate ?? 0, "dodge-rate"),
     },
     statuses: statuses.map((entry) => ({ type: entry.type, count: entry.count })),
-    ...(hasResolve ? { resolve, resolveMax } : {}),
+    ...(hasResolve ? { resolve, resolveMax, resolveRegen } : {}),
   };
 }
 
@@ -73,7 +78,7 @@ export function isTowActor(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const keys = Object.keys(value).sort();
   const legacy = ["hp", "id", "maxHp", "name", "shield", "side", "stats", "statuses"];
-  const current = [...legacy, "resolve", "resolveMax"].sort();
+  const current = [...legacy, "resolve", "resolveMax", "resolveRegen"].sort();
   const expected = keys.length === legacy.length ? legacy : current;
   if (keys.length !== expected.length || keys.some((key, at) => key !== expected[at])) {
     return false;
@@ -120,6 +125,9 @@ export function isTowActor(value) {
       && Number.isSafeInteger(value.resolve)
       && value.resolve >= 0
       && value.resolve <= value.resolveMax
+      && Number.isSafeInteger(value.resolveRegen)
+      && value.resolveRegen >= 0
+      && value.resolveRegen <= MAX_ACTOR_VALUE
     ))
     && isStatusStack(value.statuses);
 }

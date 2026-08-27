@@ -18,7 +18,7 @@ import {
   skillIds,
 } from "../../gameplay/tow/skills.js";
 import { abilityTargeting } from "../../gameplay/tow/ability-targeting.js";
-import { useSkill } from "../../gameplay/tow/encounter.js";
+import { createTowEncounter, useSkill } from "../../gameplay/tow/encounter.js";
 import {
   encounterFormations,
   formationCellForActor,
@@ -97,64 +97,19 @@ function replaceSkill(encounter, replacedId, skillId, rank = 1) {
 }
 
 describe("compact combat HUD", () => {
-  it("discloses the effective Resolve-era direct-damage ceiling", () => {
-    const detail = towSkillDetail(
-      getSkill("mortal-blow"),
-      createSkillState("mortal-blow", 1),
-    );
+  it.each([
+    ["mortal-blow", 1, "Deal 210% ATK damage"],
+    ["blade-one-flash", 1, "Doom equal to 1000% ATK"],
+    ["priestess-doom", 1, "to 200%"],
+    ["witch-limited-life-sentence", 1, "Deal 666 damage after 2 turns"],
+    ["blade-latent-power", 1, "Deal 9999 damage after 4 turns"],
+    ["witch-forbidden-ritual", 1, "Gain 35% of maximum health for 4 turns"],
+  ])("presents %s from source without a generic cap", (skillId, rank, sourceText) => {
+    const detail = towSkillDetail(getSkill(skillId), createSkillState(skillId, rank));
 
-    expect(detail).toContain("Deal 210% ATK damage");
-    expect(detail).toContain("Resolve combat: total base damage before criticals is capped at 45% of the target's maximum health");
-  });
-
-  it("discloses the effective Resolve-era damaging-status ceiling", () => {
-    const detail = towSkillDetail(
-      getSkill("blade-one-flash"),
-      createSkillState("blade-one-flash", 1),
-    );
-
-    expect(detail).toContain("Doom equal to 1000% ATK");
-    expect(detail).toContain("Resolve combat: damaging statuses are capped at 30% of the target's maximum health");
-  });
-
-  it("discloses the damaging-status ceiling for status multipliers", () => {
-    const detail = towSkillDetail(
-      getSkill("priestess-doom"),
-      createSkillState("priestess-doom", 1),
-    );
-
-    expect(detail).toContain("to 200%");
-    expect(detail).toContain("damaging statuses are capped at 30%");
-  });
-
-  it("discloses the effective Resolve-era delayed-damage ceiling", () => {
-    const detail = towSkillDetail(
-      getSkill("witch-limited-life-sentence"),
-      createSkillState("witch-limited-life-sentence", 1),
-    );
-
-    expect(detail).toContain("Deal 666 damage after 13 turns");
-    expect(detail).toContain("Resolve combat: delayed damage is capped at 65% of the target's maximum health");
-  });
-
-  it("does not claim the hostile delayed-damage ceiling for self-damage bargains", () => {
-    const detail = towSkillDetail(
-      getSkill("blade-latent-power"),
-      createSkillState("blade-latent-power", 1),
-    );
-
-    expect(detail).toContain("Deal 9999 damage after 4 turns");
-    expect(detail).not.toContain("delayed damage is capped");
-  });
-
-  it("discloses the effective Resolve-era temporary-health ceiling", () => {
-    const detail = towSkillDetail(
-      getSkill("witch-forbidden-ritual"),
-      createSkillState("witch-forbidden-ritual", 1),
-    );
-
-    expect(detail).toContain("Gain 3333 maximum health for 4 turns");
-    expect(detail).toContain("Resolve combat: temporary maximum health is capped at 50% of the caster's current maximum health");
+    expect(detail).toContain(sourceText);
+    expect(detail).not.toContain("Resolve combat:");
+    expect(detail).not.toContain("capped at");
   });
 
   it("states one-turn decay protection on freshly granted statuses", () => {
@@ -286,7 +241,7 @@ describe("compact combat HUD", () => {
     expect(mounted.querySelector(".tow-combat__action-swift")).toBeNull();
     expect(strike.querySelector(".tow-combat__action-cost")).toBeNull();
     expect(block.querySelector(".tow-combat__action-cost")?.textContent).toBe("1RP");
-    expect(evasion.querySelector(".tow-combat__action-cost")?.textContent).toBe("6RP");
+    expect(evasion.querySelector(".tow-combat__action-cost")?.textContent).toBe("3RP");
     expect(block.getAttribute("aria-label")).toMatch(/1 Resolve/i);
     expect(actions.map((action) => action.textContent).join("")).not.toContain("∞");
     expect(actions.every((action) => action.querySelector(".tow-combat__sr-only")?.textContent)).toBe(true);
@@ -295,6 +250,7 @@ describe("compact combat HUD", () => {
     expect(resolve).toBeTruthy();
     expect(resolve.getAttribute("aria-label")).toMatch(/Resolve$/);
     expect(resolve.getAttribute("aria-valuenow")).toBe(resolve.getAttribute("aria-valuemax"));
+    expect(resolve.querySelector(".tow-formation-unit__meter-value")?.textContent).toContain("+1/r");
   });
 
   it("shows captured charges only while resuming a legacy encounter", async () => {
@@ -342,7 +298,7 @@ describe("compact combat HUD", () => {
     cooling = mounted.querySelector("[data-skill-id='rapid-cooling']");
     expect(cooling.classList.contains("is-on-cooldown")).toBe(false);
     expect(cooling.querySelector(".tow-combat__action-cooldown")).toBeNull();
-    expect(cooling.querySelector(".tow-combat__action-cost")?.textContent).toBe("7RP");
+    expect(cooling.querySelector(".tow-combat__action-cost")?.textContent).toBe("2RP");
   });
 
   it("offers the snapshotted keepsake as a one-action satchel command", async () => {
@@ -1238,6 +1194,43 @@ describe("compact combat HUD", () => {
       }
     },
   );
+
+  it("keeps same-ability Priority actions interactive before self-Paralyze", async () => {
+    const opened = createTowEncounter({
+      seed: "priority-before-control-ui",
+      player: {
+        id: "clocktower",
+        name: "Clocktower",
+        maxHp: 100,
+        resolve: 12,
+        resolveMax: 12,
+        stats: { attack: 12, defense: 8, critRate: 0, dodgeRate: 0 },
+      },
+      enemies: [{
+        id: "dummy",
+        name: "Dummy",
+        maxHp: 100,
+        stats: { attack: 1, defense: 0, critRate: 0, dodgeRate: 0 },
+      }],
+      build: {
+        traits: {},
+        skills: [
+          { id: "clocktower-time-machine", rank: 1 },
+          { id: "strike", rank: 1 },
+        ],
+      },
+    });
+    const cast = useSkill(opened, "clocktower-time-machine");
+    expect(cast.ok).toBe(true);
+    const onStandDown = vi.fn();
+    const mounted = await renderView({ encounter: cast.state, onStandDown });
+    const strike = [...mounted.querySelectorAll(".production-combat__action")]
+      .find((button) => button.dataset.skillId === "strike");
+
+    expect(strike).toBeTruthy();
+    expect(strike.disabled).toBe(false);
+    expect(onStandDown).not.toHaveBeenCalled();
+  });
 
   it("forfeits a forced window once per revision under Strict Mode", async () => {
     vi.useFakeTimers();

@@ -236,6 +236,9 @@ function UnitVitals({ actor, enemy, presented }) {
   const hasResolve = Number.isFinite(actor.resolve) && Number.isFinite(actor.resolveMax);
   const resolve = hasResolve ? Math.max(0, actor.resolve) : 0;
   const resolveMax = hasResolve ? Math.max(0, actor.resolveMax) : 0;
+  const resolveRegen = hasResolve && Number.isFinite(actor.resolveRegen)
+    ? Math.max(0, actor.resolveRegen)
+    : 0;
 
   return (
     <span className="tow-formation-unit__vitals">
@@ -266,6 +269,7 @@ function UnitVitals({ actor, enemy, presented }) {
           <span className="tow-formation-unit__meter-label" aria-hidden="true">RP</span>
           <span className="tow-formation-unit__meter-value" aria-hidden="true">
             <strong>{vitalText(resolve)}</strong>/{vitalText(resolveMax)}
+            {resolveRegen > 0 ? <em>+{vitalText(resolveRegen)}/r</em> : null}
           </span>
         </span>
       ) : null}

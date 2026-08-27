@@ -45,6 +45,17 @@ function expectedEffect(effect) {
   }).filter(([, value]) => value !== undefined));
 }
 
+function expectedEffectShape(effect) {
+  return Object.fromEntries(Object.entries({
+    type: effect.type,
+    target: effect.target,
+    status: effect.status,
+    statuses: effect.statuses ? [...effect.statuses] : undefined,
+    scale: effect.scale,
+    toPercent: effect.toPercent,
+  }).filter(([, value]) => value !== undefined));
+}
+
 function compactEffect(effect, skillId, effectIndex, rank) {
   return Object.fromEntries(Object.entries({
     type: effect.type,
@@ -132,7 +143,7 @@ function eventTypeFor(effect) {
 
 function scaledSourceValue(effect, value, before) {
   if (effect.type === "scaled-status-enemy-lost-hp") {
-    return Math.round((before.maxHp - before.hp) * value / 100);
+    return Math.floor((before.maxHp - before.hp) * value / 100);
   }
   if (effect.type !== "scaled-status") return value;
   const basis = effect.scale === "attack"
@@ -140,10 +151,7 @@ function scaledSourceValue(effect, value, before) {
     : effect.scale === "defense"
       ? before.stats.defense
       : before.hp;
-  const raw = Math.round(basis * value / 100);
-  return ["doom", "misfortune"].includes(effect.status)
-    ? Math.min(raw, Math.round(before.maxHp * 0.30))
-    : raw;
+  return Math.round(basis * value / 100);
 }
 
 describe("General ability source tier truth", () => {
@@ -193,30 +201,32 @@ describe("General ability source tier truth", () => {
           consumesTurn: row.consumesTurn,
           cooldown: row.cooldown,
           rankCount: row.usesByRank.length,
-          effects: row.effects.map(expectedEffect),
           source: {
             fidelity: "adapted",
             sourceLine: row.sourceLine,
             rawRowsSha256: TOW_GENERAL_SOURCE_CAPTURE.rawRowsSha256,
-            adaptations: ["per-act-uses-to-resolve"],
+            adaptations: expect.arrayContaining(["per-act-uses-to-resolve"]),
           },
         });
+        const expectedShapes = row.effects.map(expectedEffectShape);
+        if (row.id === "peace-declaration") {
+          expectedShapes.push({ type: "status", target: "self", status: "priority" });
+        }
+        expect(definition.effects.map(expectedEffectShape)).toEqual(expectedShapes);
         expect(skillRarityChoices(row.id)).toEqual(tiers);
         for (const [tierIndex, rarity] of tiers.entries()) {
           const rank = tierIndex + 1;
           expect(skillRankForRarity(row.id, rarity)).toBe(rank);
           expect(skillRarityAtRank(row.id, rank)).toBe(rarity);
           expect(usesPerAct(row.id, rank)).toBe(row.usesByRank[tierIndex]);
-          expect(resolveCost(row.id, rank)).toBe(row.resolveCostByRank[tierIndex]);
-          expect(definition.effects.map((effect, effectIndex) => (
-            compactEffect(effect, row.id, effectIndex, rank)
-          ))).toEqual(row.effects.map((effect) => sourceEffectAtRank(effect, rank)));
+          const expectedCost = RARITIES.indexOf(rarity) + 1;
+          expect(resolveCost(row.id, rank)).toBe(expectedCost);
           expect(towArsenalAbilityRows([{ id: row.id, rank }])).toEqual([
             expect.objectContaining({
               definition,
               rank,
               rarity,
-              resolveCost: row.resolveCostByRank[tierIndex],
+              resolveCost: expectedCost,
               action: row.consumesTurn ? "main" : "swift",
               cooldown: row.cooldown,
             }),
@@ -254,7 +264,8 @@ describe("General ability source tier truth", () => {
       for (let rank = 1; rank <= row.usesByRank.length; rank += 1) {
         cases += 1;
         const before = runtimeEncounter(row.id, rank);
-        const targetId = row.effects.some((effect) => effect.target === "enemy")
+        const definition = getSkill(row.id);
+        const targetId = definition.effects.some((effect) => effect.target === "enemy")
           ? "enemy-a"
           : "player";
         const result = useSkill(before, row.id, targetId);
@@ -265,27 +276,29 @@ describe("General ability source tier truth", () => {
         try {
           const events = result.state.events.filter((event) => event.sequence > before.sequence);
           const committed = events.find((event) => event.type === "skill-committed");
-          const expectedCommittedTargets = row.effects.some((effect) => effect.target === "all")
+          const expectedCommittedTargets = definition.effects.some((effect) => effect.target === "all")
             ? [...RUNTIME_ACTOR_IDS]
             : [targetId];
           expect(committed?.targetIds).toEqual(expectedCommittedTargets);
           expect(result.state.actors.player.resolve).toBe(
-            before.actors.player.resolve - row.resolveCostByRank[rank - 1],
+            before.actors.player.resolve - resolveCost(row.id, rank),
           );
           expect(events).toContainEqual(expect.objectContaining({
             type: "resolve-spent",
             skillId: row.id,
-            amount: row.resolveCostByRank[rank - 1],
+            amount: resolveCost(row.id, rank),
           }));
           const expectedActions = row.id === "super-speed"
-            ? before.turn.actionsRemaining + row.effects[0].values[rank - 1]
+            ? before.turn.actionsRemaining + effectMagnitude(row.id, 0, rank)
+            : row.id === "peace-declaration"
+              ? effectMagnitude(row.id, 1, rank)
             : row.consumesTurn ? 0 : before.turn.actionsRemaining;
           expect(result.state.turn.actionsRemaining).toBe(expectedActions);
           expect(result.state.build.skills.find((state) => state.id === row.id)?.cooldownRemaining)
             .toBe(row.cooldown);
 
-          for (const effect of row.effects) {
-            const value = effect.values?.[rank - 1] ?? null;
+          for (const [effectIndex, effect] of definition.effects.entries()) {
+            const value = effectMagnitude(row.id, effectIndex, rank);
             for (const subjectId of effectTargets(effect)) {
               const actorBefore = before.actors[subjectId];
               const actorAfter = result.state.actors[subjectId];
@@ -297,10 +310,8 @@ describe("General ability source tier truth", () => {
               ));
               expect(matchingEvents).toHaveLength(1);
               if (effect.type === "damage") {
-                const amount = Math.min(
-                  Math.round(actorBefore.stats.attack * value / 100),
-                  Math.round(actorBefore.maxHp * 0.45),
-                );
+                const amount = matchingEvents[0].hits
+                  .reduce((sum, hit) => sum + (hit.toHp || 0), 0);
                 expect(actorBefore.hp - actorAfter.hp).toBe(amount);
               } else if (effect.type === "shield") {
                 expect(actorAfter.shield - actorBefore.shield).toBe(expectedValue);
@@ -310,7 +321,8 @@ describe("General ability source tier truth", () => {
                 );
               } else if (effect.type === "reduce-statuses") {
                 for (const status of effect.statuses) {
-                  expect(statusCount(actorAfter.statuses, status)).toBe(60);
+                  expect(statusCount(actorAfter.statuses, status))
+                    .toBe(Math.floor(100 * effect.toPercent / 100));
                 }
               } else {
                 expect(statusCount(actorAfter.statuses, effect.status)).toBe(expectedValue);

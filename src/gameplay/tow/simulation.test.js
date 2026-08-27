@@ -17,6 +17,10 @@ import {
 } from "./simulation.js";
 import { startingPackageIds } from "./starting-packages.js";
 import { towBuildForCharacter } from "./professions.js";
+import { compileCharacterBootstrap } from "./character-bootstrap.js";
+import { createPracticeSession } from "./practice-scenarios.js";
+import { getStartingArchetype, STARTING_ARCHETYPES } from "./starting-archetypes.js";
+import { maxRankOf } from "./skills.js";
 
 // A representative spread rather than all thirty packages: martial, caster, and the
 // civilian professions that fight like people who do something else for a living. The
@@ -84,6 +88,48 @@ describe("the harness is deterministic", () => {
     }).rng);
     expect(informed.seed).toBe(random.seed);
   });
+
+  it("never converts a no-op Blademaster setup into a refused command", () => {
+    const run = simulateEncounter({
+      seed: "blademaster-authoritative-legality",
+      player: standardPlayer(),
+      enemies: STANDARD_FIXTURES[0].enemies.map((enemy) => ({ ...enemy })),
+      build: getStartingArchetype("blademaster").build,
+      policy: intentAwarePolicy,
+      maxRounds: 20,
+    });
+
+    expect(run.refusals).toBe(0);
+  });
+
+  it("issues no refused command from any max-rank archetype kit", () => {
+    for (const archetype of STARTING_ARCHETYPES) {
+      const run = simulateEncounter({
+        seed: `max-rank-legality::${archetype.id}`,
+        player: standardPlayer({
+          maxHp: archetype.baseStats.maxHp,
+          resolve: archetype.baseStats.resolveMax,
+          resolveMax: archetype.baseStats.resolveMax,
+          resolveRegen: archetype.baseStats.resolveRegen,
+          stats: {
+            attack: archetype.baseStats.attack,
+            defense: archetype.baseStats.defense,
+            critRate: archetype.baseStats.critRate,
+            dodgeRate: archetype.baseStats.dodgeRate,
+          },
+        }),
+        enemies: STANDARD_FIXTURES[0].enemies.map((enemy) => ({ ...enemy })),
+        build: {
+          traits: { ...archetype.build.traits },
+          skills: archetype.build.skills.map((id) => ({ id, rank: maxRankOf(id) })),
+          runes: [...archetype.build.runes],
+        },
+        policy: intentAwarePolicy,
+        maxRounds: 60,
+      });
+      expect(run.refusals, archetype.id).toBe(0);
+    }
+  });
 });
 
 describe("reading the fight beats not reading it", () => {
@@ -112,6 +158,13 @@ describe("reading the fight beats not reading it", () => {
   it("keeps the informed baseline challenging rather than automatic", () => {
     expect(informed.winRate).toBeGreaterThanOrEqual(ACCEPTANCE_TARGETS.informedWinRateMin);
     expect(informed.winRate).toBeLessThanOrEqual(ACCEPTANCE_TARGETS.informedWinRateMax);
+  });
+
+  it("issues no reducer-refused commands under either policy", () => {
+    for (const matchup of [...informed.matchups, ...random.matchups]) {
+      expect(matchup.refusals, `${matchup.policyId}:${matchup.packageId} vs ${matchup.fixtureId}`)
+        .toBe(0);
+    }
   });
 
   it("stays close to the recorded per-fixture baseline", () => {
@@ -147,6 +200,12 @@ describe("no package is locked out", () => {
     expect(stuck).toEqual([]);
   });
 
+  it("issues no reducer-refused commands on any standard or hard matchup", () => {
+    for (const matchup of informed.matchups) {
+      expect(matchup.refusals, `${matchup.packageId} vs ${matchup.fixtureId}`).toBe(0);
+    }
+  });
+
   it("finishes inside the recorded turn bound", () => {
     for (const matchup of informed.matchups) {
       expect(matchup.medianRounds).toBeLessThanOrEqual(ACCEPTANCE_TARGETS.medianRoundsMax);
@@ -165,6 +224,31 @@ describe("no package is locked out", () => {
       });
       expect(legalSkills(state).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("recovery cannot stall the fight", () => {
+  it("finishes an Automaton practice fight instead of repairing chip damage forever", () => {
+    const compiled = compileCharacterBootstrap({ archetypeId: "automaton", origin: "practice" });
+    expect(compiled.ok).toBe(true);
+    const opened = createPracticeSession(compiled.receipt, "training-yard", 0);
+    expect(opened.ok).toBe(true);
+    const encounter = opened.session.encounter;
+    const result = simulateEncounter({
+      seed: "automaton-recovery-liveness",
+      player: encounter.actors[encounter.playerId],
+      enemies: encounter.enemyIds.map((id) => encounter.actors[id]),
+      build: encounter.build,
+      policy: intentAwarePolicy,
+      packageId: "automaton",
+      fixtureId: "training-yard",
+      maxRounds: 60,
+    });
+
+    expect(result.outcome).not.toBe("draw");
+    expect(result.rounds).toBeLessThanOrEqual(60);
+    expect(result.skillUses["automaton-bombardment"] || 0).toBeGreaterThan(1);
+    expect(result.skillUses["automaton-repair"] || 0).toBeLessThan(30);
   });
 });
 
@@ -264,7 +348,7 @@ describe("the informed policy actually reads the declarations", () => {
       .toMatchObject({ type: "use-skill", skillId: "mortal-blow" });
   });
 
-  it("does not call capped self-Paralyzing damage a finisher against a full-health peer", () => {
+  it("uses source-authored lethal self-Paralyzing damage as a finisher", () => {
     const wolf = STANDARD_FIXTURES.find((fixture) => fixture.id === "wolf-pack").enemies[0];
     const opened = createTowEncounter({
       seed: "mortal-cap-restraint",
@@ -275,10 +359,9 @@ describe("the informed policy actually reads the declarations", () => {
     const primed = useSkill(opened, "elixir-of-wrath", wolf.id);
     expect(primed.ok).toBe(true);
 
-    // Mortal Blow's authored coefficient exceeds the wolf's remaining health, but the
-    // peer-scale direct-damage cap means the applied hit cannot finish a full-health wolf.
-    // The informed policy must preserve its next command window and use Strike instead.
+    // Mortal Blow's source-authored coefficient exceeds the wolf's full health, so the
+    // informed policy may correctly spend the self-Paralyzing command window as a finisher.
     expect(firstTurnSpendingDecision(primed.state))
-      .toMatchObject({ type: "use-skill", skillId: "strike" });
+      .toMatchObject({ type: "use-skill", skillId: "mortal-blow" });
   });
 });

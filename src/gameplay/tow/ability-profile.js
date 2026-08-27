@@ -241,7 +241,9 @@ function inferredRoles(definition, rank) {
       found.add("damage");
     }
     if (activeMagnitude && effect.type.startsWith("heal")) found.add("heal");
-    if (activeMagnitude && effect.type === "restore-skill-uses") found.add("economy");
+    if (activeMagnitude && ["restore-skill-uses", "resolve-regen"].includes(effect.type)) {
+      found.add("economy");
+    }
 
     if ((activeMagnitude && effect.type === "shield")
       || (appliesStatus
