@@ -1066,7 +1066,7 @@ export function migrateCodex(state) {
   // Backfilled in two steps because a campaign can predate either the sidecar or just its
   // combat slot: the build migration shipped first and left the slot for this one.
   if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
-  if (!next.mechanics.combat) next.mechanics = { ...next.mechanics, archetype: emptyCombatMechanics() };
+  if (!next.mechanics.combat) next.mechanics = { ...next.mechanics, combat: emptyCombatMechanics() };
   if (
     !Number.isSafeInteger(next.productionCombatSequence)
     || next.productionCombatSequence < 0
