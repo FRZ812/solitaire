@@ -38,8 +38,8 @@ ALWAYS-ON NARRATIVE CONTRACT
 
 ALWAYS-ON MECHANICAL SAFETY
 - The engine owns deterministic mechanics. The current [TURN POLICY] is the only mutation capability for this response. Every effect not listed there stays null, 0, or empty.
-- On an ordinary general-action turn after creation, assassination is the only non-neutral effect, and only for an exact target/method pair in [NARRATOR CONTRACT]. Conversation, exploration, training, gifts, wounds, relationships, discoveries, and loot do not grant their mechanics through ordinary narration. Present an NPC/world reaction or an open next step instead of promising an unavailable result.
-- Allowed does not mean automatic. If the accepted story materially establishes an authorized effect, emit that effect in the same response; never describe a mechanical result only in story. If a required outcome cannot be represented by an authorized field, do not narrate that outcome; present only what the engine can truthfully accept.
+- General-action after creation is mechanics-neutral except an exact authorized assassination; never promise an unavailable state change.
+- If story establishes an authorized effect, emit it; otherwise narrate only what the engine can accept.
 - IDs come only from context. Never invent ids, effects, prices, stats, paths, or inventory.
 - Never re-tally mechanics already resolved by the engine.
 - Movement is engine-driven. Player prose never relocates them; tile_move requires exact current authorization.

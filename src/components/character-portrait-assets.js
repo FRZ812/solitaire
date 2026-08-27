@@ -52,30 +52,6 @@ import dragonAscendantAlternative from "../assets/generated/character-portraits/
 import enchanterTyrant from "../assets/generated/character-portraits/enchanter-tyrant-grounded-v3.webp";
 import enchanterTyrantAlternative from "../assets/generated/character-portraits/enchanter-tyrant-anime-v2.webp";
 
-import knight from "../assets/generated/archetypes/portraits/knight-portrait-v3.png";
-import knightAlternative from "../assets/generated/archetypes/portraits/knight-portrait-v4.png";
-import rangerArchetype from "../assets/generated/archetypes/portraits/ranger-portrait-v4.png";
-import rangerArchetypeAlternative from "../assets/generated/archetypes/portraits/ranger-portrait-v5.png";
-import artificer from "../assets/generated/archetypes/portraits/artificer-portrait-v3.png";
-import artificerAlternative from "../assets/generated/archetypes/portraits/artificer-portrait-v4.png";
-import berserker from "../assets/generated/archetypes/portraits/berserker-portrait-v3.png";
-import berserkerAlternative from "../assets/generated/archetypes/portraits/berserker-portrait-v4.png";
-import sorcerer from "../assets/generated/archetypes/portraits/sorcerer-portrait-v3.png";
-import sorcererAlternative from "../assets/generated/archetypes/portraits/sorcerer-portrait-v4.png";
-import rogue from "../assets/generated/archetypes/portraits/rogue-portrait-v3.png";
-import rogueAlternative from "../assets/generated/archetypes/portraits/rogue-portrait-v4.png";
-import warlock from "../assets/generated/archetypes/portraits/warlock-portrait-v3.png";
-import warlockAlternative from "../assets/generated/archetypes/portraits/warlock-portrait-v4.png";
-import wizard from "../assets/generated/archetypes/portraits/wizard-portrait-v3.png";
-import wizardAlternative from "../assets/generated/archetypes/portraits/wizard-portrait-v4.png";
-import paladin from "../assets/generated/archetypes/portraits/paladin-portrait-v3.png";
-import paladinAlternative from "../assets/generated/archetypes/portraits/paladin-portrait-v4.png";
-import blademaster from "../assets/generated/archetypes/portraits/blademaster-portrait-v3.png";
-import blademasterAlternative from "../assets/generated/archetypes/portraits/blademaster-portrait-v4.png";
-import vampire from "../assets/generated/archetypes/portraits/vampire-portrait-v3.png";
-import vampireAlternative from "../assets/generated/archetypes/portraits/vampire-portrait-v4.png";
-import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v3.png";
-import automatonAlternative from "../assets/generated/archetypes/portraits/automaton-portrait-v4.png";
 
 import candidateArtificerV6 from "../assets/generated/archetypes/portraits/artificer-portrait-v6.png";
 import candidateArtificerV7 from "../assets/generated/archetypes/portraits/artificer-portrait-v7.png";
@@ -239,20 +215,6 @@ const LEGACY_VARIANTS = Object.freeze({
   "enchanter-tyrant": pair(enchanterTyrant, enchanterTyrantAlternative),
 });
 
-const TOW_VARIANTS = Object.freeze({
-  knight: pair(knight, knightAlternative),
-  ranger: pair(rangerArchetype, rangerArchetypeAlternative),
-  artificer: pair(artificer, artificerAlternative),
-  berserker: pair(berserker, berserkerAlternative),
-  sorcerer: pair(sorcerer, sorcererAlternative),
-  rogue: pair(rogue, rogueAlternative),
-  warlock: pair(warlock, warlockAlternative),
-  wizard: pair(wizard, wizardAlternative),
-  paladin: pair(paladin, paladinAlternative),
-  blademaster: pair(blademaster, blademasterAlternative),
-  vampire: pair(vampire, vampireAlternative),
-  automaton: pair(automaton, automatonAlternative),
-});
 
 const COMPANION_VARIANTS = Object.freeze({
   bram: pair(bramPortrait, bramPortraitAlternative),
@@ -378,20 +340,6 @@ const PORTRAIT_CANDIDATE_VARIANTS = Object.freeze({
   "codex:aurora-vault-crystal-archmage-vaelor": single(candidateHighSorcererV3),
 });
 
-const TOW_PORTRAIT_ALIASES = Object.freeze({
-  "tow:arctic-knight": "tow:knight",
-  "tow:demon-slayer": "tow:ranger",
-  "tow:owner-of-clocktower": "tow:artificer",
-  "tow:old-king-of-northland": "tow:berserker",
-  "tow:sleepless-one": "tow:sorcerer",
-  "tow:last-assassin": "tow:rogue",
-  "tow:witch-of-eternity": "tow:warlock",
-  "tow:tenacious-mage": "tow:wizard",
-  "tow:exiled-priestess": "tow:paladin",
-  "tow:wandering-blade": "tow:blademaster",
-  "tow:desolate-vampire": "tow:vampire",
-  "tow:forsaken-automaton": "tow:automaton",
-});
 
 const codexVariants = Object.fromEntries(Object.entries(CODEX_PORTRAIT_MANIFEST).map(([id, portrait]) => [
   `codex:${id}`,
@@ -411,7 +359,7 @@ const regionalEstablishmentVariants = Object.fromEntries(
   ]),
 );
 const legacyVariants = Object.fromEntries(Object.entries(LEGACY_VARIANTS).map(([id, variants]) => [`template:${id}`, variants]));
-const towVariants = Object.fromEntries(Object.entries(TOW_VARIANTS).map(([id, variants]) => [`tow:${id}`, variants]));
+
 const companionVariants = Object.fromEntries(Object.entries(COMPANION_VARIANTS).map(([id, variants]) => [`companion:${id}`, variants]));
 const bondedVariants = Object.fromEntries(Object.entries(BONDED_VARIANTS).map(([id, variants]) => [`bonded:${id}`, variants]));
 const wantedVariants = Object.fromEntries(Object.entries(WANTED_VARIANTS).map(([id, variants]) => [`wanted:${id}`, variants]));
@@ -426,7 +374,7 @@ export const CHARACTER_PORTRAIT_VARIANTS = Object.freeze({
   ...PORTRAIT_CANDIDATE_VARIANTS,
   ...SPECIAL_VARIANTS,
   ...legacyVariants,
-  ...towVariants,
+
   ...companionVariants,
   ...bondedVariants,
   ...wantedVariants,
@@ -461,30 +409,15 @@ export const CHARACTER_PORTRAITS = Object.freeze({
   "demon-warlock": demonWarlock,
   "dragon-ascendant": dragonAscendant,
   "enchanter-tyrant": enchanterTyrant,
-  "tow:knight": knight,
-  "tow:ranger": rangerArchetype,
-  "tow:artificer": artificer,
-  "tow:berserker": berserker,
-  "tow:sorcerer": sorcerer,
-  "tow:rogue": rogue,
-  "tow:warlock": warlock,
-  "tow:wizard": wizard,
-  "tow:paladin": paladin,
-  "tow:blademaster": blademaster,
-  "tow:vampire": vampire,
-  "tow:automaton": automaton,
-  // Legacy portrait keys are read-only save aliases.
-  ...Object.fromEntries(Object.entries(TOW_PORTRAIT_ALIASES).map(([alias, canonical]) => [alias, TOW_VARIANTS[canonical.slice(4)][0]])),
+
 });
 
 export function portraitTemplateId(record = {}) {
   const key = record.portraitKey || record.templateId;
-  return typeof key === "string" ? key.replace(/^(?:template|tow):/, "") : null;
+  return typeof key === "string" ? key.replace(/^template:/, "") : null;
 }
 
 export function portraitIdentityKey(record = {}) {
-  const rawPortraitKey = typeof record.portraitKey === "string" ? record.portraitKey : null;
-  if (rawPortraitKey && TOW_PORTRAIT_ALIASES[rawPortraitKey]) return TOW_PORTRAIT_ALIASES[rawPortraitKey];
 
   const canonicalKey = characterPortraitIdentityKey(record);
   if (canonicalKey) return canonicalKey;
@@ -553,10 +486,6 @@ export function resolveCharacterPortrait(record = {}, fallback = null, override 
   const variants = portraitVariantsFor(record);
   if (variants.length) return variants[0];
 
-  const rawKey = record.portraitKey || record.templateId;
   const templateId = portraitTemplateId(record);
-  const lookup = typeof rawKey === "string" && rawKey.startsWith("tow:")
-    ? `tow:${templateId}`
-    : templateId;
-  return CHARACTER_PORTRAITS[lookup] || fallback;
+  return CHARACTER_PORTRAITS[templateId] || fallback;
 }

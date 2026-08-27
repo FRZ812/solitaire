@@ -5,7 +5,7 @@ import { MOUNT_LIST } from "../data/mounts.js";
 import { CHARACTER_TEMPLATES } from "../data/templates.js";
 import { REGIONAL_ESTABLISHMENT_CHARACTER_IDENTITIES } from "../data/regional-establishment-characters.js";
 import { PORTRAIT_CANDIDATE_CHARACTER_IDENTITIES } from "../data/portrait-candidate-characters.js";
-import { STARTING_ARCHETYPES } from "../gameplay/tow/starting-archetypes.js";
+
 
 const fixed = (key, id, name, category, source, requiredVariants = 2) => Object.freeze({
   key,
@@ -130,13 +130,6 @@ export const PORTRAIT_CANDIDATE_IDENTITIES = Object.freeze(
   )),
 );
 
-const tow = STARTING_ARCHETYPES.map((archetype) => fixed(
-  `tow:${archetype.id}`,
-  archetype.id,
-  archetype.name,
-  "tow-archetype",
-  "starting-archetypes",
-));
 
 const companions = COMPANION_LIST.map((companion) => fixed(
   `companion:${companion.id}`,
@@ -196,7 +189,7 @@ export const CHARACTER_PORTRAIT_IDENTITIES = Object.freeze([
   ...REGIONAL_ESTABLISHMENT_PORTRAIT_IDENTITIES,
   ...PORTRAIT_CANDIDATE_IDENTITIES,
   ...playable,
-  ...tow,
+
   ...companions,
   ...captives,
   ...prisoners,

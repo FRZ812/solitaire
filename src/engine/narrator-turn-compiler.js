@@ -2,7 +2,7 @@ import { itemTemplate } from "../data/catalog.js";
 import { MOUNTS } from "../data/mounts.js";
 import { CAPTIVE_POOL } from "../data/slaves.js";
 import { PRISONER_POOL } from "../data/gaol.js";
-import { readPendingCombatDirective } from "../gameplay/production/pending-directive.js";
+
 import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
 import {
   DEFAULT_MEMORY_POLICY,
@@ -1306,19 +1306,7 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
       allowedEffects: [...new Set([...(turnPolicy?.allowedEffects || []), "start_combat"])],
     };
   }
-  if (materializedCandidate.start_combat) {
-    const combatHandoff = readPendingCombatDirective(materializedCandidate.start_combat);
-    if (!combatHandoff.ok) {
-      return {
-        ok: false,
-        violations: [violation(
-          "COMBAT_HANDOFF",
-          "/start_combat",
-          `Combat handoff rejected: ${combatHandoff.reason}.`,
-        )],
-      };
-    }
-  }
+
   return {
     ok: true,
     turn: mintCompiledTurn(
