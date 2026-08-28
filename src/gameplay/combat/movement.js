@@ -1,4 +1,4 @@
-// Deterministic round-boundary reflow for moving (formation rules v2) Archetype fights.
+// Deterministic round-boundary reflow for moving (formation rules v2) Spire fights.
 //
 // Movement is deliberately narrower than targeting. It never rolls, never chooses an
 // ability for the player, and never edits the authored opening formation. Once a round has

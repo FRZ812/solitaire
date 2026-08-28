@@ -16,8 +16,8 @@ import { createCombatBuild, isCombatBuild, startingBuild } from "./build.js";
 import { FALLBACK_PROFESSION_ID, startingPackage } from "./starting-packages.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 
-export const CHARACTER_BOOTSTRAP_VERSION = 2;
-const RECEIPT_KEYS = Object.freeze(["archetypeId", "build", "id", "origin", "professionId", "version"]);
+export const CHARACTER_BOOTSTRAP_VERSION = 3;
+const RECEIPT_KEYS = Object.freeze(["archetypeId", "build", "id", "origin", "professionId", "setupChecksum", "version"]);
 const ORIGINS = new Set(["archetype", "template", "custom", "quick-start", "practice", "fixture"]);
 
 function rejected(reason) {
@@ -29,6 +29,10 @@ function rejected(reason) {
  *
  * @param {{archetypeId?: string, professionId?: string, level?: number, origin?: string, build?: object}} request
  */
+export function characterSetupChecksum(setup) {
+  return gameplayChecksum(setup);
+}
+
 export function compileCharacterBootstrap(request = {}) {
   const origin = request.origin ?? "custom";
   if (!ORIGINS.has(origin)) return rejected("invalid-bootstrap-origin");
@@ -63,12 +67,14 @@ export function compileCharacterBootstrap(request = {}) {
   // Identity is derived from content, so the same request always compiles to the same
   // receipt and a changed request never collides with the old one.
   const archetypeId = archetype?.id || null;
+  const setupChecksum = request.setup == null ? null : characterSetupChecksum(request.setup);
   const id = gameplayChecksum({
     version: CHARACTER_BOOTSTRAP_VERSION,
     origin,
     archetypeId,
     professionId,
     build,
+    setupChecksum,
   });
 
   return {
@@ -81,6 +87,7 @@ export function compileCharacterBootstrap(request = {}) {
       archetypeId,
       professionId,
       build: Object.freeze(build),
+      setupChecksum,
     }),
   };
 }
@@ -91,13 +98,24 @@ export function isCharacterBootstrapReceipt(value) {
   if (keys.length !== RECEIPT_KEYS.length || keys.some((key, at) => key !== RECEIPT_KEYS[at])) {
     return false;
   }
-  return value.version === CHARACTER_BOOTSTRAP_VERSION
+  const valid = value.version === CHARACTER_BOOTSTRAP_VERSION
     && typeof value.id === "string"
     && /^[0-9a-f]{16}$/.test(value.id)
     && ORIGINS.has(value.origin)
     && (value.archetypeId === null || Boolean(getStartingArchetype(value.archetypeId)))
     && typeof value.professionId === "string"
+    && (value.setupChecksum === null
+      || (typeof value.setupChecksum === "string" && /^[0-9a-f]{16}$/.test(value.setupChecksum)))
     && isCombatBuild(value.build);
+  if (!valid) return false;
+  return value.id === gameplayChecksum({
+    version: value.version,
+    origin: value.origin,
+    archetypeId: value.archetypeId,
+    professionId: value.professionId,
+    build: value.build,
+    setupChecksum: value.setupChecksum,
+  });
 }
 
 /**
@@ -117,6 +135,13 @@ export function applyCharacterBootstrap(mechanics, receipt) {
 
   if (existingId !== null) {
     if (existingId === receipt.id) {
+      const sameReceipt = current.bootstrapOrigin === receipt.origin
+        && current.bootstrapSetupChecksum === receipt.setupChecksum
+        && isCombatBuild(existingBuild)
+        && gameplayChecksum(existingBuild) === gameplayChecksum(receipt.build);
+      if (!sameReceipt) {
+        return { ok: false, reason: "partial-bootstrap-state", mechanics: null };
+      }
       // Same receipt, already applied. A no-op, not an error — a retried save or a
       // double-mounted component must not be able to reroll a character.
       return { ok: true, reason: null, applied: false, mechanics: current };
@@ -138,6 +163,7 @@ export function applyCharacterBootstrap(mechanics, receipt) {
       ...current,
       bootstrapId: receipt.id,
       bootstrapOrigin: receipt.origin,
+      bootstrapSetupChecksum: receipt.setupChecksum,
       build: receipt.build,
     },
   };

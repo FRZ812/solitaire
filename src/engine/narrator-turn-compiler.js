@@ -2,6 +2,13 @@ import { itemTemplate } from "../data/catalog.js";
 import { MOUNTS } from "../data/mounts.js";
 import { CAPTIVE_POOL } from "../data/slaves.js";
 import { PRISONER_POOL } from "../data/gaol.js";
+import { readPendingCombatDirective } from "../gameplay/combat/pending-directive.js";
+import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
+import {
+  DEFAULT_MEMORY_POLICY,
+  NO_MEMORY_POLICY,
+  validateMemoryProposal,
+} from "./narrator/memory-records.js";
 import {
   NARRATOR_CHARACTER_CUE_ACTIONS,
   NARRATOR_CHARACTER_CUE_MANNERS,
@@ -64,8 +71,7 @@ export const NARRATOR_RESPONSE_KEYS = Object.freeze([
   "start_combat", "assassination", "location_update", "discoveries", "inventory_changes", "knowledge_updates",
   "attribute_changes", "needs_changes", "recruit_companion", "grant_mount", "buy_mount",
   "purchase_captive", "purchase_rights", "part_ways", "party_removals", "companion_gear",
-  "relationship_changes", "memory_updates", "progression_focus", "character_setup",
-  "player_update",
+  "relationship_changes", "memory_updates", "player_update",
 ]);
 const NARRATOR_RESPONSE_KEY_SET = new Set(NARRATOR_RESPONSE_KEYS);
 const NARRATOR_EFFECT_KEYS = NARRATOR_RESPONSE_KEYS.filter((key) => (
@@ -84,7 +90,7 @@ const NULLABLE_OBJECT_EFFECTS = [
   "roll", "encounter", "tile_discovery", "tile_move", "start_combat", "assassination", "location_update",
   "discoveries", "inventory_changes", "attribute_changes", "needs_changes", "recruit_companion",
   "grant_mount", "buy_mount", "purchase_captive", "purchase_rights", "part_ways",
-  "character_setup", "player_update",
+  "player_update",
 ];
 const NULLABLE_ARRAY_EFFECTS = [
   "new_conditions", "knowledge_updates", "party_removals", "companion_gear",
@@ -122,13 +128,7 @@ function validateEffectEnvelope(candidate, violations) {
       violations.push(violation("SCHEMA_TYPE", `/${key}`, `${key} must be an array or null.`));
     }
   }
-  if (candidate?.progression_focus !== null && candidate?.progression_focus !== "racial") {
-    violations.push(violation(
-      "SCHEMA_TYPE",
-      "/progression_focus",
-      "progression_focus must be racial or null.",
-    ));
-  }
+
 }
 
 function rejectArrayItemKeys(value, allowedKeys, path, violations) {
@@ -439,74 +439,6 @@ function validateRemainingEffectValues(candidate, violations) {
     }
   }
 
-  const setup = candidate?.character_setup;
-  if (setup) {
-    for (const key of ["name", "race", "origin", "base_appearance", "bond"]) {
-      if (!isBoundedString(setup[key], key === "base_appearance" ? 2_000 : 500)) {
-        schemaType(violations, `/character_setup/${key}`, `Character setup ${key} must be a non-empty bounded string.`);
-      }
-    }
-    if (setup.subrace !== undefined && setup.subrace !== null && !isBoundedString(setup.subrace, 128)) {
-      schemaType(violations, "/character_setup/subrace", "Character subrace must be null or a bounded id.");
-    }
-    if (!["male", "female"].includes(setup.gender)) {
-      schemaType(violations, "/character_setup/gender", "Character gender must be male or female.");
-    }
-    for (const [key, min, max] of [["level", 1, 100], ["racial_levels", 0, 30], ["attractiveness", 1, 10]]) {
-      if (!isIntegerBetween(setup[key], min, max)) {
-        schemaType(violations, `/character_setup/${key}`, `Character setup ${key} is outside its allowed range.`);
-      }
-    }
-    if (setup.age !== null && !isIntegerBetween(setup.age, 0, 100_000)) {
-      schemaType(violations, "/character_setup/age", "Character age must be null or a bounded integer.");
-    }
-    if (!["mortal", "power-extended", "ageless", "out-of-time"].includes(setup.agingMode)) {
-      schemaType(violations, "/character_setup/agingMode", "Character aging mode is outside the wire schema.");
-    }
-    if (setup.lifespanMultiplier !== undefined
-      && (!Number.isFinite(setup.lifespanMultiplier) || setup.lifespanMultiplier <= 0)) {
-      schemaType(violations, "/character_setup/lifespanMultiplier", "Lifespan multiplier must be a positive number.");
-    }
-    if (!Array.isArray(setup.profession_plan) || setup.profession_plan.length < 1 || setup.profession_plan.length > 10) {
-      schemaType(violations, "/character_setup/profession_plan", "Character profession plan must be a bounded non-empty array.");
-    } else {
-      setup.profession_plan.forEach((entry, index) => {
-        for (const field of ["profession", "specialization"]) {
-          if (!isBoundedString(entry?.[field], 200)) {
-            schemaType(violations, `/character_setup/profession_plan/${index}/${field}`, `Profession ${field} must be bounded text.`);
-          }
-        }
-        if (!isIntegerBetween(entry?.levels, 0, 70)) {
-          schemaType(violations, `/character_setup/profession_plan/${index}/levels`, "Profession levels must be from 0 to 70.");
-        }
-      });
-    }
-    if (!isPlainObject(setup.appearance)) {
-      schemaType(violations, "/character_setup/appearance", "Character appearance must be an object.");
-    } else {
-      for (const field of APPEARANCE_KEYS) {
-        if (typeof setup.appearance[field] !== "string" || setup.appearance[field].length > 500) {
-          schemaType(violations, `/character_setup/appearance/${field}`, "Appearance fields must be bounded strings.");
-        }
-      }
-    }
-    if (!isPlainObject(setup.attributes)) {
-      schemaType(violations, "/character_setup/attributes", "Character attributes must be an object.");
-    } else {
-      for (const field of ATTRIBUTE_KEYS) {
-        if (!isIntegerBetween(setup.attributes[field], 0, 90)) {
-          schemaType(violations, `/character_setup/attributes/${field}`, "Character attributes must be integers from 0 to 90.");
-        }
-      }
-    }
-    if (setup.abilities !== null && !Array.isArray(setup.abilities)) {
-      schemaType(violations, "/character_setup/abilities", "Character abilities must be an array or null.");
-    }
-    if (!Array.isArray(setup.knows) || setup.knows.some((fact) => !isBoundedString(fact, 2_000))) {
-      schemaType(violations, "/character_setup/knows", "Character knowledge must be an array of bounded facts.");
-    }
-  }
-
   const playerUpdate = candidate?.player_update;
   if (playerUpdate) {
     for (const key of ["name", "bond"]) {
@@ -526,13 +458,6 @@ function reducerPrecondition(violations, path, message) {
 }
 
 function validateReducerPreconditions(candidate, projection, violations) {
-  if (candidate?.character_setup && projection?.created !== false) {
-    reducerPrecondition(
-      violations,
-      "/character_setup",
-      "Character setup can be applied only while the engine is in character creation.",
-    );
-  }
   const inventory = candidate?.inventory_changes;
   if (inventory && Array.isArray(inventory.added)) {
     inventory.added.forEach((entry, index) => {
@@ -672,23 +597,6 @@ function validateKnownEffectKeys(candidate, violations) {
     });
   }
 
-  const setup = candidate?.character_setup;
-  rejectUnknownKeys(setup, [
-    "name", "race", "subrace", "origin", "gender", "level", "racial_levels",
-    "profession_plan", "signature_spell", "metamagic", "age", "agingMode",
-    "lifespanMultiplier", "attractiveness", "appearance", "base_appearance", "bond",
-    "attributes", "abilities", "knows",
-  ], "/character_setup", violations);
-  rejectArrayItemKeys(setup?.profession_plan, ["profession", "specialization", "levels"], "/character_setup/profession_plan", violations);
-  rejectUnknownKeys(setup?.appearance, APPEARANCE_KEYS, "/character_setup/appearance", violations);
-  rejectUnknownKeys(setup?.attributes, ATTRIBUTE_KEYS, "/character_setup/attributes", violations);
-  if (Array.isArray(setup?.abilities)) {
-    setup.abilities.forEach((ability, index) => {
-      if (typeof ability !== "string") {
-        rejectUnknownKeys(ability, ["id", "tier"], `/character_setup/abilities/${index}`, violations);
-      }
-    });
-  }
   rejectUnknownKeys(candidate?.player_update, ["name", "bond"], "/player_update", violations);
 
   const discoveries = candidate?.discoveries;
@@ -771,7 +679,7 @@ function isCompleteNewCharacter(character) {
     && character.knows.every((fact) => typeof fact === "string" && fact);
 }
 
-export function compileNarratorCandidate({ candidate, projection, turnPolicy, metadata = null }) {
+export function compileNarratorCandidate({ candidate, projection, turnPolicy, metadata = null, state = null }) {
   const violations = [];
   if (candidate?.contract_version !== projection?.contractVersion) {
     violations.push(violation(
@@ -1153,7 +1061,11 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         && (cue.target_id === null || TARGETABLE_CHARACTER_CUE_ACTIONS.has(cue.action))
         && (cue.manner === null || CHARACTER_CUE_MANNERS.has(cue.manner))
       ) {
-        story.push({ type: "beat", text: renderNarratorCharacterCue(cue, characters) });
+        story.push({
+          type: "beat",
+          actorId: cue.actor_id,
+          text: renderNarratorCharacterCue(cue, characters),
+        });
       }
       continue;
     }
@@ -1199,6 +1111,70 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     ));
   }
 
+  let acceptedReceiptIds = state ? [] : null;
+  if (violations.length === 0 && state) {
+    try {
+      const governed = resolveNarratorIntents(state, candidate, {
+        stateRevision: projection.stateRevision,
+        route: turnPolicy?.id ?? null,
+        turnPolicy,
+      });
+      acceptedReceiptIds = governed.receipts
+        .filter(({ status }) => status === "applied" || status === "passed-through")
+        .map(({ id }) => id);
+      for (const refusal of governed.refusals) {
+        violations.push(violation(
+          "OWNER_REFUSAL",
+          `/${refusal.field}`,
+          `Engine owner rejected ${refusal.field}: ${refusal.reason}.`,
+        ));
+      }
+    } catch {
+      violations.push(violation(
+        "OWNER_VALIDATION_FAILED",
+        "/",
+        "The engine could not validate this response atomically.",
+      ));
+    }
+  }
+
+  const trustedMemoryProposals = [];
+  const memoryPolicy = turnPolicy?.id === "combat-aftermath"
+    ? NO_MEMORY_POLICY
+    : DEFAULT_MEMORY_POLICY;
+  if (metadata && Object.prototype.hasOwnProperty.call(metadata, "memoryProposals")) {
+    if (!Array.isArray(metadata.memoryProposals)) {
+      violations.push(violation(
+        "MEMORY_PROVENANCE",
+        "/_memoryProposals",
+        "Typed memory proposals must be a list.",
+      ));
+    } else if (metadata.memoryProposals.length > memoryPolicy.maxWrites) {
+      violations.push(violation(
+        "MEMORY_PROVENANCE",
+        "/_memoryProposals",
+        `A narrator turn may persist at most ${memoryPolicy.maxWrites} memories.`,
+      ));
+    } else {
+      const knownSubjectIds = [...Object.keys(characters), "campaign"];
+      metadata.memoryProposals.forEach((proposal, index) => {
+        const checked = validateMemoryProposal(proposal, memoryPolicy, {
+          knownSubjectIds,
+          acceptedReceiptIds,
+        });
+        if (!checked.ok) {
+          violations.push(violation(
+            "MEMORY_PROVENANCE",
+            `/_memoryProposals/${index}`,
+            "Memory proposal evidence or subjects were not accepted by the engine.",
+          ));
+        } else {
+          trustedMemoryProposals.push(checked.proposal);
+        }
+      });
+    }
+  }
+
   if (violations.length) return { ok: false, violations };
   const trustedMetadata = metadata ? {
     _raw: metadata.raw,
@@ -1213,10 +1189,11 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     // They are minted only now, on a candidate that has passed every check above — which is
     // what makes "a rejected turn persists nothing" true rather than hoped for: an attempt
     // that fails validation returns above and never reaches this line.
-    _memories: metadata.memories,
-    _memoryProposals: metadata.memoryProposals,
+    _memories: trustedMemoryProposals.map(({ text }) => text),
+    _memoryProposals: trustedMemoryProposals,
   } : {};
   let materializedCandidate = candidate;
+  let materializedPolicy = turnPolicy;
   if (assassination?.outcome === "detected-combat") {
     const target = characters[assassination.target_id];
     materializedCandidate = {
@@ -1235,13 +1212,30 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
         note: `${target.name || assassination.target_id} survives the assassination attempt and fights back.`,
       },
     };
+    materializedPolicy = {
+      ...(turnPolicy || {}),
+      allowedEffects: [...new Set([...(turnPolicy?.allowedEffects || []), "start_combat"])],
+    };
+  }
+  if (materializedCandidate.start_combat) {
+    const combatHandoff = readPendingCombatDirective(materializedCandidate.start_combat);
+    if (!combatHandoff.ok) {
+      return {
+        ok: false,
+        violations: [violation(
+          "COMBAT_HANDOFF",
+          "/start_combat",
+          `Combat handoff rejected: ${combatHandoff.reason}.`,
+        )],
+      };
+    }
   }
   return {
     ok: true,
     turn: mintCompiledTurn(
       { ...materializedCandidate, story, discoveries, ...trustedMetadata },
       projection,
-      turnPolicy,
+      materializedPolicy,
     ),
   };
 }

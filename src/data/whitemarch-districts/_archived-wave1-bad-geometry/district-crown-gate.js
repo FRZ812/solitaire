@@ -56,7 +56,7 @@ export const TILES = {
       part: "crown-road-approach",
       partName: "Crown Road Approach",
       description:
-        "The road widens into trampled stone before Whitemarch's gate. Carts wait in ranked lines, oxen steaming; pilgrims sleep against bundles. The gate-towers rise black and white through the chimney smoke, signal-bells hung under iron roofs, and Road Wardens watch the queue long before any official does.",
+        "The road widens into trampled stone before Whitemarch's gate. Carts wait in ranked lines, oxen steaming; pilgrims sleep against bundles. The gate-spires rise black and white through the chimney smoke, signal-bells hung under iron roofs, and Road Wardens watch the queue long before any official does.",
     },
     doors: [
       { x: 1, y: -7 },

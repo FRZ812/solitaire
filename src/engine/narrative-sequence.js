@@ -34,7 +34,14 @@ function normalizeStoryItem(item) {
     const text = typeof item.text === "string"
       ? item.text
       : (typeof item.content === "string" ? item.content : null);
-    return text == null ? null : { type: "beat", text };
+    const actorId = typeof item.actor_id === "string"
+      ? item.actor_id
+      : (typeof item.actorId === "string" ? item.actorId : "");
+    return text == null ? null : {
+      type: "beat",
+      text,
+      ...(actorId ? { actor_id: actorId } : {}),
+    };
   }
   if (item.type === "dialogue" || item.type === "dialog") {
     const name = typeof item.name === "string" ? item.name : "";

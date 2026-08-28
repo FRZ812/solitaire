@@ -371,7 +371,7 @@ console.log("\n=== CHARACTER POSITIONS & SCRYING ===");
 {
   const st = {
     time: { day: 30 },
-    party: ["bram"],
+    party: ["garran"],
     character: { abilities: [], inventory: { carried: [] } },
     world: {
       currentTile: { x: 5, y: 5 },
@@ -379,7 +379,7 @@ console.log("\n=== CHARACTER POSITIONS & SCRYING ===");
       tiles: { "0,0": { poi: { name: "Mirecross" } }, "10,10": { poi: { name: "Crowsmoor" } } },
       codex: { spells: {}, characters: {
         wanderer: { id: "wanderer", kind: "player", name: "You" },
-        bram: { id: "bram", kind: "companion", name: "Bram" },
+        garran: { id: "garran", kind: "companion", name: "Garran" },
         hermit: { id: "hermit", kind: "npc", name: "Hermit", at: { x: 1, y: 1, day: 0 }, home: { x: 1, y: 1 } },
         ghost: { id: "ghost", kind: "npc", name: "Ghost" }, // never located
       } },
@@ -387,7 +387,7 @@ console.log("\n=== CHARACTER POSITIONS & SCRYING ===");
   };
   const pp = characterPosition(st, "wanderer");
   ok(pp && pp.x === 5 && pp.y === 5 && pp.exact, "the player resolves to the current tile (exact)");
-  const bp = characterPosition(st, "bram");
+  const bp = characterPosition(st, "garran");
   ok(bp && bp.x === 5 && bp.y === 5 && bp.exact, "a party member resolves to the player's tile (exact)");
   const h1 = characterPosition(st, "hermit");
   const h2 = characterPosition(st, "hermit");

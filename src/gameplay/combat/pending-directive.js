@@ -119,23 +119,20 @@ export function readPendingCombatDirective(value) {
 // changed the hash on every reload, so a pending handoff never survived one — and any
 // future migration would have broken it again, silently.
 //
-// The projection below covers exactly two things: the predicates adaptNarratorCombatStart
-// gates on, and the numbers the fight is built from. A change to either genuinely means
-// the offered fight is no longer the fight that would start.
-export function productionCombatContextChecksum(state, campaignId) {
+// The projection covers current campaign ownership, admission blockers, the selected build,
+// and the numbers the fight will use. A change to any of those genuinely means the offered
+// fight is no longer the fight that would start.
+export function combatHandoffContextChecksum(state, campaignId) {
   const character = state.character;
   const stats = deriveCombatStats(character, state.world?.codex || {});
   return gameplayChecksum({
     campaignId,
-    productionCombatSequence: state.productionCombatSequence,
-    activeCombatSession: state.activeCombatSession ?? null,
+    campaignRevision: state.mechanics?.campaignRevision ?? 0,
+    bootstrapId: state.mechanics?.bootstrapId ?? null,
+    build: state.mechanics?.build ?? null,
+    activeCombatSessionId: state.mechanics?.combat?.activeCombat?.sessionId ?? null,
+    hasPendingReward: Boolean(state.pendingReward),
     hasPendingLoot: Boolean(state.pendingLoot),
-    // Admission gates: each of these must be empty for production combat to be eligible,
-    // so their size is the whole of what matters.
-    partySize: Array.isArray(state.party) ? state.party.length : 0,
-    abilityCount: (character?.abilities || []).length,
-    conditionCount: (character?.conditions || []).length,
-    racialPassiveCount: (character?.racialPassives || []).length,
     // The fight's numbers.
     vitality: character?.vitality ?? null,
     vitalityMax: character?.vitalityMax ?? null,
@@ -162,7 +159,7 @@ export function createPendingCombatHandoff({ campaignId, state, directive } = {}
   if (!opened.ok) return rejectedHandoff(opened.reason);
   let checksum;
   try {
-    checksum = productionCombatContextChecksum(state, campaignId);
+    checksum = combatHandoffContextChecksum(state, campaignId);
   } catch {
     return rejectedHandoff("invalid-pending-combat-context");
   }
@@ -202,7 +199,7 @@ export function readPendingCombatHandoff(value, { campaignId, state } = {}) {
   if (state !== undefined) {
     let expected;
     try {
-      expected = productionCombatContextChecksum(state, input.campaignId);
+      expected = combatHandoffContextChecksum(state, input.campaignId);
     } catch {
       return rejectedHandoff("invalid-pending-combat-context");
     }

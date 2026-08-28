@@ -5,7 +5,7 @@ import { InitialBackdrop } from "./InitialBackdrop.jsx";
 // Shown when the player has truly fallen (state.ended) — only a legendary-tier+
 // foe ends a run. A memorial: an epitaph plus the narrator's final death passage.
 // The run is over; the only way on is back to the campaigns list.
-export function GameOverScreen({ state, onExit }) {
+export function GameOverScreen({ state, onExit, error = null }) {
   const ended = state.ended || {};
   const name = state.character?.name || "the Wanderer";
   const finalBeat = [...(state.beats || [])].reverse().find((b) => b.type === "narration");
@@ -58,6 +58,7 @@ export function GameOverScreen({ state, onExit }) {
           </div>
         )}
 
+        {error && <div role="alert" style={{ color: "#fca5a5", textAlign: "center", marginBottom: 16 }}>{error}</div>}
         <button onClick={onExit} style={{
           alignSelf: "center", padding: "13px 32px", borderRadius: 14,
           background: "transparent", color: colors.parchmentLight,

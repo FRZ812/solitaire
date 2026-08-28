@@ -15,7 +15,7 @@ import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
 import { characterArchetype } from "../data/character-archetypes.js";
-import * as progressionEngine from "../engine/progression.js";
+
 import { canonicalProfessionId } from "../data/progression-paths.js";
 import { PROFESSIONS } from "../data/professions.js";
 import { characterDossierBackground } from "./character-dossier-background.js";
@@ -26,7 +26,7 @@ import { characterDossierBackground } from "./character-dossier-background.js";
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
 const PAGES = ["party", "character", "abilities", "inventory", "codex", "settings"];
-const progressionLevel = progressionEngine.progressionLevel;
+
 const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex", settings: "Settings" };
 const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex", settings: "settings" };
 
@@ -36,7 +36,7 @@ export function shouldDismissPanel(pulled, velocity) {
 
 export function PanelDeck({ state, user, initialPage = "character", onClose, handlers }) {
   const pages = PAGES;
-  const requestedPageKey = initialPage === "profession" || initialPage === "race" || initialPage === "progression"
+  const requestedPageKey = initialPage === "profession" || initialPage === "race"
     ? "character"
     : initialPage;
   const requestedPage = pages.indexOf(requestedPageKey);
@@ -297,8 +297,7 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
   const professionId = canonicalProfessionId(identityRecord.profession) || identityRecord.profession;
   const professionLabel = PROFESSIONS[professionId]?.name || labelize(professionId);
   const archetype = characterArchetype(identityRecord);
-  const combatArchetype = identityRecord.progressionModel === "archetype";
-  const level = Math.max(1, progressionLevel(identityRecord));
+
   const callingLabel = archetype?.label || professionLabel;
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
@@ -394,9 +393,7 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
               {callingLabel && <strong className={archetype ? "is-archetype" : "is-profession"}>{callingLabel}</strong>}
             </>
           ) : <span>Wanderer</span>}
-          {combatArchetype
-            ? <strong className="is-level"><em>Power</em>{identityRecord.profile?.power || "Chosen"}</strong>
-            : <strong className="is-level"><em>Level</em>{level}</strong>}
+          <strong className="is-level"><em>Power</em>{identityRecord.profile?.power || "Chosen"}</strong>
         </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>

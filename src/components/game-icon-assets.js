@@ -20,7 +20,7 @@ import reset from "../assets/generated/ui-icons/ui-icon-reset-v1.png";
 import resolve from "../assets/generated/ui-icons/ui-icon-resolve-v1.png";
 import rest from "../assets/generated/ui-icons/ui-icon-rest-v1.png";
 import send from "../assets/generated/ui-icons/ui-icon-send-v1.png";
-import progression from "../assets/generated/ui-icons/ui-icon-progression-v1.png";
+
 import settings from "../assets/generated/ui-icons/ui-icon-settings-v1.png";
 import target from "../assets/generated/ui-icons/ui-icon-target-v1.png";
 import thirst from "../assets/generated/ui-icons/ui-icon-thirst-v1.png";
@@ -51,7 +51,7 @@ export const GAME_ICON_ASSETS = {
   map,
   play,
   progress,
-  progression,
+
   reset,
   resolve,
   rest,

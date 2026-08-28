@@ -93,7 +93,7 @@ export const RACES = {
     racialPassives: [{ id: "stoneskin", tier: "rare" }],
     innateAbilities: [{ id: "dragon-breath", tier: "common" }],
     lifespan: { adult: 18, elder: 110, max: 150 },
-    traits: ["Combatering and imposing — a head taller than most humans, heavy in the bone and shoulder.", "A vein of fine scales runs from the nape down the shoulders and collar; otherwise of human face, hand, and eye.", "Carries a thin trace of wyrm-blood — and its breath."],
+    traits: ["Spireing and imposing — a head taller than most humans, heavy in the bone and shoulder.", "A vein of fine scales runs from the nape down the shoulders and collar; otherwise of human face, hand, and eye.", "Carries a thin trace of wyrm-blood — and its breath."],
     flaws: ["Hard to miss in a crowd; takes the front of a room whether they want it or not.", "Uncommon south of the Spine; the scale-line draws careful stares once seen."],
     subraces: {
       fire: { name: "Fire-Drake Line", traits: ["Breathes fire; thrives in heat."], flaws: ["Vulnerable to deep cold."] },

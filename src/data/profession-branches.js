@@ -2297,7 +2297,7 @@ const ARTIFICER_BRANCHES = Object.freeze([
       passive("artificer:refuge-engineer", "Refuge Engineer", "Portable fieldworks become safer and faster to establish for known conditions but do not create supplies, land rights, healing, or permanent sanctuary."),
       proficiency("artificer:refuge-engineer"),
     ]),
-    option("fortification-steward", "Fortification Steward", "Maintain walls, gates, bridges, towers, drains, stores, alarms, refuges, access, and evacuation as one public safety system.", [
+    option("fortification-steward", "Fortification Steward", "Maintain walls, gates, bridges, spires, drains, stores, alarms, refuges, access, and evacuation as one public safety system.", [
       action("artificer:steward-fortification", "Steward a Fortification", "Inspect structure, use, staffing, water, fire, supplies, repairs, accessibility, civilian movement, siege condition, surrender, and future adaptation."),
       passive("artificer:fortification-steward", "Fortification Steward", "Defensive works retain readiness and humane function longer, but no wall is absolute and no structure substitutes for governance or people."),
       proficiency("artificer:fortification-steward"),

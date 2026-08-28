@@ -147,7 +147,7 @@ and heft scaling, before the wielder's attributes and mastery._
 | Round Shield | `round-shield` | offhand | Common | 3 | 0 | 0 | — | 50cp | — |
 | Heater Shield | `heater-shield` | offhand | Uncommon | 4 | 0 | 0 | Body 3 | 130cp | — |
 | Kite Shield | `kite-shield` | offhand | Uncommon | 4 | 0 | 0 | Body 3 | 140cp | — |
-| Archetype Shield | `combat-shield` | offhand | Rare | 7 | 0 | 0 | Body 6 | 320cp | — |
+| Great Shield | `great-shield` | offhand | Rare | 7 | 0 | 0 | Body 6 | 320cp | — |
 | Silvered Kite Shield | `silvered-kite` | offhand | Very Rare | 7 | 0 | 0 | Body 9 | 1100cp | Bulwark +3 |
 | Dragonbone Bulwark | `dragonbone-bulwark` | offhand | Epic | 0 | 0 | 0 | Body 12 | 3200cp | Bulwark +4, Barrier 5% |
 | Aegis of the Vanguard | `vanguard-aegis` | offhand | Legendary | 0 | 0 | 0 | Body 15 | 6400cp | Bulwark +6, Stalwart +21, Barrier 6% |

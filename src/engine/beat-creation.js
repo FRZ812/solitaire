@@ -74,8 +74,8 @@ export function applyCreation({ beat, character, world, created }) {
       }
       character.proficiencies = proficiencies;
     }
-    const usesCombaterProgression = !usesLegacyCharacterProgression(character);
-    if (usesCombaterProgression) {
+    const usesCombatProgression = !usesLegacyCharacterProgression(character);
+    if (usesCombatProgression) {
       // Archetype builds own their combat growth outright. Do not create a dormant
       // legacy level graph: even a compatibility shell becomes live again when
       // a generic normalize, summary, or XP path sees it later.
@@ -127,9 +127,9 @@ export function applyCreation({ beat, character, world, created }) {
       const idOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of startAbilities) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
-        if (usesCombaterProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
+        if (usesCombatProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
         if (entry.id) {
-          entry.tier = usesCombaterProgression
+          entry.tier = usesCombatProgression
             ? clampWorldAbilityTier(entry.id, entry.tier)
             : clampAbilityTier(entry.id, entry.tier); // honour tier floors
         }
@@ -153,16 +153,16 @@ export function applyCreation({ beat, character, world, created }) {
       const ridOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of [...kit.innateAbilities, ...kit.startingSpells]) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
-        if (usesCombaterProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
-        if (entry.id && usesCombaterProgression) entry.tier = clampWorldAbilityTier(entry.id, entry.tier);
+        if (usesCombatProgression && classifyLegacyAbilityGrant(entry.id) !== "world") continue;
+        if (entry.id && usesCombatProgression) entry.tier = clampWorldAbilityTier(entry.id, entry.tier);
         if (entry.id && !rlist.some((x) => ridOf(x) === entry.id)) rlist.push(entry);
       }
       character.abilities = rlist;
       if (kit.startingSpells.length) {
         const spells = { ...(world.codex.spells || {}) };
         for (const sid of kit.startingSpells) {
-          if (usesCombaterProgression && classifyLegacyAbilityGrant(sid) !== "world") continue;
-          const def = usesCombaterProgression ? worldAbilityGrantDefinition(sid) : getAbilityDef(sid);
+          if (usesCombatProgression && classifyLegacyAbilityGrant(sid) !== "world") continue;
+          const def = usesCombatProgression ? worldAbilityGrantDefinition(sid) : getAbilityDef(sid);
           if (def && !spells[sid]) spells[sid] = { id: sid, name: def.name, description: def.desc || "An innate spell of your kindred.", acquisition: "innate to your kindred" };
         }
         world = { ...world, codex: { ...world.codex, spells } };
@@ -178,7 +178,7 @@ export function applyCreation({ beat, character, world, created }) {
       origin: cs.origin || w.origin,
       profession: professionId,
       archetype: character.archetype || w.archetype,
-      ...(!usesCombaterProgression ? {
+      ...(!usesCombatProgression ? {
         progression: { ...character.progression, paths: { ...character.progression.paths } },
       } : {}),
       gender: cs.gender ?? w.gender,
@@ -205,7 +205,7 @@ export function applyCreation({ beat, character, world, created }) {
       // knowledge_updates before the final sheet repeats it — don't list it twice.
       knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
-    if (usesCombaterProgression) stripCombatLegacyProgression(merged, { forceCombat: true });
+    if (usesCombatProgression) stripCombatLegacyProgression(merged, { forceCombat: true });
     const characters = withoutSelectedPlayableCharacter(
       { ...world.codex.characters, wanderer: merged },
       merged.templateId,

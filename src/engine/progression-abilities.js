@@ -26,7 +26,7 @@ const GENERAL_SORCERER_REPERTOIRE_GRANTS = new Set([
   "sorcerer-tertiary-spell",
   "sorcerer-final-repertoire-spell",
 ]);
-const EMPTY_COMBAT_COMBAT_ENTITLEMENTS = Object.freeze({
+const EMPTY_COMBAT_ENTITLEMENTS = Object.freeze({
   abilities: Object.freeze([]),
   passives: Object.freeze([]),
   signatureSpellIds: Object.freeze([]),
@@ -201,11 +201,11 @@ function racialRows(character) {
  * The returned arrays are safe to serialize into combat state.
  */
 export function progressionCombatEntitlements(character) {
-  // Archetype archetypes own a separate, formation-combat ability model. Treat any
+  // Archetype characters own a separate, formation-combat ability model. Treat any
   // legacy learned kit or progression ledger still present during hydration as
   // contaminated save data: neither world powers nor old profession rewards
   // may become combat cards, passives, metamagic, or narrator capabilities.
-  if (character?.progressionModel === "archetype") return EMPTY_COMBAT_COMBAT_ENTITLEMENTS;
+  if (character?.progressionModel === "archetype") return EMPTY_COMBAT_ENTITLEMENTS;
 
   const learned = new Map();
   for (const entry of character?.abilities || []) addEntry(learned, entry);

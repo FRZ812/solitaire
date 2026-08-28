@@ -30,7 +30,7 @@
 //                            street-grade hex (Stall Row, Fodder Loft, Remount
 //                            Pen). The Tack Room is locked and opens only into
 //                            the yard interior.
-//   (4,-4), (4,-5) — Dragon-Watch Archetype approach; the Tack Room does NOT open
+//   (4,-4), (4,-5) — Dragon-Watch Post approach; the Tack Room does NOT open
 //                    onto the watch corridor.
 
 export const DISTRICT_ID   = "great-stable";
@@ -70,7 +70,7 @@ export const TILES = {
   },
 
   // ---------- Farrier Lane — blue smoke, burning hoof, the shoeing trade ---
-  // Tucked along the wall under the gate-combat's shadow. Opens to Stall Row,
+  // Tucked along the wall under the gate-spire's shadow. Opens to Stall Row,
   // the Hiring Board, the Wagon Lines (the stable proper), and the Crown
   // Gate's Toll Hall at (0,-5) — drivers walk in off the road with a lame
   // beast and walk out shod. Wall hexes at (1,-6) and (2,-6) seal the north

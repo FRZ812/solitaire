@@ -12,7 +12,7 @@
 // Mire name sound like the Mire specifically.
 export const TOPONYM_HEADS = Object.freeze({
   central: Object.freeze([
-    "Alder", "Barley", "Bell", "Bram", "Brook", "Chalk", "Elm", "Fal", "Grey",
+    "Alder", "Barley", "Bell", "Garran", "Brook", "Chalk", "Elm", "Fal", "Grey",
     "Hart", "Hollow", "Kings", "Lang", "Marl", "Mill", "Nether", "Old", "Ox",
     "Ray", "Ridge", "Rush", "Shep", "Stan", "Thorn", "Wend", "Whit", "Willow",
   ]),
@@ -51,7 +51,7 @@ export const TOPONYM_STEMS = Object.freeze({
   ruin: Object.freeze(["barrow", "howe", "garth", "cairn", "wold"]),
   resource: Object.freeze(["works", "delph", "pit", "quarry", "field"]),
   crossing: Object.freeze(["ford", "bridge", "wade", "stair", "reach"]),
-  fortification: Object.freeze(["gate", "watch", "keep", "burh", "combat", "hold"]),
+  fortification: Object.freeze(["gate", "watch", "keep", "burh", "spire", "hold"]),
   wonder: Object.freeze(["stones", "seat", "ring", "mark", "stone"]),
 });
 
@@ -67,7 +67,7 @@ export const TOPONYM_NOUNS = Object.freeze({
   ruin: Object.freeze(["Ruin", "Barrow", "Remains", "Walls", "Stones"]),
   resource: Object.freeze(["Workings", "Quarry", "Diggings", "Cut", "Beds"]),
   crossing: Object.freeze(["Ford", "Bridge", "Crossing", "Stair", "Passage"]),
-  fortification: Object.freeze(["Watch", "Keep", "Archetype", "Redoubt", "Post"]),
+  fortification: Object.freeze(["Watch", "Keep", "Spire", "Redoubt", "Post"]),
   wonder: Object.freeze(["Stones", "Ring", "Seat", "Mark", "Finger"]),
 });
 
@@ -133,7 +133,7 @@ export const MOTIF_NAME_OVERRIDES = Object.freeze({
   waystone: Object.freeze({ nouns: Object.freeze(["Waystone", "Mark", "Stone"]), stems: Object.freeze(["stone", "mark"]) }),
   "memory-tree": Object.freeze({ nouns: Object.freeze(["Tree", "Oak", "Yew"]), stems: Object.freeze(["holt"]) }),
   wreck: Object.freeze({ nouns: Object.freeze(["Wreck", "Hulk", "Ribs"]), stems: Object.freeze(["wold"]) }),
-  "signal-combat": Object.freeze({ nouns: Object.freeze(["Archetype", "Beacon", "Signal"]), stems: Object.freeze(["combat", "beacon"]) }),
+  "signal-spire": Object.freeze({ nouns: Object.freeze(["Spire", "Beacon", "Signal"]), stems: Object.freeze(["spire", "beacon"]) }),
   "toll-fort": Object.freeze({ nouns: Object.freeze(["Toll", "Bar", "Gate"]), stems: Object.freeze(["gate", "bar"]) }),
   caravanserai: Object.freeze({ nouns: Object.freeze(["Caravanserai", "Yard", "Halt"]), stems: Object.freeze(["halt"]) }),
 });

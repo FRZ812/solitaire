@@ -256,7 +256,7 @@ export function computeSightFrom(cx, cy, existing = {}) {
 
 // Vista variant: same hex-neighborhood logic, with an explicit radius.
 // Called from handleTravel when arriving at a tile that carries vistaRadius,
-// so high points (knolls, towers, mountain passes) take in much more than
+// so high points (knolls, spires, mountain passes) take in much more than
 // normal eye-level sight.
 export function computeSightFromRadius(cx, cy, radius, existing = {}) {
   const out = { ...existing };

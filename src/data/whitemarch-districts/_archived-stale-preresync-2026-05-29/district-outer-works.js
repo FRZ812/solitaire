@@ -1,6 +1,6 @@
 // The Outer Works — a walled satellite enclosure NORTH of Whitemarch along
 // the Crown Road. Per the city bible (WHITEMARCH_CITY.md, lines 31-35):
-// road forts, ditch lines, cleared killing fields, watch towers, bridge
+// road forts, ditch lines, cleared killing fields, watch posts, bridge
 // forts, and patrol stables. Outside the main wall but inside the city's
 // practical reach.
 //
@@ -18,8 +18,8 @@
 //
 // Internal layout from south (city-facing) to north (frontier-facing):
 //   y=-9   wall ring + Gate Watchpost at (0,-9)
-//   y=-10  Watch Archetype I, yard, Patrol Stable, Crown Road, Hospice,
-//          yard, Watch Archetype II — the immediate inside-the-gate band.
+//   y=-10  Watch Post I, yard, Patrol Stable, Crown Road, Hospice,
+//          yard, Watch Post II — the immediate inside-the-gate band.
 //   y=-11  Wall-Watch Chapel, Road Fort (inner keep), Quartermaster's
 //          Yard, plus drill-yard connectors east and west.
 //   y=-12  Couriers' Post, Crown Road continuation, drill-yard.
@@ -106,19 +106,19 @@ const interior = {
   },
 
   // ===================== y = -10 BAND =================================
-  // Watch Archetype I — south-west corner combat, restricted.
+  // Watch Post I — south-west corner spire, restricted.
   "-3,-10": {
     terrain: "indoor",
     poi: {
-      type: "combat",
-      name: "Watch Archetype I",
+      type: "spire",
+      name: "Watch Post I",
       access: "restricted",
       parent: PARENT,
       parentName: PARENT_NAME,
-      part: "watch-combat-i",
-      partName: "Watch Archetype I",
+      part: "watch-post-i",
+      partName: "Watch Post I",
       description:
-        "A squat round combat set inside the south-west corner of the wall ring. The ground floor is a cold magazine of bolt-bundles, oilcloth, and a cooper's repair bench; a ladder of bare timber climbs to the wall-walk above. The watch posted here gambles with knuckle-bones while one of them keeps an eye on the southern approach. Strangers are stopped at the doorway; the duty register is not for general reading.",
+        "A squat round spire set inside the south-west corner of the wall ring. The ground floor is a cold magazine of bolt-bundles, oilcloth, and a cooper's repair bench; a ladder of bare timber climbs to the wall-walk above. The watch posted here gambles with knuckle-bones while one of them keeps an eye on the southern approach. Strangers are stopped at the doorway; the duty register is not for general reading.",
     },
     doors: [
       { x: -2, y: -10 }, // drill yard connector east
@@ -130,7 +130,7 @@ const interior = {
   "-2,-10": {
     terrain: "settlement",
     doors: [
-      { x: -3, y: -10 }, // Watch Archetype I
+      { x: -3, y: -10 }, // Watch Post I
       { x: -1, y: -10 }, // Patrol Stable
       { x: -1, y: -11 }, // Wall-Watch Chapel
       { x: -2, y: -11 }, // drill-yard connector
@@ -198,25 +198,25 @@ const interior = {
     terrain: "settlement",
     doors: [
       { x: 1,  y: -10 }, // Hospice
-      { x: 3,  y: -10 }, // Watch Archetype II
+      { x: 3,  y: -10 }, // Watch Post II
       { x: 2,  y: -11 }, // drill-yard connector
       { x: 1,  y: -11 }, // Quartermaster's Yard
     ],
   },
 
-  // Watch Archetype II — south-east corner combat, restricted.
+  // Watch Post II — south-east corner spire, restricted.
   "3,-10": {
     terrain: "indoor",
     poi: {
-      type: "combat",
-      name: "Watch Archetype II",
+      type: "spire",
+      name: "Watch Post II",
       access: "restricted",
       parent: PARENT,
       parentName: PARENT_NAME,
-      part: "watch-combat-ii",
-      partName: "Watch Archetype II",
+      part: "watch-post-ii",
+      partName: "Watch Post II",
       description:
-        "The south-east corner combat, twin to Watch Archetype I but kept warmer — the duty crew here mans the signal-mirror that talks to the Great Wall at noon. The ground floor smells of pitch and rope. A speaking-trumpet on a bracket points down through a slit at the gate below; the sergeant calls challenges through it before raising the bar. Civilians get the door shut in their face.",
+        "The south-east corner spire, twin to Watch Post I but kept warmer — the duty crew here mans the signal-mirror that talks to the Great Wall at noon. The ground floor smells of pitch and rope. A speaking-trumpet on a bracket points down through a slit at the gate below; the sergeant calls challenges through it before raising the bar. Civilians get the door shut in their face.",
     },
     doors: [
       { x: 2,  y: -10 }, // drill yard connector
@@ -261,11 +261,11 @@ const interior = {
     ],
   },
 
-  // Wall approach connector (unnamed) at (-3,-11) — backs Watch Archetype I.
+  // Wall approach connector (unnamed) at (-3,-11) — backs Watch Post I.
   "-3,-11": {
     terrain: "settlement",
     doors: [
-      { x: -3, y: -10 }, // Watch Archetype I
+      { x: -3, y: -10 }, // Watch Post I
       { x: -2, y: -11 }, // drill-yard connector
     ],
   },
@@ -328,11 +328,11 @@ const interior = {
     ],
   },
 
-  // Wall approach connector (unnamed) at (3,-11) — backs Watch Archetype II.
+  // Wall approach connector (unnamed) at (3,-11) — backs Watch Post II.
   "3,-11": {
     terrain: "settlement",
     doors: [
-      { x: 3,  y: -10 }, // Watch Archetype II
+      { x: 3,  y: -10 }, // Watch Post II
       { x: 2,  y: -11 }, // drill-yard connector
     ],
   },
@@ -444,7 +444,7 @@ const interior = {
       part: "bridge-fort",
       partName: "Bridge Fort",
       description:
-        "A small square-towered keep set squarely across the Crown Road inside the north half of the ring, named for the ditch-bridge it stood over before the wall was extended around it. The lower room is a strong-room with iron rings set in the floor; the upper room is a captain's watch-bench facing the north wall. The duty officer here is junior to the captain in the Road Fort and senior to nobody else; the chair has eaten promising men.",
+        "A small square-built keep set squarely across the Crown Road inside the north half of the ring, named for the ditch-bridge it stood over before the wall was extended around it. The lower room is a strong-room with iron rings set in the floor; the upper room is a captain's watch-bench facing the north wall. The duty officer here is junior to the captain in the Road Fort and senior to nobody else; the chair has eaten promising men.",
     },
     doors: [
       { x: 0,  y: -13 }, // Killing Field

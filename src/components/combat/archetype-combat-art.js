@@ -21,7 +21,7 @@ import blademaster from "../../assets/generated/archetypes/portraits/blademaster
 import vampire from "../../assets/generated/archetypes/portraits/vampire-portrait-v5.png";
 import automaton from "../../assets/generated/archetypes/portraits/automaton-portrait-v5.png";
 
-export const COMBAT_COMBAT_CUTOUTS = Object.freeze({
+export const COMBAT_CUTOUTS = Object.freeze({
   ironbound,
   wildstrider,
   gloamknife,
@@ -36,7 +36,7 @@ export const COMBAT_COMBAT_CUTOUTS = Object.freeze({
   warlock, wizard, paladin, blademaster, vampire, automaton,
   "arctic-knight": knight,
   "demon-slayer": ranger,
-  "owner-of-artificer": artificer,
+  "master-artificer": artificer,
   "old-king-of-northland": berserker,
   "sleepless-one": sorcerer,
   "last-assassin": rogue,
@@ -46,30 +46,30 @@ export const COMBAT_COMBAT_CUTOUTS = Object.freeze({
   "wandering-blade": blademaster,
   "desolate-vampire": vampire,
   "forsaken-automaton": automaton,
-  "archetype:knight": knight,
-  "archetype:ranger": ranger,
-  "archetype:artificer": artificer,
-  "archetype:berserker": berserker,
-  "archetype:sorcerer": sorcerer,
-  "archetype:rogue": rogue,
-  "archetype:warlock": warlock,
-  "archetype:wizard": wizard,
-  "archetype:paladin": paladin,
-  "archetype:blademaster": blademaster,
-  "archetype:vampire": vampire,
-  "archetype:automaton": automaton,
-  "archetype:arctic-knight": knight,
-  "archetype:demon-slayer": ranger,
-  "archetype:owner-of-artificer": artificer,
-  "archetype:old-king-of-northland": berserker,
-  "archetype:sleepless-one": sorcerer,
-  "archetype:last-assassin": rogue,
-  "archetype:witch-of-eternity": warlock,
-  "archetype:tenacious-mage": wizard,
-  "archetype:exiled-priestess": paladin,
-  "archetype:wandering-blade": blademaster,
-  "archetype:desolate-vampire": vampire,
-  "archetype:forsaken-automaton": automaton,
+  "combat:knight": knight,
+  "combat:ranger": ranger,
+  "combat:artificer": artificer,
+  "combat:berserker": berserker,
+  "combat:sorcerer": sorcerer,
+  "combat:rogue": rogue,
+  "combat:warlock": warlock,
+  "combat:wizard": wizard,
+  "combat:paladin": paladin,
+  "combat:blademaster": blademaster,
+  "combat:vampire": vampire,
+  "combat:automaton": automaton,
+  "combat:arctic-knight": knight,
+  "combat:demon-slayer": ranger,
+  "combat:master-artificer": artificer,
+  "combat:old-king-of-northland": berserker,
+  "combat:sleepless-one": sorcerer,
+  "combat:last-assassin": rogue,
+  "combat:witch-of-eternity": warlock,
+  "combat:tenacious-mage": wizard,
+  "combat:exiled-priestess": paladin,
+  "combat:wandering-blade": blademaster,
+  "combat:desolate-vampire": vampire,
+  "combat:forsaken-automaton": automaton,
 });
 
 const CUTOUT_BY_TEMPLATE = Object.freeze({
@@ -83,30 +83,30 @@ const CUTOUT_BY_TEMPLATE = Object.freeze({
   "dragon-ascendant": wyrmAscendant,
   "knight-errant": duellistFoe,
   reaver: raiderFoe,
-  "archetype:knight": knight,
-  "archetype:ranger": ranger,
-  "archetype:artificer": artificer,
-  "archetype:berserker": berserker,
-  "archetype:sorcerer": sorcerer,
-  "archetype:rogue": rogue,
-  "archetype:warlock": warlock,
-  "archetype:wizard": wizard,
-  "archetype:paladin": paladin,
-  "archetype:blademaster": blademaster,
-  "archetype:vampire": vampire,
-  "archetype:automaton": automaton,
-  "archetype:arctic-knight": knight,
-  "archetype:demon-slayer": ranger,
-  "archetype:owner-of-artificer": artificer,
-  "archetype:old-king-of-northland": berserker,
-  "archetype:sleepless-one": sorcerer,
-  "archetype:last-assassin": rogue,
-  "archetype:witch-of-eternity": warlock,
-  "archetype:tenacious-mage": wizard,
-  "archetype:exiled-priestess": paladin,
-  "archetype:wandering-blade": blademaster,
-  "archetype:desolate-vampire": vampire,
-  "archetype:forsaken-automaton": automaton,
+  "combat:knight": knight,
+  "combat:ranger": ranger,
+  "combat:artificer": artificer,
+  "combat:berserker": berserker,
+  "combat:sorcerer": sorcerer,
+  "combat:rogue": rogue,
+  "combat:warlock": warlock,
+  "combat:wizard": wizard,
+  "combat:paladin": paladin,
+  "combat:blademaster": blademaster,
+  "combat:vampire": vampire,
+  "combat:automaton": automaton,
+  "combat:arctic-knight": knight,
+  "combat:demon-slayer": ranger,
+  "combat:master-artificer": artificer,
+  "combat:old-king-of-northland": berserker,
+  "combat:sleepless-one": sorcerer,
+  "combat:last-assassin": rogue,
+  "combat:witch-of-eternity": warlock,
+  "combat:tenacious-mage": wizard,
+  "combat:exiled-priestess": paladin,
+  "combat:wandering-blade": blademaster,
+  "combat:desolate-vampire": vampire,
+  "combat:forsaken-automaton": automaton,
 });
 
 const CUTOUT_BY_AUTHORED_NAME = Object.freeze({
@@ -122,7 +122,7 @@ const CUTOUT_BY_AUTHORED_NAME = Object.freeze({
   warlock, wizard, paladin, blademaster, vampire, automaton,
   "arctic knight": knight,
   "demon slayer": ranger,
-  "owner of artificer": artificer,
+  "master artificer": artificer,
   "old king of northland": berserker,
   "sleepless one": sorcerer,
   "last assassin": rogue,
@@ -139,7 +139,7 @@ const RAIDER_FOE = /\b(waylayer|brigand|bandit|raider|reaver|cutpurse|ogre)\b/i;
 
 export function combatPortraitTemplateId(portraitKey) {
   if (typeof portraitKey !== "string") return null;
-  const normalized = portraitKey.trim().replace(/^(?:template|combat):/, "");
+  const normalized = portraitKey.trim().replace(/^(?:template|combat|archetype):/, "");
   return normalized || null;
 }
 
@@ -151,8 +151,8 @@ export function resolvePlayerCombatCutout(portraitKey, actor = null) {
     || actor?.archetypeId
     || actor?.profession;
   const templateId = combatPortraitTemplateId(rawKey);
-  const lookup = typeof rawKey === "string" && rawKey.trim().startsWith("archetype:")
-    ? `archetype:${templateId}`
+  const lookup = typeof rawKey === "string" && /^(?:combat|archetype):/.test(rawKey.trim())
+    ? `combat:${templateId}`
     : templateId;
   if (lookup && CUTOUT_BY_TEMPLATE[lookup]) return CUTOUT_BY_TEMPLATE[lookup];
   const authored = String(actor?.name || "").trim().toLowerCase();
@@ -162,9 +162,9 @@ export function resolvePlayerCombatCutout(portraitKey, actor = null) {
 export function resolveEnemyCombatCutout(actor, archetypeId = null) {
   const key = archetypeId || actor?.archetypeId || actor?.templateId || null;
   if (typeof key === "string") {
-    const normalized = key.trim().toLowerCase().replace(/^archetype:/, "");
-    if (COMBAT_COMBAT_CUTOUTS[normalized]) return COMBAT_COMBAT_CUTOUTS[normalized];
-    if (COMBAT_COMBAT_CUTOUTS[`archetype:${normalized}`]) return COMBAT_COMBAT_CUTOUTS[`archetype:${normalized}`];
+    const normalized = key.trim().toLowerCase().replace(/^(?:combat|archetype):/, "");
+    if (COMBAT_CUTOUTS[normalized]) return COMBAT_CUTOUTS[normalized];
+    if (COMBAT_CUTOUTS[`combat:${normalized}`]) return COMBAT_CUTOUTS[`combat:${normalized}`];
   }
   const identity = `${actor?.id || ""} ${actor?.name || ""}`.trim();
   if (KNIGHT_FOE.test(identity)) return duellistFoe;
@@ -172,7 +172,7 @@ export function resolveEnemyCombatCutout(actor, archetypeId = null) {
   return null;
 }
 
-export function resolveCombatCombatArt(actor, {
+export function resolveCombatArt(actor, {
   playerId = null,
   playerPortraitKey = null,
   archetypeId = null,

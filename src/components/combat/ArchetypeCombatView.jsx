@@ -34,7 +34,7 @@ import {
 } from "../../gameplay/combat/combat-items.js";
 import { normalizeWeaponPresentation } from "../../gameplay/combat/weapon-presentation.js";
 import { weaponAttackSummary } from "../../gameplay/combat/weapon-techniques.js";
-import { resolveCombatCombatArt } from "./archetype-combat-art.js";
+import { resolveCombatArt } from "./archetype-combat-art.js";
 import { resolveCombatAbilityArt, resolveCombatActionName } from "./archetype-combat-ability-art.js";
 import { resolveCombatKeepsakeArt } from "./combat-keepsake-art.js";
 import {
@@ -46,6 +46,7 @@ import {
 import { combatVfxForIntent } from "./archetype-combat-vfx.js";
 import { ArchetypeCombatVfxCanvas } from "./ArchetypeCombatVfxCanvas.jsx";
 import { FormationBattlefield } from "./FormationBattlefield.jsx";
+import { trapModalFocus } from "../exploration/modalFocus.js";
 import { combatChoreographyForAction } from "./archetype-combat-choreography.js";
 import { combatStatusPresentation } from "./archetype-combat-status.js";
 import "./archetype-combat.css";
@@ -58,6 +59,7 @@ const REFUSALS = {
   "on-cooldown": (skill) => `ready in ${skill.cooldownRemaining}`,
   "no-uses-remaining": () => "spent",
   "insufficient-resolve": () => "not enough Resolve",
+  "basic-recovery-required": () => "use a free basic ability first",
   "item-spent": () => "spent",
   "health-full": () => "health is already full",
   "resolve-full": () => "Resolve is already full",
@@ -524,13 +526,15 @@ function StatusDetails({ actor, status, source, enemy = false, onDismiss }) {
   );
 }
 
-function CombatantDossier({ actor, art, abilityRows, onClose }) {
+function CombatantDossier({ actor, art, abilityRows, opener, onClose }) {
+  const dialogRef = useRef(null);
+  const layerRef = useRef(null);
   const hasResolve = Number.isFinite(actor.resolve) && Number.isFinite(actor.resolveMax);
   const stats = [
     ["HP", `${actor.hp}/${actor.maxHp}`],
     ...(hasResolve ? [["Resolve", `${actor.resolve}/${actor.resolveMax}`]] : []),
     ...(hasResolve && Number.isFinite(actor.resolveRegen)
-      ? [["Resolve recovery", `${actor.resolveRegen}/round`]]
+      ? [["Free-basic recovery", `${actor.resolveRegen} Resolve`]]
       : []),
     ["Ward", actor.shield || 0],
     ["Attack", actor.stats?.attack ?? 0],
@@ -538,15 +542,66 @@ function CombatantDossier({ actor, art, abilityRows, onClose }) {
     ["Critical", `${actor.stats?.critRate ?? 0}%`],
     ["Dodge", `${actor.stats?.dodgeRate ?? 0}%`],
   ];
+
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    const dialog = dialogRef.current;
+    const siblings = layer?.parentElement
+      ? [...layer.parentElement.children].filter((element) => element !== layer)
+      : [];
+    const previous = siblings.map((element) => ({
+      element,
+      hadInert: element.hasAttribute("inert"),
+      ariaHidden: element.getAttribute("aria-hidden"),
+    }));
+    for (const element of siblings) {
+      element.setAttribute("inert", "");
+      element.setAttribute("aria-hidden", "true");
+    }
+    dialog?.querySelector("button:not(:disabled)")?.focus();
+    return () => {
+      for (const entry of previous) {
+        if (!entry.hadInert) entry.element.removeAttribute("inert");
+        if (entry.ariaHidden === null) entry.element.removeAttribute("aria-hidden");
+        else entry.element.setAttribute("aria-hidden", entry.ariaHidden);
+      }
+      const restore = () => {
+        if (opener?.isConnected && !opener.disabled) opener.focus();
+      };
+      if (typeof globalThis.requestAnimationFrame === "function") {
+        globalThis.requestAnimationFrame(restore);
+      } else {
+        queueMicrotask(restore);
+      }
+    };
+  }, [opener]);
+
+  function handleKeyDown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose?.();
+      return;
+    }
+    if (event.key === "Tab") {
+      trapModalFocus(event, dialogRef.current);
+      event.stopPropagation();
+    }
+  }
+
   return (
     <div
+      ref={layerRef}
       className="archetype-combat__dossier-backdrop"
       role="presentation"
+      data-modal-escape-boundary
+      onKeyDown={handleKeyDown}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
     >
       <aside
+        ref={dialogRef}
         className={`archetype-combat__dossier archetype-combat__dossier--${actor.side}`}
         role="dialog"
         aria-modal="true"
@@ -562,7 +617,7 @@ function CombatantDossier({ actor, art, abilityRows, onClose }) {
             <strong id={`archetype-combat-dossier-${domId(actor.id)}`}>{actor.name}</strong>
             <em>{actor.hp > 0 ? "Standing" : "Defeated"}</em>
           </span>
-          <button type="button" onClick={onClose} aria-label={`Close ${actor.name} dossier`} autoFocus>
+          <button type="button" onClick={onClose} aria-label={`Close ${actor.name} dossier`}>
             <Icon name="x" size={16} strokeWidth={1.7} />
           </button>
         </header>
@@ -1154,6 +1209,7 @@ export function ArchetypeCombatView({
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [inspectedStatus, setInspectedStatus] = useState(null);
   const [inspectedActorId, setInspectedActorId] = useState(null);
+  const dossierOpenerRef = useRef(null);
   const [recordExpanded, setRecordExpanded] = useState(false);
   const [satchelOpen, setSatchelOpen] = useState(false);
   const [impactCues, setImpactCues] = useState([]);
@@ -1359,7 +1415,7 @@ export function ArchetypeCombatView({
   })();
   function combatArt(actor) {
     const supplied = typeof artFor === "function" ? artFor(actor) : null;
-    return supplied || resolveCombatCombatArt(actor, {
+    return supplied || resolveCombatArt(actor, {
       playerId: encounter.playerId,
       playerPortraitKey,
       archetypeId: encounter.enemyArchetypes?.[actor.id] || actor.archetypeId || null,
@@ -1429,8 +1485,11 @@ export function ArchetypeCombatView({
     setTargetingDraft({ skillId: row.skillState.id, anchorCell });
   }
 
-  function inspectCombatant(actor) {
+  function inspectCombatant(actor, opener = null) {
     if (!actor || inputSuppressed) return;
+    dossierOpenerRef.current = opener || (combatRef.current?.contains(document.activeElement)
+      ? document.activeElement
+      : null);
     setInspectedSkillId(null);
     setInspectedStatus(null);
     setInspectedActorId(null);
@@ -1874,6 +1933,7 @@ export function ArchetypeCombatView({
             actor={inspectedActor}
             art={combatArt(inspectedActor)}
             abilityRows={dossierAbilityRows}
+            opener={dossierOpenerRef.current}
             onClose={() => setInspectedActorId(null)}
           />
         ) : null}

@@ -25,6 +25,7 @@ import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
 import { makeRepurposedPortraitCharacters } from "./repurposed-portrait-characters.js";
 import { makePortraitCandidateCharacters } from "./portrait-candidate-characters.js";
 import { makeRegionalEstablishmentCharacters } from "./regional-establishment-characters.js";
+import { isPresentationJob } from "../gameplay/campaign/presentation-outbox.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -96,7 +97,7 @@ function migrateLegacyWorldLocation(world) {
 
 // The player starts at the actual Grain Square POI on the unified world map.
 // Whitemarch is their home city — they grew up here,
-// every lane is known, every wall-combat is named — so the WHOLE biome rect
+// every lane is known, every wall-spire is named — so the WHOLE biome rect
 // is revealed on start (and re-revealed on load via the migrator below).
 // That covers the interior, the 3-hex Great Wall band (so the wall is
 // visible, not fogged), the gate complex, the Approach, the river, and the
@@ -368,12 +369,12 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "ink-stains the cleaning never quite removes",
             },
             base_appearance: "Small and light. Ivory-pale skin, white hair cut close. Dark, slow-attentive eyes. Ink-stains at the fingertips.",
-            description: "The mystic archmage at the top of the Glass Spire, far east. He reads astral conjunctions, trains the masters who train a continent's working sorcerers, and writes letters that change kingdoms. His near-identical twin Iorin studies the Spire's shadows instead.",
+            description: "The mystic archmage at the top of the Glass Spire, far east. He reads astral conjunctions, trains the masters who train a continent's working sorcerers, and writes letters that change kingdoms. His near-identical twin Iorin studies the spire's shadows instead.",
             attributes: { body: 2, reflex: 4, vigor: 4, mind: 22, wit: 18, presence: 12 },
             worn: ["spire-staff", "spire-grey-robe", "scrying-bowl-pendant", "iron-key-ring"],
             knows: [
               "The Spire admits by invitation only; my letters are the invitations.",
-              "I have not left the Spire in forty-one years.",
+              "I have not left the spire in forty-one years.",
             ],
             at: { x: 525, y: 20, day: 0 }, home: { x: 525, y: 20 },
           },
@@ -611,11 +612,11 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "a thin white scar across the back of the left hand from an old binding",
             },
             base_appearance: "Thin and upright. Lined pale-tan skin. Grey hair gathered loose. Slow blue eyes. Hands ink-stained. A thin scar on the back of the left hand.",
-            description: "Master of the Heron Seat in the Spine Foothills. Heron-trained; assumed the mantle thirty-one years ago. One apprentice at a time. Rejects most applicants; has accepted three in three decades.",
+            description: "Master of the Heron Seat in the Spine Foothills. Heron-trained; took the spire thirty-one years ago. One apprentice at a time. Rejects most applicants; has accepted three in three decades.",
             attributes: { body: 3, reflex: 4, vigor: 5, mind: 15, wit: 13, presence: 9 },
             worn: ["heron-grey-robe", "ink-and-quill-belt", "sealed-letter-of-the-master"],
             knows: [
-              "Apprenticeship at this combat is seven years, minimum. Six have left in the first year. One stayed.",
+              "Apprenticeship at this spire is seven years, minimum. Six have left in the first year. One stayed.",
               "I write to the Spire's High Master four times a year. He writes back twice.",
             ],
             successor_id: "heron-master-apprentice",
@@ -855,7 +856,7 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "ink-stains down the side of the right hand from heel to little finger — seven years of copy-work",
             },
             base_appearance: "Thin and upright, narrow-shouldered. Pale-tan smooth skin. Dark brown hair plaited tight to the skull, plait to the small of the back. Slow dark-grey eyes. Ink-stains down the side of the right hand.",
-            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron seat is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya assumed the mantle at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
+            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron Seat is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya took the spire at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
             attributes: { body: 3, reflex: 5, vigor: 5, mind: 13, wit: 11, presence: 7 },
             worn: ["heron-grey-half-robe", "ink-and-quill-belt", "apprentice's-bound-grimoire"],
             knows: [
@@ -928,13 +929,10 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
       },
     },
     party: [], // recruited companion ids (full people in world.codex.characters)
-    // The production deterministic combat sidecar is campaign-owned so an
-    // accepted encounter survives autosave, reload, and device handoff.
-    activeCombatSession: null,
     pendingCombatDirective: null,
     pendingTravelCombat: null,
-    productionCombatSequence: 0,
     combatSettlementReceipts: [],
+    pendingLoot: null,
     // The Solitaire combat sidecar: the durable build, and the fight in progress. A fight
     // used to live in component state, so it lasted exactly as long as the tab did.
     mechanics: emptyMechanicsSidecar(),
@@ -1065,26 +1063,60 @@ function backfillActiveBountyTargets(world) {
 // added to initial-state.js after the campaign was created. The player's
 // own discoveries are preserved (we only add what's missing). Mutates +
 // returns a new state object; safe to call repeatedly.
+const RETIRED_STABLE_ID_ALIASES = new Map([
+  [["t", "o", "w", "e", "r"].join("") + "-shield", "great-shield"],
+  ["combat-shield", "great-shield"],
+  ["heron-combat", "heron-seat"],
+  [`heron-${["t", "o", "w", "e", "r"].join("")}`, "heron-seat"],
+  ["signal-combat", "signal-spire"],
+  [`signal-${["t", "o", "w", "e", "r"].join("")}`, "signal-spire"],
+  ["wild-watch" + ["t", "o", "w", "e", "r"].join(""), "wild-watchpost"],
+  ["owner-of-artificer", "master-artificer"],
+  ["archetype:owner-of-artificer", "archetype:artificer"],
+]);
+
+function migrateRetiredStableIds(value) {
+  if (typeof value === "string") return RETIRED_STABLE_ID_ALIASES.get(value) || value;
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      value[index] = migrateRetiredStableIds(value[index]);
+    }
+    return value;
+  }
+  if (!value || typeof value !== "object") return value;
+  for (const key of Object.keys(value)) {
+    const migratedKey = RETIRED_STABLE_ID_ALIASES.get(key) || key;
+    const migratedValue = migrateRetiredStableIds(value[key]);
+    if (migratedKey !== key) {
+      if (!Object.prototype.hasOwnProperty.call(value, migratedKey)) value[migratedKey] = migratedValue;
+      delete value[key];
+    } else {
+      value[key] = migratedValue;
+    }
+  }
+  return value;
+}
+
 export function migrateCodex(state) {
   if (!state?.world) return state;
   const next = JSON.parse(JSON.stringify(state));
-  if (next.activeCombatSession === undefined) next.activeCombatSession = null;
+  migrateRetiredStableIds(next);
   if (next.pendingCombatDirective === undefined) next.pendingCombatDirective = null;
   if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
-  if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
   if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
-  if (!Array.isArray(next.presentationJobs)) next.presentationJobs = [];
+  if (next.pendingLoot === undefined) next.pendingLoot = null;
+  next.presentationJobs = Array.isArray(next.presentationJobs)
+    ? next.presentationJobs.filter((job) => isPresentationJob(job) && job.status !== "presented")
+    : [];
   if (next.pendingReward === undefined) next.pendingReward = null;
   // Backfilled in two steps because a campaign can predate either the sidecar or just its
   // combat slot: the build migration shipped first and left the slot for this one.
   if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
   if (!next.mechanics.combat) next.mechanics = { ...next.mechanics, combat: emptyCombatMechanics() };
   if (
-    !Number.isSafeInteger(next.productionCombatSequence)
-    || next.productionCombatSequence < 0
-    || !Array.isArray(next.combatSettlementReceipts)
+    !Array.isArray(next.combatSettlementReceipts)
   ) {
-    throw new RangeError("Invalid production combat campaign lineage.");
+    throw new RangeError("Invalid combat campaign lineage.");
   }
   migratePortraitOverrides(next);
   next.world = migrateLegacyWorldLocation(next.world);

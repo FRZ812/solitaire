@@ -421,7 +421,7 @@ export function resolveCombatMovementV2(
   let goalIndex = null;
   let plannedDistance = allowedDistance;
   let fixedDirection = null;
-  let recomputeCombatard = false;
+  let recomputeToward = false;
 
   if (allowedDistance === 0) {
     return result(
@@ -472,7 +472,7 @@ export function resolveCombatMovementV2(
       plannedDistance = distance;
       goalIndex = context.anchor.index;
     }
-    recomputeCombatard = true;
+    recomputeToward = true;
   } else {
     goalIndex = nearestEmptySameRow(initialFormations, moverCell, allowedDistance);
     if (goalIndex === null) {
@@ -492,7 +492,7 @@ export function resolveCombatMovementV2(
 
   for (let ordinal = 1; ordinal <= plannedDistance; ordinal += 1) {
     if (goalIndex !== null && current.side === moverCell.side && current.index === goalIndex) break;
-    const direction = recomputeCombatard ? vectorDirection(current, context.anchor) : fixedDirection;
+    const direction = recomputeToward ? vectorDirection(current, context.anchor) : fixedDirection;
     if (direction === null) break;
     const next = offsetCell(current, direction);
     if (next === null) {

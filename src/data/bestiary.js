@@ -97,7 +97,7 @@ function inferTemplate(kind) {
 }
 
 function titleCase(s) { return s.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
-function randInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
+function randInt(min, max, random = Math.random) { return min + Math.floor(random() * (max - min + 1)); }
 const scale = (v, m) => Math.round((v || 0) * m);
 
 const GENERATED_LEVEL_BANDS = Object.freeze({
@@ -386,14 +386,14 @@ export function allyFromCompanion(npc, codex, { tierId = "common" } = {}) {
 // enemyTier ceiling). `count` forces an exact group size (the narrator's roster
 // wins over the template's range); `name` overrides the displayed name so the
 // foes match the fiction the narrator set up.
-export function generateEnemyGroup(kind, { power = 0, maxTier = null, count = null, name = null } = {}) {
+export function generateEnemyGroup(kind, { power = 0, maxTier = null, count = null, name = null, random = Math.random } = {}) {
   const tmpl = BESTIARY[kind] || inferTemplate(kind);
   const [lo, hi] = tmpl.count || [1, 1];
-  const n = count != null ? Math.max(1, Math.round(count)) : randInt(lo, hi);
+  const n = count != null ? Math.max(1, Math.round(count)) : randInt(lo, hi, random);
   const cap = maxTier || (power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare");
   const enemies = [];
   for (let i = 0; i < n; i++) {
-    const tierId = rollTier(cap, power);
+    const tierId = rollTier(cap, power, random);
     const e = generateEnemy(kind, { tierId, index: i, total: n });
     if (name) e.name = n > 1 ? `${name} ${i + 1}` : name;
     enemies.push(e);

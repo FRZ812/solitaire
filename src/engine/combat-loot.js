@@ -151,8 +151,15 @@ export function applyLoot(state, manifest) {
   const next = clone(state);
   next.pendingLoot = null;
   const beats = [];
-  const now = Date.now();
   if (!manifest) return { state: { ...next, beats: [...next.beats] }, taken: "" };
+  const sourceReceiptId = manifest.sourceReceiptId;
+  const earned = typeof sourceReceiptId === "string"
+    && (next.combatSettlementReceipts || []).some((receipt) => receipt?.sessionId === sourceReceiptId);
+  const claimed = new Set(next.lootClaimReceipts || []);
+  if (!earned || claimed.has(sourceReceiptId)) {
+    return { state: { ...state }, taken: "" };
+  }
+  next.lootClaimReceipts = [...claimed, sourceReceiptId];
 
   next.world.codex.items = { ...next.world.codex.items };
   const invLines = [];
@@ -175,10 +182,10 @@ export function applyLoot(state, manifest) {
   if (coins.silver) coinParts.push(`+${coins.silver}sp`);
   if (coins.copper) coinParts.push(`+${coins.copper}cp`);
   if (coinParts.length) { invLines.push(coinParts.join(", ")); takenParts.push(coinParts.join(", ")); }
-  if (invLines.length) beats.push({ id: `lt${now}`, type: "inventory_delta", lines: invLines });
+  if (invLines.length) beats.push({ id: `loot:${sourceReceiptId}:items`, type: "inventory_delta", lines: invLines });
 
   // rollLoot has already spent its deterministic stream to author this
-  // manifest. Archetype characters still take every material reward, but do not
+  // manifest. Spire characters still take every material reward, but do not
   // project its retired combat-technique entry into either player or Codex.
   if (manifest.ability && next.character.progressionModel !== "archetype") {
     next.character.abilities = Array.isArray(next.character.abilities) ? [...next.character.abilities] : [];
@@ -190,7 +197,7 @@ export function applyLoot(state, manifest) {
       description: def?.desc || "A combat ability.", rating: tierInfo(manifest.ability.tier).order + 1,
       combatAbility: true, tier: manifest.ability.tier,
     };
-    beats.push({ id: `la${now}`, type: "discovery", items: [{ kind: "ability", name: `${manifest.ability.name} · ${tierLabel(manifest.ability.tier)}` }] });
+    beats.push({ id: `loot:${sourceReceiptId}:ability`, type: "discovery", items: [{ kind: "ability", name: `${manifest.ability.name} · ${tierLabel(manifest.ability.tier)}` }] });
     takenParts.push(`the technique ${manifest.ability.name}`);
   }
 

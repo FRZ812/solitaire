@@ -1,4 +1,4 @@
-// Pure 3x3 formation geometry for Archetype combat.
+// Pure 3x3 formation geometry for archetype combat.
 //
 // A cell is an integer from 0 through 8 in row-major order:
 //

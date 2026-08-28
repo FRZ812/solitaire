@@ -86,12 +86,12 @@ export const PERMANENT_STARTING_KEEPSAKES = Object.freeze([
   relic("crownless-coin", "legendary", "+5 ATK · +5 DEF · +5% Critical · +5% Dodge", {
     stats: { attack: 5, defense: 5, critRate: 5, dodgeRate: 5 },
     unlock: achievement(
-      "combat-conqueror",
-      "Archetype Conqueror",
-      "Defeat the Archetype's final guardian.",
+      "gatekeeper-victor",
+      "Gatekeeper Victor",
+      "Defeat the combat system's final guardian.",
     ),
   }),
-  relic("heart-of-still-winter", "mythical", "+8 ATK · +8 DEF · +20 max HP · +6 max Resolve · +2 Resolve/round · +8% Critical · +8% Dodge", {
+  relic("heart-of-still-winter", "mythical", "+8 ATK · +8 DEF · +20 max HP · +6 max Resolve · +2 Resolve after a free basic · +8% Critical · +8% Dodge", {
     stats: {
       attack: 8,
       defense: 8,
@@ -104,7 +104,7 @@ export const PERMANENT_STARTING_KEEPSAKES = Object.freeze([
     unlock: achievement(
       "winter-without-end",
       "Winter Without End",
-      "Conquer the Archetype with every combat archetype.",
+      "Conquer the combat system with every combat archetype.",
     ),
   }),
 ]);

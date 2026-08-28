@@ -143,7 +143,7 @@ const TRAITS = Object.freeze(Object.fromEntries([
       values: Object.freeze([3, 6, 6, 10, 10, 15, 15]),
       evenRankStatus: "tenacity",
     }),
-    exclusiveTo: "owner-of-artificer",
+    exclusiveTo: "master-artificer",
   }),
   trait("assassin", "Assassin", {
     effect: span("eviscerate", 2, 5),

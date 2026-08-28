@@ -189,7 +189,6 @@ function SpellCard({ spell, kind, active, affordable, onCast }) {
 export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
   const usesCombatProgression = character.progressionModel === "archetype";
-  const [abilityFilter, setAbilityFilter] = useState("all");
   const progressionProjection = progressionNarrativeProjection(character);
   const combatRosterAbilities = usesCombatProgression
     ? combatArsenalAbilityRows(state.mechanics?.build?.skills || [])
@@ -202,16 +201,11 @@ export function ArsenalView({ state, onCastBuff }) {
         ))
       : progressionProjection.abilities,
   };
-  const { techniques, performances, fieldcraft, subterfuge, oathcraft, primalcraft, pactcraft, devicecraft, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
-  const trainedAbilities = [...techniques, ...performances, ...fieldcraft, ...subterfuge, ...oathcraft, ...primalcraft, ...pactcraft, ...devicecraft]
-    .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
+  const { spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
 
   const boons = knownBuffSpells(projectedCharacter);
   const travelSpells = knownTravelSpells(projectedCharacter);
-  const metamagicProfiles = usesCombatProgression ? [] : progressionProjection.metamagicProfiles;
-  const progressionCapabilities = usesCombatProgression
-    ? []
-    : progressionProjection.progressionCapabilities || progressionProjection.branchCapabilities;
+
   const activeConditions = new Set(condNames(character.conditions || []));
   const proficiencies = PROFICIENCIES
     .map((proficiency) => ({
@@ -221,41 +215,18 @@ export function ArsenalView({ state, onCastBuff }) {
     }))
     .filter((proficiency) => proficiency.xp > 0)
     .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
-  const abilityCategories = [
-    ["all", "All"],
-    ["martial", "Martial"],
-    ["survival", "Survival"],
-    ["social", "Social"],
-    ["performance", "Performance"],
-    ["fieldcraft", "Fieldcraft"],
-    ["subterfuge", "Subterfuge"],
-    ["oathcraft", "Oathcraft"],
-    ["primalcraft", "Primal Arts"],
-    ["pactcraft", "Pact Arts"],
-    ["devicecraft", "Devices"],
-    ["innate", "Innate"],
-  ].map(([key, label]) => ({
-    key,
-    label,
-    count: key === "all" ? trainedAbilities.length : trainedAbilities.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === key).length,
-  })).filter((category) => category.key === "all" || category.count > 0);
-  const visibleAbilities = abilityFilter === "all"
-    ? trainedAbilities
-    : trainedAbilities.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === abilityFilter);
 
   return (
     <DeckPage className="arsenal-view">
       <DeckPageHeader
         icon="abilities"
         title="Skills"
-        subtitle={usesCombatProgression
-          ? "Archetype combat kit · world powers · proficiencies"
-          : "Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies"}
+        subtitle="archetype combat kit · world powers · proficiencies"
       />
 
       {combatRosterAbilities.length > 0 ? (
-        <section className="combat-arsenal" aria-label="Archetype combat kit">
-          <SectionHeader>Archetype combat kit · {combatRosterAbilities.length}</SectionHeader>
+        <section className="combat-arsenal" aria-label="archetype combat kit">
+          <SectionHeader>archetype combat kit · {combatRosterAbilities.length}</SectionHeader>
           <div className="combat-arsenal__list">
             {combatRosterAbilities.map((ability) => (
               <CombatRosterAbilityCard key={ability.definition.id} ability={ability} />
@@ -264,62 +235,10 @@ export function ArsenalView({ state, onCastBuff }) {
         </section>
       ) : null}
 
-      {!usesCombatProgression && <section>
-        <SectionHeader>Techniques, performances, fieldcraft, subterfuge, oathcraft, primal arts, pact arts, devices &amp; core actions · {visibleAbilities.length}</SectionHeader>
-        <div className="arsenal-filters" role="group" aria-label="Skill categories">
-          {abilityCategories.map((category) => (
-            <button type="button" key={category.key} aria-pressed={abilityFilter === category.key} onClick={() => setAbilityFilter(category.key)}>
-              <span>{category.label}</span><strong>{category.count}</strong>
-            </button>
-          ))}
-        </div>
-        <div className="arsenal-list">
-          {visibleAbilities.map((ability, index) => {
-            const definition = getAbilityDef(ability.id);
-            return <AbilityCard key={`${ability.id}-${index}`} ability={ability} definition={definition} />;
-          })}
-        </div>
-      </section>}
-
-      {(metamagicProfiles.length > 0 || progressionCapabilities.length > 0) && (
-        <section aria-label="Earned progression capabilities">
-          <SectionHeader>Progression capabilities · {metamagicProfiles.length + progressionCapabilities.length}</SectionHeader>
-          <div className="progression-capability-list">
-            {metamagicProfiles.map((profile) => (
-              <article className="progression-capability-card" key={`metamagic-${profile.abilityId}`}>
-                <header>
-                  <strong>{profile.abilityName}</strong>
-                  <span>{profile.primarySignature ? "Primary signature" : "Spell profile"}</span>
-                </header>
-                <ul>
-                  {profile.features.map((feature) => (
-                    <li key={feature.id}>
-                      <strong>{feature.name}</strong>
-                      <p>{feature.description}</p>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-            {progressionCapabilities.map((feature) => (
-              <article className="progression-capability-card" key={`${feature.type}-${feature.id}`}>
-                <header>
-                  <strong>{feature.name}</strong>
-                  <span>{feature.scope === "general" ? `General ${feature.type}` : feature.type === "passive" ? "Branch passive" : "Branch capability"}</span>
-                </header>
-                {feature.description && <p>{feature.description}</p>}
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
       <section>
-        <SectionHeader>{usesCombatProgression ? "World powers" : "Spells"} · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
+        <SectionHeader>World powers · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
         {combatSpells.length + boons.length + travelSpells.length === 0 ? (
-          <div className="arsenal-empty">{usesCombatProgression
-            ? "No world powers learned yet. Rare teachers and discoveries can awaken them."
-            : "No spells learned yet. Grimoires and teachers can awaken new magic."}</div>
+          <div className="arsenal-empty">No world powers learned yet. Rare teachers and discoveries can awaken them.</div>
         ) : (
           <div className="spell-list">
             {combatSpells.map((ability, index) => {

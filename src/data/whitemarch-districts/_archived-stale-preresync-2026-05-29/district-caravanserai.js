@@ -16,7 +16,7 @@
 //
 // Spatial spec (strict, set by the Whitemarch content rebuild):
 //   Bounding box: x in -15..-9, y in -3..3. A 7-col by 7-row block.
-//   Wall ring on the perimeter — mud-brick over stone footings, watchtowers at
+//   Wall ring on the perimeter — mud-brick over stone footings, watchposts at
 //   the four corners. Less impressive than Whitemarch's Great Wall: this is a
 //   stockade with a city pretension, not a fortress.
 //   The ONE gate is at (-9,0) — the EAST face — looking back at Whitemarch
@@ -75,14 +75,14 @@ function yard() {
 
 // ----------------------------------------------------------------------------
 // Helper: a wall tile. Walls get doors:undefined so the auto-seal computes
-// them. Corner-combat walls carry a partName for flavour; the rest are plain
+// them. Corner-spire walls carry a partName for flavour; the rest are plain
 // curtain-wall hexes.
 // ----------------------------------------------------------------------------
 function wall(part, partName, description) {
   return {
     terrain: "wall",
     poi: {
-      type: part === "combat" ? "combat" : "site",
+      type: part === "spire" ? "spire" : "site",
       name: PARENT_NAME + " Wall",
       access: "restricted",
       parent: PARENT,
@@ -98,34 +98,34 @@ function wall(part, partName, description) {
 const CURTAIN_DESC =
   "A run of mud-brick wall raised on a knee-high stone footing. Shorter and rougher than Whitemarch's white curtain — caravan-money paid for it, not the Treasury — but high enough to keep bandits and stray beasts out, with a parapet walk the warden's men pace at night with a horn and a lamp.";
 
-const ARCHETYPE_DESC =
-  "A squat stone watchtower at the corner of the wall — the only stone on this whole perimeter, paid for after a bad season of horse-thieves. A single brazier burns at the top, watched by one of the warden's men, with a horn on a thong and a tally-stick for the wagons coming up the road.";
+const WATCHPOST_DESC =
+  "A squat stone watchpost at the corner of the wall — the only stone on this whole perimeter, paid for after a bad season of horse-thieves. A single brazier burns at the top, watched by one of the warden's men, with a horn on a thong and a tally-stick for the wagons coming up the road.";
 
 export const TILES = {
   // ========================================================================
   // WALL RING — 7 across the north (y=-3) and south (y=3), 5 down each side
   // (x=-15 west, x=-9 east). The east-middle hex (-9,0) is the gate, not a
-  // wall. The four corners are stone watchtowers; everything else is the
+  // wall. The four corners are stone watchposts; everything else is the
   // mud-brick curtain.
   // ========================================================================
 
-  // North wall (y=-3), with NW and NE corner-towers
-  "-15,-3": wall("combat", "Northwest Watchtower", ARCHETYPE_DESC),
+  // North wall (y=-3), with NW and NE corner-spires
+  "-15,-3": wall("spire", "Northwest Watchpost", WATCHPOST_DESC),
   "-14,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-13,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-12,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-11,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
   "-10,-3": wall("curtain", "North Curtain", CURTAIN_DESC),
-  "-9,-3":  wall("combat", "Northeast Watchtower", ARCHETYPE_DESC),
+  "-9,-3":  wall("spire", "Northeast Watchpost", WATCHPOST_DESC),
 
-  // South wall (y=3), with SW and SE corner-towers
-  "-15,3": wall("combat", "Southwest Watchtower", ARCHETYPE_DESC),
+  // South wall (y=3), with SW and SE corner-spires
+  "-15,3": wall("spire", "Southwest Watchpost", WATCHPOST_DESC),
   "-14,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-13,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-12,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-11,3": wall("curtain", "South Curtain", CURTAIN_DESC),
   "-10,3": wall("curtain", "South Curtain", CURTAIN_DESC),
-  "-9,3":  wall("combat", "Southeast Watchtower", ARCHETYPE_DESC),
+  "-9,3":  wall("spire", "Southeast Watchpost", WATCHPOST_DESC),
 
   // West wall (x=-15), y in -2..2
   "-15,-2": wall("curtain", "West Curtain", CURTAIN_DESC),
@@ -432,7 +432,7 @@ export const TILES = {
       part: "caravan-masters-house",
       partName: "Caravan Master's House",
       description:
-        "A square house of mortared stone against the west wall — the only stone-built quarters in the Caravanserai besides the corner-towers — with a slate roof and a single chimney. The warden lives here when she is on the ground: ground-floor office with a wide map-table and a strongbox under the desk, sleeping-quarters above, a back room where the caravan-masters take tea while she works through their toll. Conditional ground: she does not see drovers, only the masters and the city's customs men.",
+        "A square house of mortared stone against the west wall — the only stone-built quarters in the Caravanserai besides the corner-spires — with a slate roof and a single chimney. The warden lives here when she is on the ground: ground-floor office with a wide map-table and a strongbox under the desk, sleeping-quarters above, a back room where the caravan-masters take tea while she works through their toll. Conditional ground: she does not see drovers, only the masters and the city's customs men.",
     },
     doors: [
       { x: -13, y: 0 },  // Smith's Lean-To

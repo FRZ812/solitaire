@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 
-export const COMBAT_COMBAT_FLIPBOOK_FRAME_COUNT = 9;
-export const COMBAT_COMBAT_FLIPBOOK_FPS = 18;
+export const COMBAT_FLIPBOOK_FRAME_COUNT = 9;
+export const COMBAT_FLIPBOOK_FPS = 18;
 
 const REDUCED_MOTION_DURATION_MS = 180;
 const imageCache = new Map();
@@ -18,7 +18,7 @@ function easeOut(value) {
 function frameCountForCue(cue) {
   return Math.max(
     1,
-    Math.round(Number(cue?.visual?.flipbook?.frameCount) || COMBAT_COMBAT_FLIPBOOK_FRAME_COUNT),
+    Math.round(Number(cue?.visual?.flipbook?.frameCount) || COMBAT_FLIPBOOK_FRAME_COUNT),
   );
 }
 
@@ -38,7 +38,7 @@ function cueDuration(cue, reducedMotion) {
   const [start, end] = frameRangeForCue(cue);
   const fps = Math.max(
     1,
-    Number(cue?.visual?.flipbook?.fps) || COMBAT_COMBAT_FLIPBOOK_FPS,
+    Number(cue?.visual?.flipbook?.fps) || COMBAT_FLIPBOOK_FPS,
   );
   return Math.max(170, ((end - start + 1) / fps) * 1_000);
 }
@@ -369,8 +369,8 @@ export function ArchetypeCombatVfxCanvas({ cues = [] }) {
       className="archetype-combat__vfx-canvas"
       data-testid="archetype-combat-vfx-canvas"
       data-renderer="imagegen-flipbook"
-      data-frame-count={COMBAT_COMBAT_FLIPBOOK_FRAME_COUNT}
-      data-fps={COMBAT_COMBAT_FLIPBOOK_FPS}
+      data-frame-count={COMBAT_FLIPBOOK_FRAME_COUNT}
+      data-fps={COMBAT_FLIPBOOK_FPS}
       data-cue-count={cues.length}
       data-flipbook-count={drawableCues.length}
       aria-hidden="true"

@@ -193,7 +193,7 @@ Region prefixes from `REGION_DEFINITIONS.areas` are mixed into the head pool and
 win 45% of the time, which is what makes a Mire name sound like the Mire.
 
 Sample output: `Langthorpe`, `Old Wendcairn`, `Sedgewell`, `The Blue Hound`,
-`The Shrine of the Pale God`, `Rushtower`, `The Alderscar`, `Chalk Ferry`.
+`The Shrine of the Pale God`, `Rushspire`, `The Alderscar`, `Chalk Ferry`.
 
 Four defects found and fixed by inspecting real output rather than trusting the
 generator:

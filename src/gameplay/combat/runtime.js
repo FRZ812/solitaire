@@ -1,4 +1,4 @@
-// Public Archetype-combat runtime boundary.
+// Public Spire-combat runtime boundary.
 //
 // Every implementation import points inward from this file. The v1 modules do not import
 // the router, which keeps registration cycle-free and lets App migrate to this facade
@@ -16,7 +16,7 @@ import {
 } from "./commands.js";
 import { sealCombatTerminalReceipt, worldFatesByParticipant } from "./outcomes.js";
 import { decodeCombatSession, encodeCombatSession } from "./persistence.js";
-import { replayCombatCombatSession, verifyCombatSession } from "./replay.js";
+import { replayCombatSession, verifyCombatSession } from "./replay.js";
 import {
   COMBAT_RETIRED_RUNTIME_IDENTITIES,
   COMBAT_RULESET_ID,
@@ -28,6 +28,7 @@ import {
   markCombatSessionSettled,
   spendCombatSessionStream,
   streamSequencer,
+  combatSettlementContextForSession,
 } from "./session.js";
 import { settleCombatEncounter } from "./settlement.js";
 
@@ -92,9 +93,15 @@ const V1_RUNTIME = Object.freeze({
   dispatch: dispatchCombatCommand,
   dispatchPlayerAction: dispatchCombatPlayerAction,
   replay(session) {
-    return replayCombatCombatSession(session.genesis, session.commands);
+    return replayCombatSession(session.genesis, session.commands);
   },
-  verify: verifyCombatSession,
+  verify(session) {
+    const decoded = decodeCombatSession(session);
+    if (!decoded.ok) {
+      return { ok: false, reason: decoded.reason, divergence: null };
+    }
+    return verifyCombatSession(decoded.session);
+  },
   sealTerminalReceipt: sealCombatTerminalReceipt,
   events: combatSessionEvents,
   worldFates(session) {
@@ -151,6 +158,26 @@ function route(value) {
       };
 }
 
+function verifiedRoute(value) {
+  const routed = route(value);
+  if (!routed.ok) return { ...routed, session: null };
+  const decoded = routed.runtime.decode(value);
+  if (!decoded.ok) {
+    return { ...routed, ok: false, reason: decoded.reason, session: null };
+  }
+  const verified = routed.runtime.verify(decoded.session);
+  if (!verified.ok) {
+    return {
+      ...routed,
+      ok: false,
+      reason: verified.reason,
+      session: null,
+      verification: verified,
+    };
+  }
+  return { ...routed, session: decoded.session, verification: verified };
+}
+
 /** Whether this exact pair has an implementation; never guesses from nested payload data. */
 export function supportsCombatRuntime(value) {
   return route(value).ok;
@@ -169,20 +196,16 @@ export function createCombatRuntimeSession(identity, input = {}) {
 }
 
 export function decodeCombatRuntimeSession(value) {
-  const routed = route(value);
-  if (!routed.ok) return { ok: false, reason: routed.reason, session: null };
-  const decoded = routed.runtime.decode(value);
-  if (!decoded.ok) return decoded;
-  const verified = routed.runtime.verify(decoded.session);
+  const verified = verifiedRoute(value);
   return verified.ok
-    ? decoded
+    ? { ok: true, reason: null, session: verified.session }
     : { ok: false, reason: verified.reason, session: null };
 }
 
 export function encodeCombatRuntimeSession(session) {
-  const routed = route(session);
-  if (!routed.ok) return { ok: false, reason: routed.reason, payload: null };
-  return routed.runtime.encode(session);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return { ok: false, reason: verified.reason, payload: null };
+  return verified.runtime.encode(verified.session);
 }
 
 function refusedDispatch(reason, session, playerAction = false) {
@@ -199,16 +222,16 @@ function refusedDispatch(reason, session, playerAction = false) {
 
 /** Low-level, exactly-once command dispatch retained for replay tools and tests. */
 export function dispatchCombatRuntimeCommand(session, input) {
-  const routed = route(session);
-  if (!routed.ok) return refusedDispatch(routed.reason, session);
-  return routed.runtime.dispatch(session, input);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return refusedDispatch(verified.reason, session);
+  return verified.runtime.dispatch(verified.session, input);
 }
 
 /** App-facing dispatch, including the current v1 automatic enemy advance. */
 export function dispatchCombatRuntimePlayerAction(session, input) {
-  const routed = route(session);
-  if (!routed.ok) return refusedDispatch(routed.reason, session, true);
-  return routed.runtime.dispatchPlayerAction(session, input);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return refusedDispatch(verified.reason, session, true);
+  return verified.runtime.dispatchPlayerAction(verified.session, input);
 }
 
 /** Replay a session's own genesis and command log under its exact registered runtime. */
@@ -227,9 +250,10 @@ export function replayCombatRuntimeSession(session) {
 }
 
 export function verifyCombatRuntimeSession(session) {
-  const routed = route(session);
-  if (!routed.ok) return { ok: false, reason: routed.reason, divergence: null };
-  return routed.runtime.verify(session);
+  const verified = verifiedRoute(session);
+  return verified.verification || (verified.ok
+    ? { ok: true, reason: null, divergence: null }
+    : { ok: false, reason: verified.reason, divergence: null });
 }
 
 /** Project the canonical event log without letting an unsupported session reach v1. */
@@ -255,9 +279,9 @@ export function combatRuntimeWorldFates(session) {
  * its endpoint can be advanced through the matching runtime.
  */
 export function createCombatRuntimeStreamSequencer(session, name) {
-  const routed = route(session);
-  if (!routed.ok) return { ok: false, reason: routed.reason, sequencer: null };
-  const sequencer = routed.runtime.sequenceStream(session, name);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return { ok: false, reason: verified.reason, sequencer: null };
+  const sequencer = verified.runtime.sequenceStream(verified.session, name);
   if (!sequencer) {
     return { ok: false, reason: "unknown-session-stream", sequencer: null };
   }
@@ -270,9 +294,9 @@ export function createCombatRuntimeStreamSequencer(session, name) {
 
 /** Attach the terminal outcome receipt; checksum sealing remains an implementation detail. */
 export function sealCombatRuntimeTerminalReceipt(session) {
-  const routed = route(session);
-  if (!routed.ok) return { ok: false, reason: routed.reason, session };
-  return routed.runtime.sealTerminalReceipt(session);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return { ok: false, reason: verified.reason, session };
+  return verified.runtime.sealTerminalReceipt(verified.session);
 }
 
 /**
@@ -281,28 +305,69 @@ export function sealCombatRuntimeTerminalReceipt(session) {
  * This deliberately does not mark the session settled. The App spends the deterministic
  * loot/reward streams after campaign folding and only then closes the durable session.
  */
-export function settleCombatRuntimeEncounter(state, session, context = {}) {
-  const routed = route(session);
-  if (!routed.ok) {
+export function settleCombatRuntimeEncounter(state, session) {
+  const verified = verifiedRoute(session);
+  if (!verified.ok) {
     return {
       ok: false,
-      reason: routed.reason,
+      reason: verified.reason,
       state,
       receipt: null,
       duplicate: false,
     };
   }
-  return routed.runtime.settleEncounter(state, session, context);
+  const ownedSession = verified.session;
+  if (ownedSession.mode !== "campaign") {
+    return {
+      ok: false,
+      reason: "campaign-session-required",
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  if (state?.mechanics?.campaignId !== ownedSession.context.campaignId) {
+    return {
+      ok: false,
+      reason: "combat-campaign-identity-mismatch",
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  if (state?.mechanics?.campaignRevision !== ownedSession.context.campaignRevision) {
+    return {
+      ok: false,
+      reason: "combat-campaign-revision-mismatch",
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  if (!ownedSession.terminalReceipt) {
+    return {
+      ok: false,
+      reason: "missing-terminal-receipt",
+      state,
+      receipt: null,
+      duplicate: false,
+    };
+  }
+  return verified.runtime.settleEncounter(
+    state,
+    ownedSession,
+    combatSettlementContextForSession(ownedSession),
+  );
 }
 
 export function spendCombatRuntimeSessionStream(session, name, endpoint) {
-  const routed = route(session);
-  if (!routed.ok) return { ok: false, reason: routed.reason, session };
-  return routed.runtime.spendStream(session, name, endpoint);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return { ok: false, reason: verified.reason, session };
+  return verified.runtime.spendStream(verified.session, name, endpoint);
 }
 
 export function markCombatRuntimeSessionSettled(session, settlementId) {
-  const routed = route(session);
-  if (!routed.ok) return { ok: false, reason: routed.reason, session };
-  return routed.runtime.markSettled(session, settlementId);
+  const verified = verifiedRoute(session);
+  if (!verified.ok) return { ok: false, reason: verified.reason, session };
+  return verified.runtime.markSettled(verified.session, settlementId);
 }

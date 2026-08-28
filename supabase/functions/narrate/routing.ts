@@ -24,14 +24,14 @@ const MODEL_FALLBACKS = new Map<string, string[]>([
 // its explicitly disclosed paid model fallback.
 const MODEL_PRICE_CEILINGS = new Map<string, { prompt: number; completion: number }>([
   ["poolside/laguna-s-2.1:free", { prompt: 0.09, completion: 0.18 }],
-  ["minimax/minimax-m3", { prompt: 0.3, completion: 1.2 }],
-  ["deepseek/deepseek-v4-flash-0731", { prompt: 0.09, completion: 0.18 }],
-  ["z-ai/glm-5.2", { prompt: 0.72, completion: 1.8 }],
-  ["openai/gpt-5.6-luna", { prompt: 0.2, completion: 0.9 }],
+  ["minimax/minimax-m3", { prompt: 0.28, completion: 1.1 }],
+  ["deepseek/deepseek-v4-flash-0731", { prompt: 0.03, completion: 0.1 }],
+  ["z-ai/glm-5.2", { prompt: 0.4875, completion: 1.56 }],
+  ["openai/gpt-5.6-luna", { prompt: 0.44, completion: 2.64 }],
   ["x-ai/grok-4.5", { prompt: 4, completion: 12 }],
-  ["openai/gpt-5.6-terra", { prompt: 2, completion: 9 }],
+  ["openai/gpt-5.6-terra", { prompt: 4, completion: 24 }],
   ["z-ai/glm-5.3-flash", { prompt: 0.075, completion: 0.25 }],
-  ["moonshotai/kimi-k3", { prompt: 2.9, completion: 14 }],
+  ["moonshotai/kimi-k3", { prompt: 2.6, completion: 13 }],
 ]);
 
 // Morph ties the compatible MiniMax floor but publishes no cache-read rate.

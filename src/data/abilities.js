@@ -1360,7 +1360,7 @@ const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 const ALL_BY_ID = { ...TRAVEL_SPELLS, ...BUFF_SPELLS, ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 // These powers belong to the campaign/world layer even when an id (notably
-// Haste) also has a canonical combat definition. Archetype archetypes keep access
+// Haste) also has a canonical combat definition. Spire archetypes keep access
 // to world traversal and utility, but never ingest the legacy combat library.
 const LEGACY_WORLD_ABILITY_GRANTS = new Set([
   "fly",

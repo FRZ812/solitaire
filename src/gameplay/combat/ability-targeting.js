@@ -1,4 +1,4 @@
-// Spatial targeting metadata derived from the stable Archetype ability catalogue.
+// Spatial targeting metadata derived from the stable Spire ability catalogue.
 //
 // The source rules only distinguish Enemy, Ally (the acting character), and All. The
 // formation combat layer needs a richer contract, but changing the captured effects would

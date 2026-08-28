@@ -51,14 +51,14 @@ const RETIRED_COMBAT_PROGRESSION_FIELDS = Object.freeze([
   "metamagicIds", "metamagic_ids", "metamagicProfiles", "metamagic_profiles",
 ]);
 
-// Archetype archetype builds advance through their replay-governed combat model,
+// Archetype character builds advance through their replay-governed combat model,
 // not the legacy global level/advancement track. Keep the default permissive so
-// old saves and every non-Archetype character retain their existing behaviour.
+// old saves and every non-Spire character retain their existing behaviour.
 export function usesLegacyCharacterProgression(character) {
   return character?.progressionModel !== COMBAT_PROGRESSION_MODEL;
 }
 
-// This is the authoritative persistence boundary between Archetype archetype
+// This is the authoritative persistence boundary between Archetype character
 // progression and the retired global level/profession track. `forceCombat` is
 // reserved for known player projections whose older snapshots predate the
 // progressionModel marker.
@@ -96,7 +96,7 @@ function synchronizeCombatPlayerProjection(character, projection) {
 function rejectCombatLegacyProgressionMutation(value) {
   if (!value || usesLegacyCharacterProgression(value)) return;
   stripCombatLegacyProgression(value);
-  throw new Error("Archetype archetypes do not use legacy progression choices");
+  throw new Error("Archetype characters do not use legacy progression choices");
 }
 
 export const AUTHORED_WORLD_LEVELS = Object.freeze({
@@ -1015,11 +1015,6 @@ export function advanceProgression(character, xpGain) {
   };
 }
 
-// Compatibility wrappers now earn unspent character levels only. The source of
-// XP never chooses where a rank is invested.
-export function advanceProfessionProgression(character, xpGain) {
-  return advanceProgression(character, xpGain);
-}
 
 export function advanceRacialProgression(character, xpGain) {
   return advanceProgression(character, xpGain);
