@@ -354,6 +354,7 @@ function AbilitySwapPicker({
       {open && typeof document !== "undefined" ? createPortal((
         <div
           className="ability-swap-picker__overlay"
+          data-app-exclusive-surface
           data-modal-escape-boundary
           style={{ "--character-accent": accent }}
           onKeyDown={onPanelKeyDown}
@@ -653,6 +654,7 @@ function KeepsakePicker({
       {open && typeof document !== "undefined" ? createPortal((
         <div
           className="ability-swap-picker__overlay keepsake-picker__overlay"
+          data-app-exclusive-surface
           data-modal-escape-boundary
           style={{ "--character-accent": accent }}
           onKeyDown={onPanelKeyDown}
@@ -1224,7 +1226,7 @@ export function QuickStartLane({
 
   if (!normalized.preview) {
     return (
-      <section ref={rootRef} className="archetype-start character-select is-grid" role="dialog" aria-modal="true" aria-label="Choose an archetype">
+      <section ref={rootRef} data-app-exclusive-surface className="archetype-start character-select is-grid" role="dialog" aria-modal="true" aria-label="Choose an archetype">
         <img className="character-select__world" src={winterScene} alt="" />
         <div className="character-select__veil" aria-hidden="true" />
         <div className="character-grid-view">
@@ -1275,6 +1277,7 @@ export function QuickStartLane({
     <section
       className="archetype-start character-select is-preview"
       ref={rootRef}
+      data-app-exclusive-surface
       role="dialog"
       aria-modal="true"
       aria-label={`Preview ${selected.name} archetype`}

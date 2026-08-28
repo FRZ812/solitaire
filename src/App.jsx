@@ -15,7 +15,14 @@ import { buildNarratorProjection, narratorTurnPolicy } from "./engine/narrator-p
 import { playerCombatDirective } from "./engine/player-combat-intent.js";
 import { specializedNarratorPolicyOptions } from "./engine/narrator-specialized-policy.js";
 import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-supabase.js";
-import { listCampaigns, loadCampaignRecord, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
+import {
+  acceptCampaignBaseline,
+  listCampaigns,
+  loadCampaignRecord,
+  saveCampaign,
+  deleteCampaign,
+  renameCampaign,
+} from "./engine/campaigns-supabase.js";
 import {
   clearCampaignResume,
   prepareWarmCampaignState,
@@ -483,8 +490,8 @@ function checkpointPolicyOptions(checkpoint) {
   }
 }
 
-function CenteredLoader({ title, detail }) {
-  return <JourneyLoader title={title} detail={detail} />;
+function CenteredLoader({ title, detail, onCancel = null }) {
+  return <JourneyLoader title={title} detail={detail} onCancel={onCancel} />;
 }
 
 export function Solitaire() {
@@ -505,7 +512,12 @@ export function Solitaire() {
   const [currentCampaignId, setCurrentCampaignId] = useState(null);
   const currentCampaignIdRef = useRef(currentCampaignId);
   currentCampaignIdRef.current = currentCampaignId;
-  const [campaignBusy, setCampaignBusy] = useState(false);
+  const campaignOpenGenerationRef = useRef(0);
+  const [campaignOpening, setCampaignOpening] = useState(false);
+  const [campaignCreating, setCampaignCreating] = useState(false);
+  const [campaignImporting, setCampaignImporting] = useState(false);
+  const [campaignLeaving, setCampaignLeaving] = useState(false);
+  const campaignBusy = campaignOpening || campaignCreating || campaignImporting;
   const [campaignError, setCampaignError] = useState(null);
   const [menuEntered, setMenuEntered] = useState(false);
   const [resumeChecked, setResumeChecked] = useState(false);
@@ -832,9 +844,16 @@ export function Solitaire() {
     ? { ...pendingTravelCombat.pending, posture: "hostile" }
     : null;
   const pendingTravelCombatInvalid = pendingTravelCombatValue != null && !pendingTravelCombat.ok;
-  const archetypeCombatOpen = Boolean(combat);
-  const creationSurfaceOpen = Boolean(currentCampaignId && hydrated && state.created === false);
-  const exclusiveDocumentSurfaceOpen = archetypeCombatOpen || creationSurfaceOpen;
+  const archetypeCombatOpen = Boolean(combat) && hydrated && !campaignBusy && !campaignLeaving;
+  const creationSurfaceOpen = Boolean(
+    currentCampaignId && hydrated && !campaignLeaving && state.created === false,
+  );
+  const recoverySurfaceOpen = Boolean(user && (
+    campaignOpening
+    || campaignLeaving
+    || (currentCampaignId && (!hydrated || campaignBusy))
+  ));
+  const exclusiveDocumentSurfaceOpen = recoverySurfaceOpen || archetypeCombatOpen || creationSurfaceOpen;
   const renderOwnsHudIsolation = creationSurfaceOpen;
   const creationSurfaceWasOpenRef = useRef(creationSurfaceOpen);
   useEffect(() => {
@@ -870,10 +889,14 @@ export function Solitaire() {
       element.setAttribute("aria-hidden", "true");
     };
     const gameShell = document.querySelector(".game-shell");
-    if (gameShell) {
-      for (const child of gameShell.children) claimBackground(child);
+    const activeExclusiveSurface = document.querySelector("[data-app-exclusive-surface]");
+    const ownedShell = gameShell || activeExclusiveSurface?.parentElement;
+    if (ownedShell) {
+      for (const child of ownedShell.children) claimBackground(child);
     }
-    const applicationRoot = gameShell?.closest("#root") || gameShell?.parentElement;
+    const applicationSurface = gameShell || activeExclusiveSurface;
+    const applicationRoot = applicationSurface?.closest("#root")
+      || applicationSurface?.parentElement;
     for (const child of document.body.children) {
       if (child !== applicationRoot) claimBackground(child);
     }
@@ -884,7 +907,7 @@ export function Solitaire() {
         for (const node of mutation.addedNodes) claimBackground(node);
       }
     });
-    if (gameShell) observer.observe(gameShell, { childList: true });
+    if (ownedShell) observer.observe(ownedShell, { childList: true });
     observer.observe(document.body, { childList: true });
     return () => {
       observer.disconnect();
@@ -895,7 +918,13 @@ export function Solitaire() {
         else element.setAttribute("aria-hidden", previous.ariaHidden);
       }
     };
-  }, [exclusiveDocumentSurfaceOpen, renderOwnsHudIsolation]);
+  }, [
+    archetypeCombatOpen,
+    creationSurfaceOpen,
+    exclusiveDocumentSurfaceOpen,
+    recoverySurfaceOpen,
+    renderOwnsHudIsolation,
+  ]);
   // Pack + purse snapshot taken when a trader counter opens, so leaving it can
   // diff what was bought/sold and let the keeper react to the actual haul.
   const tradeStartRef = useRef(null);
@@ -987,7 +1016,14 @@ export function Solitaire() {
     openCampaign(campaignId, () => cancelled, cached)
       .finally(() => { if (!cancelled) setResumeChecked(true); });
     setResumeChecked(true);
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // An effect replay or subscription-gate transition may cancel the request
+      // after its warm snapshot has mounted. Let the next effect instance claim
+      // the same user and finish the authoritative load instead of treating the
+      // abandoned attempt as permanently complete.
+      if (resumeAttemptedForRef.current === user.id) resumeAttemptedForRef.current = null;
+    };
     // openCampaign is a stable function declaration over this render's user.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, subChecked, subscribed]);
@@ -1044,7 +1080,7 @@ export function Solitaire() {
               && legacy?.character?.attributes
               && legacy?.character?.needs;
             if (looksLikeState) {
-              setCampaignBusy(true);
+              setCampaignImporting(true);
               try {
                 const charName = legacy.character.name || "Imported save";
                 const migrated = prepareCampaignState(convertLegacyV10ToHex(legacy));
@@ -1055,7 +1091,7 @@ export function Solitaire() {
               } catch (e) {
                 if (!cancelled) setCampaignError(`Import failed: ${e.message || e}`);
               } finally {
-                if (!cancelled) setCampaignBusy(false);
+                setCampaignImporting(false);
               }
               return; // stop here; user sees the campaigns list with the imported entry
             }
@@ -1149,6 +1185,19 @@ export function Solitaire() {
     });
   }
 
+  async function flushActiveCampaignUntilStable() {
+    const firstSnapshot = liveStateRef.current;
+    await flushActiveCampaign(firstSnapshot);
+    if (
+      hydrated
+      && currentCampaignId
+      && liveStateRef.current !== lastSyncedStateRef.current
+    ) {
+      await flushActiveCampaign(liveStateRef.current);
+    }
+    return user?.id ? readResumeSnapshot(user.id) : null;
+  }
+
   // A mobile OS can freeze or discard the web process without waiting for the
   // 800ms autosave. Capture synchronously as the page hides, then make a
   // best-effort serialized server flush. On a later cold start the dirty cache
@@ -1232,12 +1281,17 @@ export function Solitaire() {
   // (not a snapshot) so callers from useEffect can flip cancellation atomically
   // when their cleanup fires.
   async function openCampaign(id, isCancelled = () => false, cachedSnapshot = null) {
+    const openGeneration = campaignOpenGenerationRef.current + 1;
+    campaignOpenGenerationRef.current = openGeneration;
+    const openingIsCurrent = () => (
+      !isCancelled() && campaignOpenGenerationRef.current === openGeneration
+    );
     cancelNarratorRequest("Narrator request cancelled because the campaign changed.");
     cancelTravelLifecycle();
+    setCampaignOpening(true);
     setPracticeDraft(null);
     setQuickStartError(null);
     setStartDraft(createDefaultArchetypeDraft());
-    setCampaignBusy(true);
     setHydrated(false);
     setCampaignError(null);
     const warmSnapshot = cachedSnapshot?.campaignId === id
@@ -1256,20 +1310,26 @@ export function Solitaire() {
         setCurrentCampaignId(id);
         rememberLastCampaignId(id);
       }
-      const loaded = await loadCampaignRecord(id);
-      if (isCancelled()) return;
+      const loaded = await loadCampaignRecord(id, { commitBaseline: false });
+      if (!openingIsCurrent()) return;
       if (!loaded) {
-        // Stale id; drop the lastOpened pointer and let the list show.
-        clearCampaignResume();
+        // A dirty device snapshot may be the only surviving copy when the row
+        // was deleted or temporarily hidden by RLS. Preserve it for an explicit
+        // retry/discard decision instead of silently erasing local progress.
+        if (!warmSnapshot?.dirty) clearCampaignResume();
         setCurrentCampaignId(null);
+        if (warmSnapshot?.dirty) {
+          setCampaignError("The cloud campaign is unavailable, but its unsaved recovery remains on this device. Retry the journey later; it has not been discarded.");
+        }
         const refreshed = await listCampaigns();
-        if (!isCancelled()) {
+        if (openingIsCurrent()) {
           setCampaigns(refreshed);
           setCampaignsLoaded(true);
         }
         return;
       }
       const serverState = bindCampaignMechanicsIdentity(prepareCampaignState(loaded.state), id);
+      acceptCampaignBaseline(id, loaded.updatedAt);
       const recoverWarmState = warmState
         && shouldRecoverResumeSnapshot(warmSnapshot, loaded.updatedAt);
       const resumedState = recoverWarmState ? warmState : serverState;
@@ -1290,19 +1350,37 @@ export function Solitaire() {
       }
       setHydrated(true);
     } catch (e) {
-      if (!isCancelled()) {
+      if (openingIsCurrent()) {
         setCurrentCampaignId(null);
         setCampaignError(e.message || String(e));
       }
     } finally {
-      if (!isCancelled()) setCampaignBusy(false);
+      if (campaignOpenGenerationRef.current === openGeneration) {
+        setCampaignOpening(false);
+      }
     }
   }
 
+  function handleCancelCampaignOpen() {
+    // Invalidate the in-flight response before exposing the campaign list. A
+    // late Supabase response can no longer remount the campaign the player left.
+    campaignOpenGenerationRef.current += 1;
+    resumeAttemptedForRef.current = null;
+    cancelNarratorRequest("Narrator request cancelled while leaving campaign recovery.");
+    cancelTravelLifecycle();
+    setCampaignOpening(false);
+    setHydrated(false);
+    setCurrentCampaignId(null);
+    setPracticeDraft(null);
+    setCampaignError(null);
+  }
+
   async function createCampaign(isCancelled = () => false) {
+    campaignOpenGenerationRef.current += 1;
+    setCampaignOpening(false);
     cancelNarratorRequest("Narrator request cancelled because a new campaign is opening.");
     cancelTravelLifecycle();
-    setCampaignBusy(true);
+    setCampaignCreating(true);
     setHydrated(false);
     setCampaignError(null);
     try {
@@ -1337,16 +1415,28 @@ export function Solitaire() {
     } catch (e) {
       if (!isCancelled()) setCampaignError(e.message || String(e));
     } finally {
-      if (!isCancelled()) setCampaignBusy(false);
+      setCampaignCreating(false);
     }
   }
 
   function handleSelectCampaign(id) {
-    openCampaign(id);
+    const cached = user?.id ? readResumeSnapshot(user.id) : null;
+    if (cached?.dirty && cached.campaignId !== id) {
+      setCampaignError("Unsaved recovery belongs to another journey. Reopen it and let it finish saving before switching campaigns.");
+      return false;
+    }
+    openCampaign(id, () => false, cached?.campaignId === id ? cached : null);
+    return true;
   }
 
   function handleNewCampaign() {
+    const cached = user?.id ? readResumeSnapshot(user.id) : null;
+    if (cached?.dirty) {
+      setCampaignError("Unsaved recovery is still stored on this device. Reopen that journey and let it finish saving before starting another.");
+      return false;
+    }
     createCampaign();
+    return true;
   }
 
   async function handleDeleteCampaign(id) {
@@ -1386,58 +1476,71 @@ export function Solitaire() {
   async function handleBackToCampaigns() {
     cancelNarratorRequest("Narrator request cancelled while leaving the campaign.");
     cancelTravelLifecycle();
+    setCampaignLeaving(true);
     try {
-      await flushActiveCampaign();
+      const recovery = await flushActiveCampaignUntilStable();
+      if (recovery?.dirty) {
+        setCampaignError("Newer progress is still waiting to save. You remain in this journey so nothing is lost.");
+        setDeckOpen(false);
+        return false;
+      }
+      setDeckOpen(false);
+      setPracticeDraft(null);
+      setQuickStartError(null);
+      setStartDraft(createDefaultArchetypeDraft());
+      setCurrentCampaignId(null);
+      setHydrated(false);
+      lastSyncedStateRef.current = null;
+      lastServerUpdatedAtRef.current = null;
+      clearCampaignResume();
+      // Refresh list to pick up the latest last_played_at from this session.
+      listCampaigns().then(setCampaigns).catch(() => {});
+      return true;
     } catch (e) {
       setCampaignError(`Save failed: ${e.message || e}`);
       setDeckOpen(false);
       return false;
+    } finally {
+      setCampaignLeaving(false);
     }
-    setDeckOpen(false);
-    setPracticeDraft(null);
-    setQuickStartError(null);
-    setStartDraft(createDefaultArchetypeDraft());
-    setCurrentCampaignId(null);
-    setHydrated(false);
-    lastSyncedStateRef.current = null;
-    lastServerUpdatedAtRef.current = null;
-    clearCampaignResume();
-    // Refresh list to pick up the latest last_played_at from this session.
-    listCampaigns().then(setCampaigns).catch(() => {});
-    return true;
   }
 
   async function handleSignOut() {
     cancelNarratorRequest("Narrator request cancelled during sign-out.");
     cancelTravelLifecycle();
+    setCampaignLeaving(true);
+    let signingOut = false;
     try {
-      await flushActiveCampaign();
+      const dirtyRecovery = await flushActiveCampaignUntilStable();
+      if (dirtyRecovery?.dirty) {
+        setMenuEntered(true);
+        setCampaignError("Unsaved recovery is still stored on this device. Reopen that journey and let it finish saving before signing out.");
+        return false;
+      }
+      signingOut = true;
+      await signOut();
+      setDeckOpen(false);
+      setMenuEntered(false);
+      setCurrentCampaignId(null);
+      setHydrated(false);
+      // Reset in-memory game state so the next account signed in on this browser
+      // can't inherit the previous user's character/beats/apiHistory (and so the
+      // debounced autosave can't write user-A's state into user-B's campaign). The fight
+      // goes with it, because the fight is part of that state now rather than beside it.
+      setState(makeInitialState());
+      setArchetypeCombatFeedback(null);
+      setPendingAftermath(null);
+      lastSyncedStateRef.current = null;
+      lastServerUpdatedAtRef.current = null;
+      clearCampaignResume();
+      return true;
     } catch (e) {
-      setCampaignError(`Save failed: ${e.message || e}`);
+      setCampaignError(`${signingOut ? "Sign-out" : "Save"} failed: ${e.message || e}`);
       setDeckOpen(false);
       return false;
+    } finally {
+      setCampaignLeaving(false);
     }
-    setDeckOpen(false);
-    setMenuEntered(false);
-    setCurrentCampaignId(null);
-    setHydrated(false);
-    // Reset in-memory game state so the next account signed in on this browser
-    // can't inherit the previous user's character/beats/apiHistory (and so the
-    // debounced autosave can't write user-A's state into user-B's campaign). The fight
-    // goes with it, because the fight is part of that state now rather than beside it.
-    setState(makeInitialState());
-    setArchetypeCombatFeedback(null);
-    setPendingAftermath(null);
-    lastSyncedStateRef.current = null;
-    lastServerUpdatedAtRef.current = null;
-    clearCampaignResume();
-    try {
-      await signOut();
-    } catch (e) {
-      setCampaignError(`Sign-out failed: ${e.message || e}`);
-      return false;
-    }
-    return true;
   }
 
   // ----- Game handlers (unchanged behavior, kept inline) -----
@@ -3880,6 +3983,7 @@ export function Solitaire() {
       <CenteredLoader
         title={campaignBusy ? "Opening your journey" : "Gathering your journeys"}
         detail={campaignBusy ? "Restoring your latest save" : "Loading saved campaigns"}
+        onCancel={campaignOpening ? handleCancelCampaignOpen : null}
       />
     );
   }
@@ -3917,7 +4021,9 @@ export function Solitaire() {
 
   // The run has ended — the player fell in an epic encounter. A memorial replaces
   // the game; the only way on is back to the campaigns list.
-  if (state.ended) {
+  const campaignResumeBlocked = campaignBusy || !hydrated;
+  const campaignInteractionBlocked = campaignResumeBlocked || campaignLeaving;
+  if (state.ended && !campaignInteractionBlocked) {
     return <GameOverScreen state={state} onExit={handleBackToCampaigns} error={campaignError} />;
   }
 
@@ -3928,13 +4034,13 @@ export function Solitaire() {
   // Every unfinished campaign returns to the same deterministic archetype start. Legacy
   // limbo beats may remain in an old save, but no route renders or resumes that interview.
   const inLimbo = state.created === false;
-  const showCreationHub = inLimbo;
+  const showCreationHub = inLimbo && !campaignInteractionBlocked;
   const queuedPlayerCount = pendingPlayerBeats(state).length;
   // This derived preview deliberately is not a hook: auth, subscription, title,
   // campaign-list, and game-over screens all return above this point. Keeping a
   // hook here would change Solitaire's hook count when a session opens (#310).
   const contextPreview = buildChatContextSections({ state, draft: input });
-  const gameSurfaceBlocked = showCreationHub || campaignBusy || !hydrated;
+  const gameSurfaceBlocked = showCreationHub || campaignInteractionBlocked;
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
@@ -3948,7 +4054,13 @@ export function Solitaire() {
       {/* Limbo (character creation) shows the ethereal between-place backdrop with
           the HUD hidden; the real world shows the scene backdrop + full HUD. */}
       {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
-      {campaignBusy && <JourneyResumeOverlay />}
+      {campaignResumeBlocked && <JourneyResumeOverlay onCancel={handleCancelCampaignOpen} />}
+      {campaignLeaving && !campaignResumeBlocked && (
+        <JourneyResumeOverlay
+          title="Saving your journey"
+          detail="Securing the latest progress before leaving"
+        />
+      )}
       <div
         className="game-hud-layer"
         inert={gameSurfaceBlocked ? "" : undefined}
