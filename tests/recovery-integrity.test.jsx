@@ -224,7 +224,7 @@ describe("recovery integrity closure", () => {
       "src/gameplay/run",
     ]) expect(existsSync(`${ROOT}/${path}`)).toBe(false);
     expect(STARTING_ARCHETYPES).toHaveLength(12);
-    const app = readFileSync(`${ROOT}/src/App.jsx`, "utf8");
+    const app = readFileSync(`${ROOT}/src/App.jsx`, "utf8").replaceAll("\r\n", "\n");
     expect(app).toContain("<VisualNovelStage");
     expect(app).not.toMatch(/ProductionCombatView|ReferenceCombatView|REFERENCE_GAMEPLAY/);
     expect(app).toContain("if (appliedBootstrap.applied === false) return true;");
