@@ -22,6 +22,9 @@ import { migrateProgressionState } from "../engine/progression.js";
 import { normalizeMemoryBank } from "../engine/memory.js";
 import { DEFAULT_NARRATOR_SETTINGS, normalizeNarratorSettings } from "../engine/narrator-settings.js";
 import { WANTED_POOL, wantedCodexEntry } from "./gaol.js";
+import { makeRepurposedPortraitCharacters } from "./repurposed-portrait-characters.js";
+import { makePortraitCandidateCharacters } from "./portrait-candidate-characters.js";
+import { makeRegionalEstablishmentCharacters } from "./regional-establishment-characters.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -351,6 +354,8 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
           "glass-spire-master": {
             id: "glass-spire-master", kind: "npc",
             name: "The High Master of the Glass Spire", race: "human", gender: "male", profession: "sorcerer",
+            title: "Mystic Archmage",
+            magicDiscipline: "mystic-astral",
             origin: "east",
             age: 140, agingMode: "power-extended", lifespanMultiplier: 3.0,
             attractiveness: 5,
@@ -363,13 +368,14 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "ink-stains the cleaning never quite removes",
             },
             base_appearance: "Small and light. Ivory-pale skin, white hair cut close. Dark, slow-attentive eyes. Ink-stains at the fingertips.",
-            description: "The High Master sits at the top of the Glass Spire, far east. Trained the masters who trained most of the continent's working sorcerers. Said to write letters that change kingdoms.",
+            description: "The mystic archmage at the top of the Glass Spire, far east. He reads astral conjunctions, trains the masters who train a continent's working sorcerers, and writes letters that change kingdoms. His near-identical twin Iorin studies the Spire's shadows instead.",
             attributes: { body: 2, reflex: 4, vigor: 4, mind: 22, wit: 18, presence: 12 },
             worn: ["spire-staff", "spire-grey-robe", "scrying-bowl-pendant", "iron-key-ring"],
             knows: [
               "The Spire admits by invitation only; my letters are the invitations.",
-              "I have not left the combat in forty-one years.",
+              "I have not left the Spire in forty-one years.",
             ],
+            at: { x: 525, y: 20, day: 0 }, home: { x: 525, y: 20 },
           },
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
@@ -605,7 +611,7 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "a thin white scar across the back of the left hand from an old binding",
             },
             base_appearance: "Thin and upright. Lined pale-tan skin. Grey hair gathered loose. Slow blue eyes. Hands ink-stained. A thin scar on the back of the left hand.",
-            description: "Master of the Heron Archetype in the Spine Foothills. Heron-trained; took the combat thirty-one years ago. One apprentice at a time. Rejects most applicants; has accepted three in three decades.",
+            description: "Master of the Heron Seat in the Spine Foothills. Heron-trained; assumed the mantle thirty-one years ago. One apprentice at a time. Rejects most applicants; has accepted three in three decades.",
             attributes: { body: 3, reflex: 4, vigor: 5, mind: 15, wit: 13, presence: 9 },
             worn: ["heron-grey-robe", "ink-and-quill-belt", "sealed-letter-of-the-master"],
             knows: [
@@ -849,7 +855,7 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
               marks: "ink-stains down the side of the right hand from heel to little finger — seven years of copy-work",
             },
             base_appearance: "Thin and upright, narrow-shouldered. Pale-tan smooth skin. Dark brown hair plaited tight to the skull, plait to the small of the back. Slow dark-grey eyes. Ink-stains down the side of the right hand.",
-            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron Archetype is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya took the combat at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
+            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron seat is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya assumed the mantle at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
             attributes: { body: 3, reflex: 5, vigor: 5, mind: 13, wit: 11, presence: 7 },
             worn: ["heron-grey-half-robe", "ink-and-quill-belt", "apprentice's-bound-grimoire"],
             knows: [
@@ -860,6 +866,12 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             at: { x: 40, y: 25, day: 0 }, home: { x: 40, y: 25 },
             activeAsLeader: false, successor_id: null,
           },
+
+          // Accepted portrait lookalikes are separate people, not alternate
+          // faces for the named figures above.
+          ...makeRepurposedPortraitCharacters(),
+          ...makePortraitCandidateCharacters(),
+          ...makeRegionalEstablishmentCharacters(),
         },
         races: {
           "human":     { id: "human",     name: "Human",     appearance: "Variable. Cardinal cultures shape build, complexion, hair, and dress — northerners are tall and fair; easterners pale and lean; southerners deep-skinned; westerners weathered olive; central folk mixed.", description: "The dominant folk of the region. Visually distinct by cardinal origin (north, east, south, west, central).", common: true },

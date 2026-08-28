@@ -24,8 +24,7 @@ import beastWarden from "../assets/generated/character-portraits/beast-warden-gr
 import beastWardenAlternative from "../assets/generated/character-portraits/beast-warden-anime-v2.webp";
 import guildAdvocate from "../assets/generated/character-portraits/guild-advocate-grounded-v3.webp";
 import guildAdvocateAlternative from "../assets/generated/character-portraits/variants/guild-advocate-portrait-v2.png";
-import velvetCourtier from "../assets/generated/character-portraits/velvet-courtier-grounded-v3.webp";
-import velvetCourtierAlternative from "../assets/generated/character-portraits/variants/velvet-courtier-portrait-v2.png";
+import velvetCourtier from "../assets/generated/character-portraits/variants/velvet-courtier-portrait-v3.png";
 import warCaptain from "../assets/generated/character-portraits/war-captain-grounded-v3.webp";
 import warCaptainAlternative from "../assets/generated/character-portraits/war-captain-anime-v2.webp";
 import battleArchmage from "../assets/generated/character-portraits/battle-archmage-grounded-v3.webp";
@@ -53,29 +52,29 @@ import dragonAscendantAlternative from "../assets/generated/character-portraits/
 import enchanterTyrant from "../assets/generated/character-portraits/enchanter-tyrant-grounded-v3.webp";
 import enchanterTyrantAlternative from "../assets/generated/character-portraits/enchanter-tyrant-anime-v2.webp";
 
-import knight from "../assets/generated/archetypes/portraits/knight-portrait-v3.png";
+import knight from "../assets/generated/archetypes/portraits/knight-portrait-v5.png";
 import knightAlternative from "../assets/generated/archetypes/portraits/knight-portrait-v4.png";
-import rangerArchetype from "../assets/generated/archetypes/portraits/ranger-portrait-v4.png";
-import rangerArchetypeAlternative from "../assets/generated/archetypes/portraits/ranger-portrait-v5.png";
-import artificer from "../assets/generated/archetypes/portraits/artificer-portrait-v3.png";
+import rangerArchetype from "../assets/generated/archetypes/portraits/ranger-portrait-v5.png";
+import rangerArchetypeAlternative from "../assets/generated/archetypes/portraits/ranger-portrait-v4.png";
+import artificer from "../assets/generated/archetypes/portraits/artificer-portrait-v5.png";
 import artificerAlternative from "../assets/generated/archetypes/portraits/artificer-portrait-v4.png";
-import berserker from "../assets/generated/archetypes/portraits/berserker-portrait-v3.png";
+import berserker from "../assets/generated/archetypes/portraits/berserker-portrait-v5.png";
 import berserkerAlternative from "../assets/generated/archetypes/portraits/berserker-portrait-v4.png";
-import sorcerer from "../assets/generated/archetypes/portraits/sorcerer-portrait-v3.png";
+import sorcerer from "../assets/generated/archetypes/portraits/sorcerer-portrait-v5.png";
 import sorcererAlternative from "../assets/generated/archetypes/portraits/sorcerer-portrait-v4.png";
-import rogue from "../assets/generated/archetypes/portraits/rogue-portrait-v3.png";
+import rogue from "../assets/generated/archetypes/portraits/rogue-portrait-v5.png";
 import rogueAlternative from "../assets/generated/archetypes/portraits/rogue-portrait-v4.png";
-import warlock from "../assets/generated/archetypes/portraits/warlock-portrait-v3.png";
+import warlock from "../assets/generated/archetypes/portraits/warlock-portrait-v5.png";
 import warlockAlternative from "../assets/generated/archetypes/portraits/warlock-portrait-v4.png";
-import wizard from "../assets/generated/archetypes/portraits/wizard-portrait-v3.png";
+import wizard from "../assets/generated/archetypes/portraits/wizard-portrait-v5.png";
 import wizardAlternative from "../assets/generated/archetypes/portraits/wizard-portrait-v4.png";
-import paladin from "../assets/generated/archetypes/portraits/paladin-portrait-v3.png";
+import paladin from "../assets/generated/archetypes/portraits/paladin-portrait-v5.png";
 import paladinAlternative from "../assets/generated/archetypes/portraits/paladin-portrait-v4.png";
-import blademaster from "../assets/generated/archetypes/portraits/blademaster-portrait-v3.png";
+import blademaster from "../assets/generated/archetypes/portraits/blademaster-portrait-v5.png";
 import blademasterAlternative from "../assets/generated/archetypes/portraits/blademaster-portrait-v4.png";
-import vampire from "../assets/generated/archetypes/portraits/vampire-portrait-v3.png";
+import vampire from "../assets/generated/archetypes/portraits/vampire-portrait-v5.png";
 import vampireAlternative from "../assets/generated/archetypes/portraits/vampire-portrait-v4.png";
-import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v3.png";
+import automaton from "../assets/generated/archetypes/portraits/automaton-portrait-v5.png";
 import automatonAlternative from "../assets/generated/archetypes/portraits/automaton-portrait-v4.png";
 
 import cinderChapterMasterAlternative from "../assets/generated/character-portraits/codex-individual/variants/cinder-chapter-master-portrait-v2.png";
@@ -273,7 +272,7 @@ const LEGACY_VARIANTS = Object.freeze({
   duelist: pair(duelist, duelistAlternative),
   "beast-warden": pair(beastWarden, beastWardenAlternative),
   "guild-advocate": pair(guildAdvocate, guildAdvocateAlternative),
-  "velvet-courtier": pair(velvetCourtier, velvetCourtierAlternative),
+  "velvet-courtier": single(velvetCourtier),
   "war-captain": pair(warCaptain, warCaptainAlternative),
   "battle-archmage": pair(battleArchmage, battleArchmageAlternative),
   shadowblade: pair(shadowblade, shadowbladeAlternative),
@@ -494,6 +493,9 @@ const mountVariants = Object.fromEntries(Object.entries(MOUNT_VARIANTS).map(([id
 // authored assets land; callers and save tokens need no changes.
 export const CHARACTER_PORTRAIT_VARIANTS = Object.freeze({
   ...codexVariants,
+  ...repurposedCodexVariants,
+  ...regionalEstablishmentVariants,
+  ...PORTRAIT_CANDIDATE_VARIANTS,
   ...SPECIAL_VARIANTS,
   ...legacyVariants,
   ...combatVariants,
