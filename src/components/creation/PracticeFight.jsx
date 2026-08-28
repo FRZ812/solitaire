@@ -114,7 +114,7 @@ export function PracticeFight({
 
   if (!practice?.ok) {
     return (
-      <div className="practice-fight practice-fight--failed" role="alert">
+      <div data-app-exclusive-surface className="practice-fight practice-fight--failed" role="alert">
         <p>That build could not open a practice fight ({practice?.reason || "unknown"}).</p>
         <button type="button" onClick={onExit}>Back</button>
       </div>
@@ -123,7 +123,7 @@ export function PracticeFight({
 
   if (result) {
     return (
-      <section className="practice-fight practice-fight--result" aria-label="Practice result">
+      <section data-app-exclusive-surface className="practice-fight practice-fight--result" aria-label="Practice result">
         <h2>
           {result.outcome === "victory"
             ? "You won that one"

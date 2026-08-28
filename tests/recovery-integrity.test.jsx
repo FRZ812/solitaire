@@ -225,9 +225,13 @@ describe("recovery integrity closure", () => {
     ]) expect(existsSync(`${ROOT}/${path}`)).toBe(false);
     expect(STARTING_ARCHETYPES).toHaveLength(12);
     const app = readFileSync(`${ROOT}/src/App.jsx`, "utf8").replaceAll("\r\n", "\n");
+    const practice = readFileSync(`${ROOT}/src/components/creation/PracticeFight.jsx`, "utf8");
     expect(app).toContain("<VisualNovelStage");
     expect(app).not.toMatch(/ProductionCombatView|ReferenceCombatView|REFERENCE_GAMEPLAY/);
     expect(app).toContain("if (appliedBootstrap.applied === false) return true;");
-    expect(app).toContain("return false;\n    }\n    setDeckOpen(false);");
+    expect(app).toContain("flushActiveCampaignUntilStable");
+    expect(app).toContain("Newer progress is still waiting to save");
+    expect(practice).toMatch(/data-app-exclusive-surface className="practice-fight practice-fight--failed"/);
+    expect(practice).toMatch(/data-app-exclusive-surface className="practice-fight practice-fight--result"/);
   });
 });

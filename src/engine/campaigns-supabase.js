@@ -70,7 +70,7 @@ export async function loadCampaign(id) {
 // Startup restoration also needs the row timestamp so a locally cached state
 // can be used only when it contains progress newer than the last server write.
 // Keep loadCampaign's state-only contract for existing callers.
-export async function loadCampaignRecord(id) {
+export async function loadCampaignRecord(id, { commitBaseline = true } = {}) {
   const { data, error } = await supabase
     .from("campaigns")
     .select("state, updated_at, schema_version")
@@ -87,8 +87,17 @@ export async function loadCampaignRecord(id) {
   }
   // Capture the concurrency baseline at load time so the first autosave can
   // detect a row that was changed elsewhere between opening and saving.
-  if (data) baselines.set(id, data.updated_at ?? null);
+  if (data && commitBaseline) baselines.set(id, data.updated_at ?? null);
   return data ? { state: data.state, updatedAt: data.updated_at ?? null } : null;
+}
+
+// A mounted caller can defer baseline ownership until it has proved that the
+// asynchronous load still belongs to its current campaign-opening generation.
+// This keeps a cancelled late response from rewinding the next save's CAS token.
+export function acceptCampaignBaseline(id, updatedAt) {
+  if (typeof id !== "string" || !id) return false;
+  baselines.set(id, updatedAt ?? null);
+  return true;
 }
 
 export async function saveCampaign(id, state, { name } = {}) {
