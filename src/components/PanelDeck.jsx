@@ -10,7 +10,7 @@ import { SettingsView } from "./SettingsView.jsx";
 
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
-import { resolveCharacterPortrait } from "./character-portrait-assets.js";
+import { isPortraitVariantToken, resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
@@ -18,6 +18,7 @@ import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
 import { canonicalProfessionId } from "../data/progression-paths.js";
 import { PROFESSIONS } from "../data/professions.js";
+import { characterDossierBackground } from "./character-dossier-background.js";
 
 // The unified character deck: Company · Character · Skills · Inventory ·
 // Codex · Settings as peer pages of one
@@ -301,8 +302,10 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
   const callingLabel = archetype?.label || professionLabel;
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
-  const customPortrait = !!portraitOverride;
-
+  const customPortrait = typeof portraitOverride === "string"
+    && portraitOverride.trim()
+    && !isPortraitVariantToken(portraitOverride);
+  const backdrop = characterDossierBackground({ ...identityRecord, id: PLAYER_PORTRAIT_ID, kind: "player" });
 
   async function onChoosePortrait(event) {
     const file = event.target.files?.[0];
@@ -348,7 +351,16 @@ function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
 
   return (
     <section ref={motionRef} className="dossier-hero">
-      <img className="dossier-hero__art" src={portrait} alt="" draggable="false" decoding="async" />
+      <img
+        className="dossier-hero__backdrop"
+        src={backdrop}
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+        decoding="async"
+        data-dossier-background-for={PLAYER_PORTRAIT_ID}
+      />
+      <img className={`dossier-hero__art${customPortrait ? " is-custom" : ""}`} src={portrait} alt="" draggable="false" decoding="async" />
       <div className="dossier-hero__wash" aria-hidden="true" />
       <div className="dossier-hero__portrait-tools">
         <ProfessionIcon templateId={identityRecord.templateId} profession={identityRecord.profession} size="small" decorative />

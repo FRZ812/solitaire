@@ -193,7 +193,7 @@ const LEGACY_FACTIONS = [
     name: "The Heron School",
     short: "Heron",
     color: "#4A6E8A",
-    description: "A loose lineage of sorcerers descending from the Glass Spire — masters who keep their own towers, take occasional apprentices, and exchange letters and grimoires by herald-bird. The Heron Archetype in the Spine Foothills is the only Heron seat in walking distance of the Vale.",
+    description: "A loose lineage of sorcerers descending from the Glass Spire — masters who keep secluded seats, take occasional apprentices, and exchange letters and grimoires by herald-bird. The Heron Seat in the Spine Foothills is the only such school in walking distance of the Vale.",
   },
   {
     id: "pale-god-servants",
