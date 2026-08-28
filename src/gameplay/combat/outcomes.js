@@ -22,7 +22,7 @@ import { participantIsLethal, sealCombatSession, combatStreamEndpoints } from ".
 
 export const COMBAT_TERMINAL_RECEIPT_VERSION = 1;
 
-export const COMBAT_COMBAT_STATES = Object.freeze([
+export const COMBAT_STATES = Object.freeze([
   "standing",
   "incapacitated",
   "yielded",
@@ -146,6 +146,8 @@ export function resolveCombatTerminalReceipt(session) {
   return {
     version: COMBAT_TERMINAL_RECEIPT_VERSION,
     sessionId: session.sessionId,
+    campaignId: session.context.campaignId,
+    campaignRevision: session.context.campaignRevision,
     rulesetId: session.rulesetId,
     reason: encounter.phase,
     winner: retreated ? null : won ? "player" : "enemies",

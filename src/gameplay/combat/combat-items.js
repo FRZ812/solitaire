@@ -1,4 +1,4 @@
-// Replay-safe active items for Archetype combat.
+// Replay-safe active items for archetype combat.
 //
 // Ownership stays in the campaign inventory. A fight snapshots only the quantities carried
 // when it opens, then records every use as an encounter event; settlement spends those exact
@@ -7,7 +7,7 @@
 
 import { itemTemplate } from "../../data/catalog.js";
 
-export const COMBAT_COMBAT_ITEM_VERSION = 1;
+export const COMBAT_ITEM_VERSION = 1;
 export const MAX_COMBAT_ITEM_QUANTITY = 99;
 
 function combatItem(id, effect) {
@@ -106,7 +106,7 @@ export function describeCombatItemEffect(itemOrId) {
   if (effect.type === "heal-max-percent") return `Restore ${effect.percent}% max HP`;
   if (effect.type === "restore-resolve") {
     const recovery = effect.regenMinimum
-      ? ` · raise recovery to ${effect.regenMinimum} Resolve/round`
+      ? ` · raise free-basic recovery to ${effect.regenMinimum} Resolve`
       : "";
     return `Restore ${effect.amount} Resolve${recovery}`;
   }

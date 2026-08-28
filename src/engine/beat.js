@@ -62,7 +62,13 @@ export function applyBeat(state, beat, options = {}) {
       truncated: index === story.length - 1 && !!beat._truncated,
     };
     if (item.type === "beat") {
-      newBeats.push({ id: `n${storyStamp}-${index}`, type: "narration", content: item.text, ...shared });
+      newBeats.push({
+        id: `n${storyStamp}-${index}`,
+        type: "narration",
+        ...(item.actor_id ? { actorId: item.actor_id } : {}),
+        content: item.text,
+        ...shared,
+      });
     } else {
       newBeats.push({
         id: `d${storyStamp}-${index}`,
@@ -75,12 +81,12 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
-  // A ready-made Archetype character can be established by character_setup in this
+  // A ready-made Spire character can be established by character_setup in this
   // very beat, after discoveries are normally merged. Resolve that model at the
   // boundary now so the setup beat cannot seed the retired combat library.
-  const usesCombaterProgression = state.character.progressionModel === "archetype"
+  const usesArchetypeProgression = state.character.progressionModel === "archetype"
     || (state.created === false && beat.character_setup?.progressionModel === "archetype");
-  const discoveries = usesCombaterProgression && beat.discoveries
+  const discoveries = usesArchetypeProgression && beat.discoveries
     ? (() => {
       const filtered = { ...beat.discoveries };
       const skills = Array.isArray(beat.discoveries.skills)
@@ -206,7 +212,7 @@ export function applyBeat(state, beat, options = {}) {
       if (!s?.id || !getAbilityDef(s.id)) continue;
       const idx = list.findIndex((a) => idOf(a) === s.id);
       const curTier = idx >= 0 ? ((typeof list[idx] === "object" ? list[idx].tier : "common") || "common") : null;
-      const grantTier = usesCombaterProgression
+      const grantTier = usesArchetypeProgression
         ? clampWorldAbilityTier(s.id, s.tier || "common")
         : clampAbilityTier(s.id, s.tier || "common"); // honour tier floors
       // Re-teaching only ever raises the tier — take the higher of the two.

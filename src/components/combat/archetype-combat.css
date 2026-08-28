@@ -1837,7 +1837,7 @@
   transition: transform 100ms ease, filter 140ms ease;
 }
 
-/* The Archetype action is an art tile. Neutralise the legacy production button's padded card
+/* The combat action is an art tile. Neutralise the legacy production button's padded card
    declaration so the illustration actually occupies the entire visible frame. */
 .archetype-combat .archetype-combat__action.production-combat__action {
   display: block;
@@ -1848,7 +1848,7 @@
   text-align: initial;
 }
 
-/* Five is the Archetype skill cap. Keep a complete loadout visible on common desktop and
+/* Five is the combat skill cap. Keep a complete loadout visible on common desktop and
    phone widths; only exceptionally narrow screens fall back to the same horizontal rail. */
 .archetype-combat__actions:has(> :nth-child(5):last-child) .archetype-combat__action {
   flex-basis: clamp(3.6rem, 6vw, 4.45rem);

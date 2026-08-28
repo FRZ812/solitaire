@@ -1,4 +1,4 @@
-// The durable Solitaire combat combat session.
+// The durable Solitaire combat session.
 //
 // A fight used to live in two places that both vanish on reload: a React `useState` for the
 // encounter and a `useRef` for everything the encounter deliberately does not know — who the
@@ -67,6 +67,7 @@ export const COMBAT_RETREAT_POLICIES = Object.freeze(["forbidden", "allowed"]);
 
 export const MAX_COMBAT_COMMANDS = 4096;
 export const MAX_COMBAT_PARTICIPANTS = 32;
+export const MAX_COMBAT_REWARD_REROLLS = 4;
 
 const SESSION_KEYS = Object.freeze([
   "checksum",
@@ -87,6 +88,7 @@ const SESSION_KEYS = Object.freeze([
 
 const CONTEXT_KEYS = Object.freeze([
   "admission",
+  "campaignId",
   "campaignRevision",
   "detectionFacts",
   "directiveId",
@@ -107,6 +109,7 @@ const GENESIS_KEYS = Object.freeze([
   "enemySnapshots",
   "formations",
   "intentSchedules",
+  "mode",
   "playerSnapshot",
   "rngVersion",
   "seedManifest",
@@ -148,6 +151,22 @@ function isRngState(value) {
     && Number.isInteger(value.state)
     && value.state >= 0
     && value.state <= 0xFFFFFFFF;
+}
+
+// Settlement is intentionally small and bounded. Proving that a held stream endpoint is a
+// real forward advance catches corrupted or hand-edited endpoints without pretending the
+// session checksum is authentication. The bound also prevents verification from becoming an
+// attacker-controlled linear scan.
+export const MAX_COMBAT_SETTLEMENT_STREAM_DRAWS = 4096;
+
+export function isCombatSettlementStreamAdvance(start, endpoint) {
+  if (!isRngState(start) || !isRngState(endpoint)) return false;
+  let current = { ...start };
+  for (let draws = 0; draws <= MAX_COMBAT_SETTLEMENT_STREAM_DRAWS; draws += 1) {
+    if (current.algorithm === endpoint.algorithm && current.state === endpoint.state) return true;
+    current = nextFloat(current).rng;
+  }
+  return false;
 }
 
 /**
@@ -214,6 +233,7 @@ function isContext(value) {
     && identifier(value.source.kind)
     && (value.source.note === null || typeof value.source.note === "string")
     && typeof value.location === "string"
+    && optionalIdentifier(value.campaignId)
     && Number.isSafeInteger(value.campaignRevision)
     && value.campaignRevision >= 0
     && isParticipantBindings(value.participantBindings)
@@ -234,8 +254,11 @@ function isContext(value) {
     && Array.isArray(value.lootPolicy.ownedUniqueIds)
     && value.lootPolicy.ownedUniqueIds.every((id) => typeof id === "string")
     && isLootSources(value.lootPolicy.sources)
-    && exactKeys(value.rewardPolicy, ["proficiencyId"])
+    && exactKeys(value.rewardPolicy, ["proficiencyId", "rerolls"])
     && optionalIdentifier(value.rewardPolicy.proficiencyId)
+    && Number.isSafeInteger(value.rewardPolicy.rerolls)
+    && value.rewardPolicy.rerolls >= 0
+    && value.rewardPolicy.rerolls <= MAX_COMBAT_REWARD_REROLLS
     && exactKeys(value.admission, ["notes", "version"])
     && Number.isSafeInteger(value.admission.version)
     && Array.isArray(value.admission.notes)
@@ -255,7 +278,7 @@ function isContext(value) {
  * unstated stakes are survivable. Retreat is universal; the policy field stays in the
  * admission so existing saved sessions retain their exact shape.
  */
-export function archetypeCombatContext(input = {}) {
+export function combatSessionContext(input = {}) {
   const loot = input.lootPolicy || {};
   return {
     directiveId: input.directiveId ?? null,
@@ -264,6 +287,7 @@ export function archetypeCombatContext(input = {}) {
       note: input.source?.note ?? null,
     },
     location: typeof input.location === "string" ? input.location : "",
+    campaignId: input.campaignId ?? null,
     campaignRevision: Number.isSafeInteger(input.campaignRevision) && input.campaignRevision >= 0
       ? input.campaignRevision
       : 0,
@@ -299,7 +323,14 @@ export function archetypeCombatContext(input = {}) {
         }]),
       ),
     },
-    rewardPolicy: { proficiencyId: input.rewardPolicy?.proficiencyId ?? null },
+    rewardPolicy: {
+      proficiencyId: input.rewardPolicy?.proficiencyId ?? null,
+      rerolls: Number.isSafeInteger(input.rewardPolicy?.rerolls)
+        && input.rewardPolicy.rerolls >= 0
+        && input.rewardPolicy.rerolls <= MAX_COMBAT_REWARD_REROLLS
+        ? input.rewardPolicy.rerolls
+        : 0,
+    },
     // What this fight decided not to carry, and why. Durable so that "the companion held
     // back" and "the ability was superseded by the package" survive a reload as recorded
     // facts rather than as things nobody wrote down.
@@ -322,6 +353,27 @@ export function participantIsLethal(context, actorId) {
   return context?.lethalPolicy === "lethal";
 }
 
+export function combatSettlementContextForSession(session) {
+  return {
+    encounterId: session.sessionId,
+    campaignId: session.context.campaignId,
+    campaignRevision: session.context.campaignRevision,
+    proficiencyId: session.context.rewardPolicy.proficiencyId,
+    npcIds: Object.fromEntries(
+      Object.entries(session.context.participantBindings)
+        .filter(([, binding]) => binding.campaignEntityId)
+        .map(([actorId, binding]) => [actorId, binding.campaignEntityId]),
+    ),
+    lethal: session.context.lethalPolicy !== "nonlethal",
+    worldFates: Object.fromEntries(
+      (session.terminalReceipt?.participants || []).map((outcome) => [
+        outcome.participantId,
+        outcome.worldFate,
+      ]),
+    ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Genesis — the immutable opening
 // ---------------------------------------------------------------------------
@@ -331,6 +383,7 @@ function isGenesis(value) {
   if (!current && !exactKeys(value, LEGACY_GENESIS_KEYS)) return false;
   return isSeedManifest(value.seedManifest)
     && value.rngVersion === COMBAT_RNG_VERSION
+    && COMBAT_SESSION_MODES.includes(value.mode)
     && Boolean(value.playerSnapshot)
     && typeof value.playerSnapshot === "object"
     && !Array.isArray(value.playerSnapshot)
@@ -435,6 +488,9 @@ export function combatStreamEndpoints(session) {
 export function markCombatSessionSettled(session, settlementId) {
   if (!identifier(settlementId)) return { ok: false, reason: "invalid-settlement-id", session };
   if (session.status === "active") return { ok: false, reason: "encounter-not-terminal", session };
+  if (session.terminalReceipt === null) {
+    return { ok: false, reason: "missing-terminal-receipt", session };
+  }
   if (session.settlementId !== null) {
     return session.settlementId === settlementId
       ? { ok: true, reason: null, session, duplicate: true }
@@ -483,7 +539,12 @@ export function spendCombatSessionStream(session, name, endpoint) {
   if (!COMBAT_SESSION_STREAMS.includes(name)) {
     return { ok: false, reason: "unknown-session-stream", session };
   }
-  if (!isRngState(endpoint)) return { ok: false, reason: "invalid-stream-endpoint", session };
+  if (session?.status !== "terminal" || !session.terminalReceipt) {
+    return { ok: false, reason: "terminal-session-required", session };
+  }
+  if (!isCombatSettlementStreamAdvance(session.streams?.[name], endpoint)) {
+    return { ok: false, reason: "invalid-stream-endpoint", session };
+  }
   const next = sealCombatSession({
     ...session,
     streams: { ...session.streams, [name]: { ...endpoint } },
@@ -502,6 +563,7 @@ export function isCombatSession(value) {
   if (!Number.isSafeInteger(value.revision) || value.revision < 0) return false;
   if (!isContext(value.context)) return false;
   if (!isGenesis(value.genesis)) return false;
+  if (value.genesis.mode !== value.mode) return false;
   if (!Array.isArray(value.commands) || value.commands.length > MAX_COMBAT_COMMANDS) return false;
   // The revision *is* the accepted-command count. Keeping them equal by construction means a
   // forged revision cannot make a stale command look current.
@@ -523,7 +585,8 @@ export function isCombatSession(value) {
   const terminal = value.encounter.phase !== "player";
   if (value.status === "active" && (terminal || value.terminalReceipt !== null)) return false;
   if (value.status !== "active" && !terminal) return false;
-  if (value.status === "settled" && value.settlementId === null) return false;
+  if (value.status === "settled"
+    && (value.settlementId === null || value.terminalReceipt === null)) return false;
   if (value.status !== "settled" && value.settlementId !== null) return false;
   return true;
 }
@@ -538,7 +601,7 @@ export function isCombatSession(value) {
  * @param {Array<object>} input.enemies actor inputs for the foes, normally with archetype builds;
  * legacy replay snapshots may still carry attack tables
  * @param {object} input.build traits/skills/runes
- * @param {object} input.context the admission; see `archetypeCombatContext`
+ * @param {object} input.context the admission; see `combatSessionContext`
  * @param {"campaign"|"practice"} [input.mode]
  */
 export function createCombatSession(input = {}) {
@@ -570,6 +633,7 @@ export function createCombatSession(input = {}) {
     genesis = cloneJsonData({
       seedManifest: deriveSeedManifest(rootSeed),
       rngVersion: COMBAT_RNG_VERSION,
+      mode,
       playerSnapshot: player,
       // Each ally carries their own actor line and their own build. Holding them in genesis
       // is what lets a party fight replay exactly, down to which companion was already hurt
@@ -605,7 +669,7 @@ export function createCombatSession(input = {}) {
     return rejected(error?.message || "invalid-session-encounter");
   }
 
-  const context = archetypeCombatContext(input.context);
+  const context = combatSessionContext(input.context);
   if (!isContext(context)) return rejected("invalid-session-context");
   // A binding that names no actor in the fight is a mistake worth failing on: it usually
   // means the codex ids and the actor ids were built from different lists, which would

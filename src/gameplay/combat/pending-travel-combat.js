@@ -1,5 +1,5 @@
 import { cloneJsonData } from "../kernel/json-data.js";
-import { productionCombatContextChecksum } from "./pending-directive.js";
+import { combatHandoffContextChecksum } from "./pending-directive.js";
 
 const VERSION = 1;
 const MAX_KIND_LENGTH = 128;
@@ -52,7 +52,7 @@ export function createPendingTravelCombat({ campaignId, state, encounter } = {})
   if (!validDescription(desc)) return rejected("invalid-travel-combat-description");
   let contextChecksum;
   try {
-    contextChecksum = productionCombatContextChecksum(state, campaignId);
+    contextChecksum = combatHandoffContextChecksum(state, campaignId);
   } catch {
     return rejected("invalid-pending-combat-context");
   }
@@ -89,7 +89,7 @@ export function readPendingTravelCombat(value, { campaignId, state } = {}) {
   if (state !== undefined) {
     let expected;
     try {
-      expected = productionCombatContextChecksum(state, input.campaignId);
+      expected = combatHandoffContextChecksum(state, input.campaignId);
     } catch {
       return rejected("invalid-pending-combat-context");
     }

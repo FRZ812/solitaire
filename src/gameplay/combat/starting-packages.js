@@ -3,7 +3,7 @@
 // A profession resolves to one starting trait and a skill loadout. That mapping already
 // existed inside professions.js as a private table; this is the registry layer around it,
 // so a package can be inspected before play rather than discovered in the first fight.
-// The plan's requirement is that every template has a distinct, inspectable Archetype of
+// The plan's requirement is that every template has a distinct, inspectable Spire of
 // Winter mapping — you cannot show a player their combat identity at character select if
 // the only way to obtain it is to start a fight.
 //

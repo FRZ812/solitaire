@@ -21,7 +21,7 @@ export function makeRepurposedPortraitCharacters() {
         marks: "rows of old counting cuts along the left forearm",
       },
       base_appearance: "Small and spare, with winter-pale lined skin and white hair bound in a low knot. Her hands are steady, and old counting cuts cross her left forearm.",
-      description: "A mortal charmwright from Barrowfen who repairs household ward tokens, burial medallions, and road charms for people who cannot afford an academy-trained enchanter. Neris once bought supplies from the Hag of the Cot, learned exactly how costly an open-ended bargain can become, and now writes every price down before she begins. She is patient with frightened clients and merciless with sloppy metalwork.",
+      description: "A mortal charmwright from Barrowfen who repairs household ward tokens, burial medallions, and road charms for people who cannot afford a guild-trained enchanter. Neris once bought supplies from the Hag of the Cot, learned exactly how costly an open-ended bargain can become, and now writes every price down before she begins. She is patient with frightened clients and merciless with sloppy metalwork.",
       attributes: { body: 3, reflex: 5, vigor: 6, mind: 11, wit: 13, presence: 8 },
       worn: ["mended-black-shawl", "charmwright's-knife", "string-of-brass-tokens"],
       knows: [
@@ -223,12 +223,12 @@ export function makeRepurposedPortraitCharacters() {
         marks: "ink freckles across both hands",
       },
       base_appearance: "Slender and poised, with pale-tan skin, warm brown eyes, and dark hair braided around the crown and down her back. Fine ink freckles cover both hands.",
-      description: "Keeper of correspondence at the Heron Archive. Isera was one of Aenya's apprentices who left during the first winter, discovered that she loved exact records more than binding practice, and returned four years later as a scholar on her own terms. She catalogs letters between the Heron and Glass Spire, prepares Naela's teaching copies, and is the only person in the archive who can find anything without asking Aenya.",
+      description: "Keeper of correspondence at the Heron Seat. Isera was one of Aenya's apprentices who left during the first winter, discovered that she loved exact records more than binding practice, and returned four years later as a scholar on her own terms. She catalogs letters between the Heron and Glass Spire, prepares Naela's teaching copies, and is the only person in the spire who can find anything without asking Aenya.",
       attributes: { body: 3, reflex: 6, vigor: 5, mind: 12, wit: 12, presence: 8 },
       worn: ["heron-archive-robe", "bound-letter-book", "archive-key-ring"],
       knows: [
         "I left the binding room. I did not leave the work.",
-        "Aenya remembers every argument and no shelf. That is why the archive needs me.",
+        "Aenya remembers every argument and no shelf. That is why the spire needs me.",
         "Naela teaches from the clean copies. I keep the originals where weather cannot reach them.",
       ],
       at: { x: 40, y: 25, day: 0 },

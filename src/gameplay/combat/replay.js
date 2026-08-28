@@ -18,8 +18,11 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng } from "../kernel/rng.js";
-import { resolveCombatCommandOnEncounter, combatCommand } from "./commands.js";
-import { encounterFromGenesis } from "./session.js";
+import {
+  resolveCombatCommandOnEncounter,
+  combatCommand,
+} from "./commands.js";
+import { encounterFromGenesis, isCombatSettlementStreamAdvance } from "./session.js";
 import { resolveCombatTerminalReceipt } from "./outcomes.js";
 
 export const MAX_COMBAT_REPLAY_COMMANDS = 4096;
@@ -67,7 +70,7 @@ function divergence(commandSeq, commandId, path, expected, actual, reason) {
  * @returns {{ok: boolean, reason: string|null, encounter: object|null,
  *   divergence: object|null, replayedCommands: number}}
  */
-export function replayCombatCombatSession(genesis, commands) {
+function replayCombatSessionWithResolver(genesis, commands, resolveCommand) {
   let log;
   try {
     log = cloneJsonData(commands, "invalid-replay-commands");
@@ -97,7 +100,7 @@ export function replayCombatCombatSession(genesis, commands) {
   for (let index = 0; index < log.length; index += 1) {
     const command = log[index];
     const eventsFrom = encounter.sequence;
-    const resolved = resolveCombatCommandOnEncounter(encounter, combatCommand(command));
+    const resolved = resolveCommand(encounter, combatCommand(command));
     if (!resolved.ok) {
       // A command the log says was accepted but the reducer now refuses means the rules
       // changed underneath a saved fight. That is a ruleset-pinning failure, not a corrupt
@@ -149,6 +152,10 @@ export function replayCombatCombatSession(genesis, commands) {
   return { ok: true, reason: null, encounter, divergence: null, replayedCommands: log.length };
 }
 
+export function replayCombatSession(genesis, commands) {
+  return replayCombatSessionWithResolver(genesis, commands, resolveCombatCommandOnEncounter);
+}
+
 /**
  * Verify a live session against a replay of its own genesis and commands.
  *
@@ -156,12 +163,12 @@ export function replayCombatCombatSession(genesis, commands) {
  * The saved session is never mutated — verification that could alter what it verifies is
  * not verification.
  */
-export function verifyCombatSession(session) {
+function verifyCombatSessionWithReplay(session, replay) {
   if (!session || typeof session !== "object") {
     return { ok: false, reason: "invalid-session", divergence: null };
   }
 
-  const replayed = replayCombatCombatSession(session.genesis, session.commands);
+  const replayed = replay(session.genesis, session.commands);
   if (!replayed.ok) return { ok: false, reason: replayed.reason, divergence: replayed.divergence };
 
   const lastSeq = session.commands.length - 1;
@@ -186,11 +193,10 @@ export function verifyCombatSession(session) {
   // them. A loot endpoint that moved during a fight would mean something spent the wrong
   // generator — a telegraph draw reaching into the spoils.
   //
-  // Only up to settlement, though. Settlement is where the loot stream is legitimately
-  // spent, and replaying that spend means replaying the loot roll itself — a separate
-  // contract from replaying the fight. Until then, an unmoved endpoint is exactly what a
-  // faithful replay should find.
-  if (session.status !== "settled") {
+  // Only before a terminal receipt is sealed, though. Settlement may advance the held streams
+  // while the session remains terminal and before the final settled marker is written. The
+  // receipt below still proves the exact replay-derived endpoints from which that spend began.
+  if (!session.terminalReceipt) {
     const expectedStreams = { ...session.streams };
     const replayedStreams = {
       // Nothing in a fight spends these, so a faithful replay leaves them at the seeds
@@ -207,6 +213,24 @@ export function verifyCombatSession(session) {
         divergence: { reason: "replay-stream-divergence", commandSeq: lastSeq, commandId: lastId, ...streamDiff },
       };
     }
+  } else {
+    for (const name of ["loot", "rewards"]) {
+      const start = seedEndpoint(session, name);
+      if (!isCombatSettlementStreamAdvance(start, session.streams?.[name])) {
+        return {
+          ok: false,
+          reason: "replay-stream-divergence",
+          divergence: {
+            reason: "replay-stream-divergence",
+            commandSeq: lastSeq,
+            commandId: lastId,
+            path: `streams.${name}`,
+            expected: "bounded forward settlement advance",
+            actual: session.streams?.[name] ?? null,
+          },
+        };
+      }
+    }
   }
 
   const expectedReceipt = session.terminalReceipt;
@@ -218,12 +242,10 @@ export function verifyCombatSession(session) {
     const replayedSession = {
       ...session,
       encounter: replayed.encounter,
-      streams: session.status === "settled"
-        ? {
-            loot: seedEndpoint(session, "loot"),
-            rewards: seedEndpoint(session, "rewards"),
-          }
-        : session.streams,
+      streams: {
+        loot: seedEndpoint(session, "loot"),
+        rewards: seedEndpoint(session, "rewards"),
+      },
     };
     const actualReceipt = resolveCombatTerminalReceipt(replayedSession);
     const receiptDiff = firstJsonDifference(expectedReceipt, actualReceipt, "terminalReceipt");
@@ -237,6 +259,10 @@ export function verifyCombatSession(session) {
   }
 
   return { ok: true, reason: null, divergence: null };
+}
+
+export function verifyCombatSession(session) {
+  return verifyCombatSessionWithReplay(session, replayCombatSession);
 }
 
 // Where a stream sits when nothing has spent it: derived from genesis, never copied from

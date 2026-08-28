@@ -1,4 +1,4 @@
-// Equipment-owned basic attack lineages for Solitaire's Archetype combat bridge.
+// Equipment-owned basic attack lineages for Solitaire's archetype combat bridge.
 //
 // Solitaire combat establishes two independent ideas for the basic attack slot: learning the
 // same attack raises its rank, while another skill may replace that slot with a different

@@ -1,4 +1,4 @@
-// Read-only tactical metadata for the captured Archetype ability catalogue.
+// Read-only tactical metadata for the captured Spire ability catalogue.
 //
 // An ability definition is part of the v1 replay contract: changing its effects, Resolve
 // price, targeting, or presentation can reinterpret a command that was already recorded.

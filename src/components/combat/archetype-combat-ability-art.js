@@ -163,7 +163,7 @@ const SKILL_ART = Object.freeze({
 });
 
 /**
- * Resolve generated ability art without changing the underlying Archetype skill id.
+ * Resolve generated ability art without changing the underlying combat skill id.
  * Strike is the one equipment-led slot; every authored ability keeps its own art.
  */
 export function resolveCombatAbilityArt(definition, weaponPresentation) {

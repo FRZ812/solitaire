@@ -26,7 +26,11 @@ import {
   isCombatSession,
   combatSessionChecksum,
 } from "./session.js";
-import { COMBAT_COMBAT_STATES, COMBAT_WORLD_FATES } from "./outcomes.js";
+import { COMBAT_STATES, COMBAT_WORLD_FATES } from "./outcomes.js";
+import {
+  COMBAT_LEGACY_V1_3_RULESET_ID,
+  COMBAT_LEGACY_V1_SESSION_VERSION,
+} from "./ruleset.js";
 
 /** A fight that has run this long is a loop, not a fight; pausing beats inventing a winner. */
 export const MAX_COMBAT_ROUNDS = 2000;
@@ -49,6 +53,8 @@ const SPATIAL_COMMAND_KEYS = Object.freeze([...COMMAND_KEYS, "anchorCell"].sort(
 const SPATIAL_LEGACY_COMMAND_KEYS = Object.freeze([...LEGACY_COMMAND_KEYS, "anchorCell"].sort());
 
 const RECEIPT_KEYS = Object.freeze([
+  "campaignId",
+  "campaignRevision",
   "encounterChecksum",
   "eventCount",
   "loser",
@@ -164,6 +170,10 @@ function receiptFailure(session) {
   if (receipt === null) return null;
   if (!exactKeys(receipt, RECEIPT_KEYS)) return "invalid-terminal-receipt";
   if (receipt.sessionId !== session.sessionId) return "terminal-receipt-session-mismatch";
+  if (receipt.campaignId !== session.context.campaignId) return "terminal-receipt-campaign-mismatch";
+  if (receipt.campaignRevision !== session.context.campaignRevision) {
+    return "terminal-receipt-revision-mismatch";
+  }
   if (receipt.rulesetId !== session.rulesetId) return "terminal-receipt-ruleset-mismatch";
   if (!["victory", "defeat", "retreated"].includes(receipt.reason)) return "invalid-terminal-receipt";
   if (receipt.reason !== session.encounter.phase) return "terminal-receipt-phase-mismatch";
@@ -186,7 +196,7 @@ function receiptFailure(session) {
     if (!actorIds.has(outcome.participantId)) return "unknown-participant-outcome";
     if (seen.has(outcome.participantId)) return "duplicate-participant-outcome";
     seen.add(outcome.participantId);
-    if (!COMBAT_COMBAT_STATES.includes(outcome.combatState)) return "invalid-participant-outcome";
+    if (!COMBAT_STATES.includes(outcome.combatState)) return "invalid-participant-outcome";
     if (!COMBAT_WORLD_FATES.includes(outcome.worldFate)) return "invalid-participant-outcome";
     if (!Number.isSafeInteger(outcome.finalHp) || outcome.finalHp < 0) return "invalid-participant-outcome";
     if (!Array.isArray(outcome.finalStatuses)) return "invalid-participant-outcome";
@@ -249,6 +259,38 @@ export function decodeCombatSession(value) {
 
   if (combatSessionChecksum(session) !== session.checksum) {
     return rejected("combat-session-checksum-mismatch");
+  }
+  return { ok: true, reason: null, session };
+}
+
+/** Strictly decode a v1.3 session without laundering its original checksum. */
+export function decodeRetiredCombatV13Session(value) {
+  let session;
+  try {
+    session = cloneJsonData(value, "invalid-retired-v1.3-session-payload");
+  } catch {
+    return rejected("invalid-retired-v1.3-session-payload");
+  }
+  if (session?.version !== COMBAT_LEGACY_V1_SESSION_VERSION
+    || session?.rulesetId !== COMBAT_LEGACY_V1_3_RULESET_ID) {
+    return rejected("retired-v1.3-session-required");
+  }
+  try {
+    if (combatSessionChecksum(session) !== session.checksum) {
+      return rejected("retired-v1.3-checksum-mismatch");
+    }
+    const compatible = cloneJsonData(session, "invalid-retired-v1.3-session-payload");
+    compatible.rulesetId = COMBAT_RULESET_ID;
+    compatible.genesis.mode = compatible.mode;
+    compatible.context.rewardPolicy.rerolls = 0;
+    if (compatible.terminalReceipt !== null) {
+      compatible.terminalReceipt.rulesetId = COMBAT_RULESET_ID;
+    }
+    compatible.checksum = combatSessionChecksum(compatible);
+    const decoded = decodeCombatSession(compatible);
+    if (!decoded.ok) return rejected(decoded.reason);
+  } catch {
+    return rejected("invalid-retired-v1.3-session");
   }
   return { ok: true, reason: null, session };
 }

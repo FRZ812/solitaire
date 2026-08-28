@@ -64,10 +64,10 @@ export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
 });
 
 // Foes speak the same combat language as playable characters. World professions select
-// one of the authored Archetype archetypes; identity and stats still belong to the world actor,
+// one of the authored Archetype characters; identity and stats still belong to the world actor,
 // while the archetype supplies the trait and five-ability kit used inside the encounter.
 const ENEMY_ARCHETYPE_BY_PROFESSION = Object.freeze({
-  artificer: "owner-of-artificer",
+  artificer: "master-artificer",
   barbarian: "old-king-of-northland",
   bard: "wandering-blade",
   cleric: "exiled-priestess",

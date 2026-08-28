@@ -9,8 +9,9 @@ export const COMBAT_LEGACY_V1_SESSION_VERSION = 1;
 export const COMBAT_LEGACY_V1_RULESET_ID = "solitaire-combat-v1";
 export const COMBAT_LEGACY_V1_1_RULESET_ID = "solitaire-combat-v1.1";
 export const COMBAT_LEGACY_V1_2_RULESET_ID = "solitaire-combat-v1.2";
+export const COMBAT_LEGACY_V1_3_RULESET_ID = "solitaire-combat-v1.3";
 export const COMBAT_SESSION_VERSION = 1;
-export const COMBAT_RULESET_ID = "solitaire-combat-v1.3";
+export const COMBAT_RULESET_ID = "solitaire-combat-v1.4";
 
 export const COMBAT_RETIRED_RUNTIME_IDENTITIES = Object.freeze([
   Object.freeze({
@@ -24,5 +25,9 @@ export const COMBAT_RETIRED_RUNTIME_IDENTITIES = Object.freeze([
   Object.freeze({
     version: COMBAT_LEGACY_V1_SESSION_VERSION,
     rulesetId: COMBAT_LEGACY_V1_2_RULESET_ID,
+  }),
+  Object.freeze({
+    version: COMBAT_LEGACY_V1_SESSION_VERSION,
+    rulesetId: COMBAT_LEGACY_V1_3_RULESET_ID,
   }),
 ]);

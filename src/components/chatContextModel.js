@@ -67,12 +67,49 @@ function narratorToolSchemas(state) {
         parameters: {
           type: "object",
           properties: {
-            fact: {
+            kind: {
               type: "string",
-              description: "A concise, self-contained statement of the fact to remember (one or two sentences).",
+              enum: ["person", "place", "promise", "grudge", "belief", "relationship", "event"],
+              description: "What kind of durable memory this is.",
+            },
+            subject_ids: {
+              type: "array",
+              minItems: 1,
+              maxItems: 8,
+              uniqueItems: true,
+              items: { type: "string", minLength: 1, maxLength: 128 },
+              description: "Canonical people or places this memory concerns.",
+            },
+            scope_ids: {
+              type: "array",
+              maxItems: 8,
+              uniqueItems: true,
+              items: { type: "string", minLength: 1, maxLength: 128 },
+              description: "Optional recall scopes; defaults to campaign.",
+            },
+            text: {
+              type: "string",
+              minLength: 1,
+              maxLength: 600,
+              description: "A concise, self-contained statement of the memory.",
+            },
+            evidence_refs: {
+              type: "array",
+              maxItems: 8,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  kind: { type: "string", enum: ["turn", "dialogue", "receipt"] },
+                  id: { type: "string", minLength: 1, maxLength: 160 },
+                },
+                required: ["kind", "id"],
+              },
+              description: "Required evidence for promises, relationships, and events.",
             },
           },
-          required: ["fact"],
+          required: ["kind", "subject_ids", "text"],
+          additionalProperties: false,
         },
       },
     });

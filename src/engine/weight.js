@@ -58,7 +58,7 @@ export function itemWeight(item) {
   }
 
   if (item.kind === "shield") {
-    if (hasWord(name, ["combat", "colossal", "wall"])) return 16;
+    if (hasWord(name, ["spire", "colossal", "wall"])) return 16;
     if (hasWord(name, ["buckler"])) return 3;
     return WEIGHT_BY_KIND.shield;
   }

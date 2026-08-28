@@ -32,7 +32,7 @@ export const TERRAIN_INK = {
 
 const LANDMARK_TYPES = new Set([
   "city", "town", "village", "settlement", "fortress", "gate", "palace",
-  "temple", "shrine", "combat", "lake", "ruin", "landmark", "camp", "market", "smithy", "healer",
+  "temple", "shrine", "spire", "lake", "ruin", "landmark", "camp", "market", "smithy", "healer",
 ]);
 const COMPASS_ORDER = ["north-west", "north", "north-east", "east", "south-east", "south", "south-west", "west"];
 const TRAIL_REACH = 4;

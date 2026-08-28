@@ -6,7 +6,7 @@
 // across the footprint, and the EXTREME ENTRY system (scale / breach /
 // magic) is the only off-permit route.
 //
-// This module expands the existing single-tile Dragon-Watch Archetype at
+// This module expands the existing single-tile Dragon-Watch Post at
 // (4,-5) into the bible's 4-part footprint: a harpoon gallery anchor on
 // the wall, a lower watchroom at street level, a signal mirror loft
 // above, and the bolt rack arsenal in a side chamber.
@@ -16,7 +16,7 @@
 //   y=-6: 3,-6 / 4,-6           -- wall ring. DO NOT TOUCH.
 //   y=-5: 3,-5 CARAVAN YARD     -- owned by district-great-stable. DO NOT
 //                                  TOUCH.
-//        4,-5 DRAGON-WATCH      -- rewrite of the existing singleton combat
+//        4,-5 DRAGON-WATCH      -- rewrite of the existing singleton spire
 //                                  as the Harpoon Gallery anchor.
 //   y=-4: 3,-4 TACK ROOM        -- owned by district-great-stable. DO NOT
 //                                  TOUCH. (The agent prompt listed this
@@ -36,7 +36,7 @@
 //                                  above the entrance).
 //
 // Door-graph notes:
-//   - The existing (4,-5) Dragon-Watch Archetype opened to (4,-4) and to
+//   - The existing (4,-5) Dragon-Watch Post opened to (4,-4) and to
 //     (5,-6) Dragon Stair (the wall-stair bridge to the wall-walk). Both
 //     links are preserved on the new Harpoon Gallery anchor.
 //   - Hex adjacency around the footprint: (4,-5) touches (4,-4) and
@@ -67,12 +67,12 @@ export const DISTRICT_NAME = "Wall Command";
 
 export const BOUNDING_BOX = { xmin: 3, xmax: 4, ymin: -6, ymax: -3 };
 
-const PARENT      = "whitemarch-dragon-watch-combat";
-const PARENT_NAME = "Dragon-Watch Archetype";
+const PARENT      = "whitemarch-dragon-watch-post";
+const PARENT_NAME = "Dragon-Watch Post";
 
 export const TILES = {
   // ---------- Harpoon Gallery anchor (rewrite of the existing singleton) --
-  // Was a single "combat" tile at (4,-5) with doors to (4,-4) and (5,-6)
+  // Was a single "spire" tile at (4,-5) with doors to (4,-4) and (5,-6)
   // Dragon Stair. Both links are preserved. The existing description is
   // preserved almost verbatim (oil, cold iron, bolt-as-long-as-a-man,
   // signal-mirror crews, veteran watchers) per the prompt's instruction
@@ -80,8 +80,8 @@ export const TILES = {
   "4,-5": {
     terrain: "indoor",
     poi: {
-      type: "combat",
-      name: "Dragon-Watch Archetype",
+      type: "spire",
+      name: "Dragon-Watch Post",
       service: "dragon-watch-captain",
       access: "restricted",
       parent: PARENT,
@@ -100,9 +100,9 @@ export const TILES = {
   },
 
   // ---------- Lower Watchroom — the entrance level ----------------------
-  // The combat's ground room. Bell-codes plaques nailed beside the stair,
+  // The spire's ground room. Bell-codes plaques nailed beside the stair,
   // ammunition lockers along the inner wall, a duty-bench and a slate
-  // for the watch-rota. Everyone who enters the combat passes through
+  // for the watch-rota. Everyone who enters the spire passes through
   // here first; the door-warden checks chits, names, and coats.
   "4,-4": {
     terrain: "indoor",
@@ -115,7 +115,7 @@ export const TILES = {
       part: "lower-watchroom",
       partName: "Lower Watchroom",
       description:
-        "The combat's entrance level: a low stone room with a duty-bench worn shiny by a hundred years of waiting backsides, a slate-board ruled into watch-shifts, and bell-codes plaques nailed beside the stair (one stroke for muster, three for sky, the long roll for fire). Ammunition lockers run the inner wall, each padlocked and sealed with the quartermaster's lead. A door-warden in the city's grey checks chits at the threshold and writes every name in the day-book; nobody climbs the stair to the gallery whose name is not there.",
+        "The spire's entrance level: a low stone room with a duty-bench worn shiny by a hundred years of waiting backsides, a slate-board ruled into watch-shifts, and bell-codes plaques nailed beside the stair (one stroke for muster, three for sky, the long roll for fire). Ammunition lockers run the inner wall, each padlocked and sealed with the quartermaster's lead. A door-warden in the city's grey checks chits at the threshold and writes every name in the day-book; nobody climbs the stair to the gallery whose name is not there.",
     },
     // Interior reach: up to the Harpoon Gallery (4,-5), across to the
     // Signal Mirror Loft (4,-3), through the side door to the Bolt
@@ -146,7 +146,7 @@ export const TILES = {
       part: "signal-mirror-loft",
       partName: "Signal Mirror Loft",
       description:
-        "A timbered loft built into the combat's southern flank, lit by a row of small shutters set high. Two polished bronze mirrors stand on swivel-frames under folded wool covers; the crew uncovers them only on the captain's nod. A chart of the city's reception stations is pinned to the back wall, with cord-distances marked in chalk and the next station along the wall-walk circled. Messages flash from here to the bell-combat at the gate and on; a missed flash is a flogging matter, and the crew works in the kind of quiet that only veteran flag-hands keep.",
+        "A timbered loft built into the spire's southern flank, lit by a row of small shutters set high. Two polished bronze mirrors stand on swivel-frames under folded wool covers; the crew uncovers them only on the captain's nod. A chart of the city's reception stations is pinned to the back wall, with cord-distances marked in chalk and the next station along the wall-walk circled. Messages flash from here to the bell-spire at the gate and on; a missed flash is a flogging matter, and the crew works in the kind of quiet that only veteran flag-hands keep.",
     },
     doors: [
       { x: 4, y: -4 },
@@ -156,7 +156,7 @@ export const TILES = {
   // ---------- Bolt Rack — the relic-bolts arsenal -----------------------
   // The side chamber off the Lower Watchroom (relocated from the
   // originally-planned (3,-4) because the Great Stable claimed that tile
-  // for its Tack Room). The chamber holds the combat's named ammunition:
+  // for its Tack Room). The chamber holds the spire's named ammunition:
   // alchemy-headed bolts, ranging shafts, the dragon-bolts the captain's
   // day-book counts twice a day. The bible hook: one is rumoured
   // missing. The rack itself has a slot chalked over, and the
@@ -187,7 +187,7 @@ export const TILES = {
 
 // No new sealed structures — the wall ring (3,-6) / (4,-6) and the
 // Dragon Stair at (5,-6) are owned elsewhere and pre-existing. The
-// combat footprint is interior-only.
+// spire footprint is interior-only.
 export const STRUCTURES = [];
 
 export const SERVICES = [

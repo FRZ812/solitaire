@@ -20,20 +20,20 @@ export const NARRATOR_EFFORTS = [
 ];
 
 // Prices are the exact OpenRouter floor-route input/output/cached-input rates
-// in USD per 1M tokens, refreshed 2026-08-01. The edge function sorts by price,
+// in USD per 1M tokens, refreshed 2026-08-28. The edge function sorts by price,
 // requires tool/reasoning compatibility, disables provider fallback, and caps
 // prompt/completion prices at these values. Intelligence is OpenRouter's
 // Artificial Analysis Intelligence Index snapshot from the same refresh.
 export const NARRATOR_MODELS = [
   { id: "poolside/laguna-s-2.1:free", label: "Laguna S 2.1", note: "Poolside", provider: "OpenRouter floor", fallback: "poolside/laguna-s-2.1", price: { input: 0, output: 0, cachedInput: null }, fallbackPrice: { input: 0.09, output: 0.18, cachedInput: 0.009 }, intelligence: null },
-  { id: "minimax/minimax-m3", label: "MiniMax M3", note: "MiniMax reasoning", provider: "OpenRouter floor", price: { input: 0.3, output: 1.2, cachedInput: 0.06 }, intelligence: 44.4 },
-  { id: "deepseek/deepseek-v4-flash-0731", label: "DeepSeek V4 Flash", note: "DeepSeek", provider: "OpenRouter floor", price: { input: 0.09, output: 0.18, cachedInput: 0.018 }, intelligence: 49.9 },
-  { id: "z-ai/glm-5.2", label: "GLM 5.2", note: "Z.ai reasoning", provider: "OpenRouter floor", price: { input: 0.72, output: 1.8, cachedInput: 0.12 }, intelligence: 51.1 },
-  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", note: "OpenAI", provider: "OpenRouter standard", price: { input: 0.1, output: 0.6, cachedInput: 0.01, cacheWrite: 0.125, overrides: [{ minInputTokens: 272000, input: 0.2, output: 0.9, cachedInput: 0.02, cacheWrite: 0.25 }] }, intelligence: 51.2 },
+  { id: "minimax/minimax-m3", label: "MiniMax M3", note: "MiniMax reasoning", provider: "OpenRouter floor", price: { input: 0.28, output: 1.1, cachedInput: 0.06 }, intelligence: 44.4 },
+  { id: "deepseek/deepseek-v4-flash-0731", label: "DeepSeek V4 Flash", note: "DeepSeek", provider: "OpenRouter floor", price: { input: 0.03, output: 0.1, cachedInput: 0.012 }, intelligence: 49.9 },
+  { id: "z-ai/glm-5.2", label: "GLM 5.2", note: "Z.ai reasoning", provider: "OpenRouter floor", price: { input: 0.4875, output: 1.56, cachedInput: 0.221 }, intelligence: 51.1 },
+  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", note: "OpenAI", provider: "OpenRouter standard", price: { input: 0.22, output: 1.32, cachedInput: 0.022, cacheWrite: 0.275, overrides: [{ minInputTokens: 272000, input: 0.44, output: 1.98, cachedInput: 0.044, cacheWrite: 0.55 }] }, intelligence: 51.2 },
   { id: "x-ai/grok-4.5", label: "Grok 4.5", note: "xAI", provider: "OpenRouter floor", price: { input: 2, output: 6, cachedInput: 0.3, overrides: [{ minInputTokens: 200000, input: 4, output: 12, cachedInput: 0.6 }] }, intelligence: 53.8 },
-  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", note: "OpenAI", provider: "OpenRouter standard", price: { input: 1, output: 6, cachedInput: 0.1, cacheWrite: 1.25, overrides: [{ minInputTokens: 272000, input: 2, output: 9, cachedInput: 0.2, cacheWrite: 2.5 }] }, intelligence: 55.0 },
+  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", note: "OpenAI", provider: "OpenRouter standard", price: { input: 2, output: 12, cachedInput: 0.2, cacheWrite: 2.5, overrides: [{ minInputTokens: 272000, input: 4, output: 18, cachedInput: 0.4, cacheWrite: 5 }] }, intelligence: 55.0 },
   { id: "z-ai/glm-5.3-flash", label: "GLM 5.3 Flash", note: "Z.ai reasoning", provider: "OpenRouter floor", price: { input: 0.075, output: 0.25, cachedInput: 0.015 }, intelligence: 57.5 },
-  { id: "moonshotai/kimi-k3", label: "Kimi K3", note: "Moonshot AI", provider: "OpenRouter floor", price: { input: 2.9, output: 14, cachedInput: 0.29 }, intelligence: 57.1 },
+  { id: "moonshotai/kimi-k3", label: "Kimi K3", note: "Moonshot AI", provider: "OpenRouter active floor", price: { input: 2.6, output: 13, cachedInput: 0.3 }, intelligence: 57.1 },
 ];
 
 export const NARRATOR_SORT_OPTIONS = [

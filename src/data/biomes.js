@@ -41,7 +41,7 @@ export const BIOMES = [
     id: "whitemarch",
     name: "Whitemarch",
     faction: "whitemarch-iron",
-    description: "The walled capital where the iron-shilling is minted — black-and-white gate-towers over a Great Wall that rings wards of market, dock, chain, court, and citadel, with the Whitewend running brown beneath the quays. Inside the wall the country gives way wholly to stone, smoke, and crowd.",
+    description: "The walled capital where the iron-shilling is minted — black-and-white gate-spires over a Great Wall that rings wards of market, dock, chain, court, and citadel, with the Whitewend running brown beneath the quays. Inside the wall the country gives way wholly to stone, smoke, and crowd.",
     ...rect(WHITEMARCH_CAPITAL.bounds),
     terrainWeights: { settlement: 0.34, street: 0.24, wall: 0.18, road: 0.10, plains: 0.08, water: 0.06 },
     poiChance: 0.02,
@@ -289,7 +289,7 @@ export const BIOMES = [
     id: "iron-plateau",
     name: "The Iron Plateau",
     faction: "iron-plateau-marches",
-    description: "A high tableland east of Whitemarch where the marcher-baronies graze their cavalry stock. Wind-scoured grass, low walls of dressed stone, lone watchtowers that flash mirrors at sunset.",
+    description: "A high tableland east of Whitemarch where the marcher-baronies graze their cavalry stock. Wind-scoured grass, low walls of dressed stone, lone watchposts that flash mirrors at sunset.",
     ...rect({ xmin: 61, xmax: 120, ymin: -40, ymax: 7 }),
     terrainWeights: { plains: 0.45, hills: 0.25, forest: 0.10, mountains: 0.08, road: 0.05, settlement: 0.04, water: 0.03 },
     poiChance: 0.04,
@@ -299,7 +299,7 @@ export const BIOMES = [
         { kind: "horse-trader",     weight: 10, posture: "friendly", desc: "a horse-trader driving a string of yearlings east" },
       ],
       hills: [
-        { kind: "watchtower-blink", weight: 6,  posture: "neutral",  desc: "a flash of mirror-light from a combat miles off — someone is being signalled about" },
+        { kind: "watchpost-blink", weight: 6,  posture: "neutral",  desc: "a flash of mirror-light from a spire miles off — someone is being signalled about" },
       ],
       road: [
         { kind: "plateau-remount-train", weight: 12, posture: "friendly", desc: "a remount train of lean steppe horses bound for the eastern marches" },

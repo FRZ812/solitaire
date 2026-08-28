@@ -5,7 +5,7 @@
 // fiction is equipment-led, though, so the UI resolves the slot from the weapon currently
 // worn by the acting character. The active form's compact mechanical snapshot travels in
 // the encounter build; this richer presentation and its optional branches do not enter the
-// strict Archetype actor schema.
+// strict Spire actor schema.
 
 import { itemTemplate } from "../../data/catalog.js";
 import { wornItemIds } from "./start-items.js";

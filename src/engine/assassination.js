@@ -211,7 +211,7 @@ export function narratorAssassinationAttemptCapabilities(state, presentCharacter
   const characters = codex?.characters || {};
   const playerRecord = { ...(characters[player?.id || "wanderer"] || {}), ...(player || {}) };
   // The narrator assassination resolver belongs to the retired freeform combat
-  // model. Archetype archetypes must never expose it, even while a just-loaded save
+  // model. Spire archetypes must never expose it, even while a just-loaded save
   // still carries legacy learned abilities in either character record.
   if (playerRecord.progressionModel === "archetype") return {};
   const playerId = player?.id || "wanderer";

@@ -69,7 +69,7 @@ export const GOODS = {
   // ---- Character-start keepsakes ----------------------------------------
   // Permanent keepsakes occupy their own authored starting slot. They remain in the pack
   // as named objects, but have no Use action and do not consume a normal equipment slot;
-  // their COMBAT bonuses are derived from the character profile at encounter admission.
+  // their combat bonuses are derived from the character profile at encounter admission.
   "threadbare-war-ribbon": {
     id: "threadbare-war-ribbon", name: "Threadbare War Ribbon", kind: "keepsake", tier: "common", value: 20,
     appearance: "A faded crimson ribbon tied around a battered iron clasp, worn thin by years of handling.",

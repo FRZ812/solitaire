@@ -1,4 +1,4 @@
-// Canonical, reusable Solitaire combat combat kits.
+// Canonical, reusable Solitaire combat kits.
 //
 // The source game attached each rules package to one named protagonist. Solitaire treats
 // those source ids as migration aliases only: the public identity is a modular archetype
@@ -35,7 +35,8 @@ const identities = [
   },
   {
     id: "artificer",
-    legacyId: "owner-of-artificer",
+    legacyId: "master-artificer",
+    aliases: ["owner-of-artificer"],
     name: "Artificer",
     descriptor: "Battlefield engineer",
     role: "Free-action controller",
@@ -177,6 +178,7 @@ const identities = [
 
 export const COMBAT_ARCHETYPE_IDENTITIES = Object.freeze(identities.map((entry) => Object.freeze({
   ...entry,
+  aliases: Object.freeze([...(entry.aliases || [])]),
   palette: Object.freeze([...entry.palette]),
   defaults: Object.freeze({
     agingMode: "mortal",
@@ -190,6 +192,7 @@ const byCanonicalId = new Map(COMBAT_ARCHETYPE_IDENTITIES.map((entry) => [entry.
 const byAnyId = new Map(COMBAT_ARCHETYPE_IDENTITIES.flatMap((entry) => [
   [entry.id, entry],
   [entry.legacyId, entry],
+  ...entry.aliases.map((alias) => [alias, entry]),
 ]));
 
 export function getCombatArchetypeIdentity(id) {

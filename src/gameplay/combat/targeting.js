@@ -1,4 +1,4 @@
-// Authoritative spatial targeting for Archetype combat.
+// Authoritative spatial targeting for archetype combat.
 //
 // Formation geometry is deliberately separate from ability semantics: the former answers
 // "which cells?", while `ability-targeting.js` answers "which side and what shape?". Both

@@ -22,7 +22,7 @@
 // is already true is that no state reaches the session except through this file, and every
 // byte of it is reproducible from the commands recorded alongside it.
 
-import { cloneJsonData } from "../kernel/json-data.js";
+import { cloneJsonData, equalJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import {
   actionsLeftFor,
@@ -38,6 +38,7 @@ import {
   COMBAT_RULESET_ID,
   sealCombatSession,
 } from "./session.js";
+
 
 export const COMBAT_COMMAND_VERSION = 1;
 
@@ -243,7 +244,7 @@ export function resolveCombatCommand(session, command) {
  * verified session is verified against the code that will actually run it — a second
  * implementation could agree with the recording and still disagree with production.
  */
-export function resolveCombatCommandOnEncounter(before, command) {
+function resolveCombatCommandOnEncounterInternal(before, command) {
   const actorId = command.actorId ?? before.playerId;
   let result;
   if (command.type === "use-skill") {
@@ -275,6 +276,10 @@ export function resolveCombatCommandOnEncounter(before, command) {
   if (after.rng.state !== before.rng.state) streams.combat = { ...after.rng };
   if (after.intentRng.state !== before.intentRng.state) streams.intent = { ...after.intentRng };
   return { ok: true, reason: null, encounter: after, streams };
+}
+
+export function resolveCombatCommandOnEncounter(before, command) {
+  return resolveCombatCommandOnEncounterInternal(before, command);
 }
 
 /**
@@ -325,8 +330,11 @@ export function dispatchCombatCommand(session, input) {
 
   const prior = session?.commands?.find?.((entry) => entry.id === command.id);
   if (prior) {
-    // Exactly-once. The command already landed; replaying it must not resolve it again, and
-    // must not report failure either — the caller's intent was satisfied.
+    if (!equalJsonData(combatCommand(prior), command)) {
+      return refused("command-id-conflict", session);
+    }
+    // Exactly-once. The exact normalized command already landed; replaying it must not
+    // resolve it again or report a second failure — the caller's recorded intent was met.
     return {
       ok: true,
       reason: null,
