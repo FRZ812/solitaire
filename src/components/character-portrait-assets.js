@@ -139,7 +139,7 @@ import brokenholdMarshalHeskPortrait from "../assets/generated/character-portrai
 import crowsmoorMusterReeveOrrenPortrait from "../assets/generated/character-portraits/codex-individual/variants/crowsmoor-baron-portrait-v3.png";
 import stonebrookRoadmasterDorrinPortrait from "../assets/generated/character-portraits/codex-individual/variants/stonebrook-hold-father-korro-portrait-v3.png";
 
-import whitemarchDeedKeeperIlyraPortrait from "../assets/generated/character-portraits/codex-individual/variants/whitemarch-treasurer-halen-portrait-v2.png";
+import whitemarchDeedKeeperIlyraPortrait from "../assets/generated/character-portraits/codex-individual/variants/whitemarch-treasurer-halen-portrait-v3.png";
 import whitemarchApothecaryTaviaVanePortrait from "../assets/generated/character-portraits/codex-individual/establishments/whitemarch-apothecary-tavia-vane-portrait-v1.png";
 import wintermereAmberCupAstridPortrait from "../assets/generated/character-portraits/codex-individual/establishments/wintermere-amber-cup-astrid-portrait-v1.png";
 import whitemarchVelvetLanternMaraPortrait from "../assets/generated/character-portraits/codex-individual/establishments/whitemarch-velvet-lantern-mara-portrait-v1.png";
@@ -596,10 +596,16 @@ export function createPortraitVariantToken(recordOrIdentityKey, variantNumber) {
   return `builtin:${identityKey}:v${number}`;
 }
 
+function defaultPortraitVariantNumber(record) {
+  const identityKey = portraitIdentityKey(record);
+  const codexId = identityKey?.startsWith("codex:") ? identityKey.slice("codex:".length) : null;
+  return codexId && Object.hasOwn(CODEX_ALTERNATIVES, codexId) ? 2 : 1;
+}
+
 export function selectedPortraitVariantNumber(record = {}, override = null) {
   const variants = portraitVariantsFor(record);
   if (!variants.length) return null;
-  if (typeof override !== "string" || !override.trim()) return 1;
+  if (typeof override !== "string" || !override.trim()) return defaultPortraitVariantNumber(record);
   const parsed = parsePortraitVariantToken(override);
   if (!parsed) return null;
   return parsed.identityKey === portraitIdentityKey(record) && variants[parsed.variantNumber - 1]
@@ -626,7 +632,7 @@ export function resolveCharacterPortrait(record = {}, fallback = null, override 
   }
 
   const variants = portraitVariantsFor(record);
-  if (variants.length) return variants[0];
+  if (variants.length) return variants[defaultPortraitVariantNumber(record) - 1] || variants[0];
 
   const rawKey = record.portraitKey || record.templateId;
   const templateId = portraitTemplateId(record);
