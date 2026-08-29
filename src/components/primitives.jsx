@@ -720,13 +720,17 @@ export function NarratorPickerPanel({
 // The narrator switch beside the composer persists the model and effort used
 // by the next turn. The panel mounts only while open so modal focus capture and
 // exact opener restoration remain reliable.
-function NarratorPicker() {
+function NarratorPicker({ loading = false }) {
   const [open, setOpen] = React.useState(false);
   const [model, setModel] = React.useState(getNarratorModel);
   const [effort, setEffort] = React.useState(() => getNarratorEffort(model));
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState("intelligence-asc");
   const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
+
+  React.useLayoutEffect(() => {
+    if (loading) setOpen(false);
+  }, [loading]);
 
   function chooseModel(id) {
     const nextEffort = normalizeNarratorEffort(id, effort);
@@ -751,8 +755,8 @@ function NarratorPicker() {
     .join(" ");
 
   return (
-    <div className={`narrator-picker${open ? " is-open" : ""}`}>
-      {open && (
+    <div className={`narrator-picker${open && !loading ? " is-open" : ""}`}>
+      {open && !loading && (
         <NarratorPickerPanel
           model={model}
           effort={effort}
@@ -769,6 +773,7 @@ function NarratorPicker() {
         type="button"
         className="narrator-picker__trigger"
         onClick={() => setOpen((value) => !value)}
+        disabled={loading}
         title={`Narrator: ${active.label}${effortLabel}`}
         aria-label={`Narrator: ${active.label}${effortLabel}. Tap to change model or thinking effort.`}
       >
@@ -797,6 +802,8 @@ export function InputBar({
   const ref = React.useRef(null);
   const rootRef = React.useRef(null);
   const contextTriggerRef = React.useRef(null);
+  const restoreComposerFocusRef = React.useRef(null);
+  const previousLoadingRef = React.useRef(loading);
   const [focused, setFocused] = React.useState(false);
   const setContextOpen = React.useCallback((nextOpen, { restoreFocus = false } = {}) => {
     if (onContextOpenChange) onContextOpenChange(nextOpen);
@@ -804,8 +811,54 @@ export function InputBar({
     if (restoreFocus) contextTriggerRef.current?.focus();
   }, [onContextOpenChange, onToggleContext]);
 
+  // Capture logical focus before the composer is hidden. Keeping the DOM
+  // mounted preserves draft, measured height, and child picker state; logical
+  // selectors let focus return to the corresponding control after narration.
+  if (loading && !previousLoadingRef.current && typeof document !== "undefined") {
+    const active = document.activeElement;
+    if (rootRef.current?.contains(active)) {
+      restoreComposerFocusRef.current = active === ref.current
+        ? "textarea"
+        : active === contextTriggerRef.current
+          ? "context"
+          : active?.closest?.(".narrator-picker__trigger")
+            ? "narrator"
+            : active?.closest?.(".story-input__action")
+              ? "action"
+              : null;
+    }
+  }
+  previousLoadingRef.current = loading;
+
+  React.useLayoutEffect(() => {
+    if (loading) {
+      if (rootRef.current?.contains(document.activeElement)) document.activeElement?.blur?.();
+      setFocused(false);
+      return undefined;
+    }
+    const logicalTarget = restoreComposerFocusRef.current;
+    if (!logicalTarget) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const target = logicalTarget === "textarea"
+        ? ref.current
+        : logicalTarget === "context"
+          ? contextTriggerRef.current
+          : rootRef.current?.querySelector(
+            logicalTarget === "narrator" ? ".narrator-picker__trigger" : ".story-input__action",
+          );
+      restoreComposerFocusRef.current = null;
+      target?.focus();
+      if (logicalTarget === "textarea") setFocused(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loading]);
+
   React.useEffect(() => {
-    if (!contextOpen || typeof document === "undefined") return undefined;
+    if (loading && contextOpen) setContextOpen(false);
+  }, [contextOpen, loading, setContextOpen]);
+
+  React.useEffect(() => {
+    if (loading || !contextOpen || typeof document === "undefined") return undefined;
     const onDocumentPointerDown = (event) => {
       if (!rootRef.current?.contains(event.target)) setContextOpen(false);
     };
@@ -822,21 +875,28 @@ export function InputBar({
       document.removeEventListener("pointerdown", onDocumentPointerDown, true);
       document.removeEventListener("keydown", onDocumentKeyDown, true);
     };
-  }, [contextOpen, setContextOpen]);
+  }, [contextOpen, loading, setContextOpen]);
   // Grow the field with its content (up to a cap, then it scrolls), so a longer
   // action is easy to write and read back before sending.
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [value]);
+  }, [loading, value]);
   return (
-    <div ref={rootRef} className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${queuedCount ? " has-queued" : ""}${loading ? " is-sending" : ""}`} style={{
+    <div
+      ref={rootRef}
+      className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${queuedCount ? " has-queued" : ""}${loading ? " is-sending" : ""}`}
+      hidden={loading}
+      inert={loading ? "" : undefined}
+      aria-hidden={loading ? true : undefined}
+      style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(7,25,40,0) 0%, rgba(7,25,40,0.48) 20%, rgba(7,25,40,0.84) 100%)",
-      display: "block",
-    }}>
+      display: loading ? "none" : "block",
+    }}
+    >
 
       <div className={`story-input__surface${contextOpen ? " is-context-open" : ""}`}>
         {(onContextOpenChange || onToggleContext) && contextPreview && (
@@ -859,7 +919,7 @@ export function InputBar({
           <ChatContextPreview preview={contextPreview} activeModel={activeModel} />
         )}
         <div className="story-input__composer">
-          <NarratorPicker />
+          <NarratorPicker loading={loading} />
           <div className="story-input__bubble">
             <textarea
               className="story-input__field"

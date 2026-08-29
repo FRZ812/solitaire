@@ -14,6 +14,9 @@ import {
   characterSetupForArchetype,
   createDefaultArchetypeDraft,
 } from "../src/gameplay/combat/starting-archetypes.js";
+import { CompactHeader } from "../src/components/CompactHeader.jsx";
+import { InputBar } from "../src/components/primitives.jsx";
+import { BeatRender } from "../src/components/beats/BeatRender.jsx";
 
 const CAMPAIGN_ID = "mounted-visual-novel";
 
@@ -94,6 +97,14 @@ const campaignMocks = vi.hoisted(() => ({
   saveCalls: 0,
   savedSnapshots: [],
   signOutCalls: 0,
+}));
+
+const narratorMocks = vi.hoisted(() => ({
+  call: vi.fn(),
+}));
+
+vi.mock("../src/engine/api-supabase.js", () => ({
+  callNarrator: (...args) => narratorMocks.call(...args),
 }));
 
 vi.mock("../src/engine/auth-supabase.js", () => ({
@@ -177,6 +188,7 @@ describe("mounted App story presentation", () => {
     campaignMocks.saveCalls = 0;
     campaignMocks.savedSnapshots = [];
     campaignMocks.signOutCalls = 0;
+    narratorMocks.call.mockReset();
     rememberLastCampaignId(CAMPAIGN_ID);
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     globalThis.ResizeObserver ||= class {
@@ -186,6 +198,149 @@ describe("mounted App story presentation", () => {
     };
     globalThis.requestAnimationFrame ||= (callback) => setTimeout(() => callback(Date.now()), 0);
     globalThis.cancelAnimationFrame ||= clearTimeout;
+  });
+
+  it("hides the composer during narration and restores its turn state afterward", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", {
+      configurable: true,
+      get: () => 240,
+    });
+    const props = {
+      value: "A retained first line.\nA retained second line.",
+      onChange: vi.fn(),
+      onSubmit: vi.fn(),
+      onRun: vi.fn(),
+      contextPreview: { total: 120, sections: [] },
+    };
+    function ComposerHost({ loading }) {
+      const [contextOpen, setContextOpen] = React.useState(true);
+      return (
+        <InputBar
+          {...props}
+          loading={loading}
+          contextOpen={contextOpen}
+          onContextOpenChange={setContextOpen}
+        />
+      );
+    }
+
+    await act(async () => root.render(<ComposerHost loading={false} />));
+    const initialField = container.querySelector(".story-input__field");
+    await act(async () => initialField.focus());
+    expect(document.activeElement).toBe(initialField);
+    expect(initialField.style.height).toBe("160px");
+    expect(container.querySelector("#chat-context-inspector")).toBeTruthy();
+
+    await act(async () => root.render(<ComposerHost loading />));
+    expect(container.querySelector(".story-input").hidden).toBe(true);
+    expect(container.querySelector(".story-input").hasAttribute("inert")).toBe(true);
+
+    await act(async () => root.render(<ComposerHost loading={false} />));
+    await flushUntil(
+      () => (
+        document.activeElement === container.querySelector(".story-input__field")
+        && container.querySelector(".story-input")?.classList.contains("is-focused")
+      ),
+      "composer focus did not return with the player turn",
+    );
+    const restoredField = container.querySelector(".story-input__field");
+    expect(restoredField.value).toContain("retained second line");
+    expect(restoredField.style.height).toBe("160px");
+    expect(container.querySelector(".story-input").classList.contains("is-focused")).toBe(true);
+    expect(container.querySelector("#chat-context-inspector")).toBeNull();
+
+    await act(async () => root.unmount());
+    if (scrollHeightDescriptor) Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    else delete HTMLTextAreaElement.prototype.scrollHeight;
+    container.remove();
+  });
+
+  it("closes the portaled narrator picker before hiding the composer", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const props = {
+      value: "",
+      onChange: vi.fn(),
+      onSubmit: vi.fn(),
+      onRun: vi.fn(),
+    };
+    try {
+      await act(async () => root.render(<InputBar {...props} loading={false} />));
+      await act(async () => container.querySelector(".narrator-picker__trigger").click());
+      await flushUntil(
+        () => document.querySelector('[aria-label="Choose narrator model"]'),
+        "narrator picker did not open",
+      );
+      expect(document.querySelector('[aria-label="Choose narrator model"]')).toBeTruthy();
+
+      await act(async () => root.render(<InputBar {...props} loading />));
+      expect(document.querySelector('[aria-label="Choose narrator model"]')).toBeNull();
+      expect(container.querySelector(".story-input").hidden).toBe(true);
+      expect(container.querySelector(".story-input").contains(document.activeElement)).toBe(false);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  it("never renders private provider reasoning from accepted or legacy beats", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(
+        <BeatRender
+          beat={{
+            id: "private-reasoning",
+            type: "narration",
+            content: "The public scene continues.",
+            thinking: "PRIVATE_CHAIN_OF_THOUGHT",
+            model: "z-ai/glm-5.3-flash",
+          }}
+        />,
+      ));
+      expect(container.textContent).toContain("The public scene continues.");
+      expect(container.textContent).not.toContain("PRIVATE_CHAIN_OF_THOUGHT");
+      expect(container.textContent).not.toContain("Behind the veil");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  it("puts contextual POI entry in the compact header action cluster", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onActivate = vi.fn();
+
+    await act(async () => root.render(
+      <CompactHeader
+        state={campaignState()}
+        onMap={vi.fn()}
+        onOpenDeck={vi.fn()}
+        poiAction={{
+          label: "Enter Grain Square trader",
+          title: "Grain Square · Trader",
+          icon: "bagOpen",
+          available: true,
+          onActivate,
+        }}
+      />,
+    ));
+
+    const poiButton = container.querySelector('.compact-header__action--poi[aria-label="Enter Grain Square trader"]');
+    expect(poiButton).toBeTruthy();
+    await act(async () => poiButton.click());
+    expect(onActivate).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
+    container.remove();
   });
 
   it("mounts the visual novel as the primary recovered campaign story surface", async () => {
@@ -204,6 +359,71 @@ describe("mounted App story presentation", () => {
     expect(container.querySelectorAll(".visual-novel-stage__page .beat")).toHaveLength(1);
     expect(container.textContent).toContain("The shadows remember you.");
     expect(container.querySelector('[data-character-id="glass-spire-key-master-iorin"] img')).toBeTruthy();
+
+    await act(async () => root.unmount());
+    container.remove();
+  }, 35_000);
+
+  it("shows safe live narrator activity without exposing private reasoning", async () => {
+    let emitProgress = null;
+    narratorMocks.call.mockImplementation((_state, _message, onProgress, { signal }) => (
+      new Promise((_resolve, reject) => {
+        emitProgress = onProgress;
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })
+    ));
+    const { Solitaire } = await import("../src/App.jsx");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<Solitaire />));
+    await flushUntil(
+      () => container.querySelector('.visual-novel-stage__next[aria-label="Continue story"]'),
+      "campaign never exposed its narrator control",
+    );
+    await act(async () => container.querySelector('.visual-novel-stage__next[aria-label="Continue story"]').click());
+    await flushUntil(() => narratorMocks.call.mock.calls.length === 1, "narrator request never started");
+
+    expect(emitProgress).toEqual(expect.any(Function));
+    await act(async () => emitProgress({ thinking: "PRIVATE_CHAIN_OF_THOUGHT" }));
+    expect(container.textContent).toContain("The narrator is reasoning through the scene");
+    expect(container.textContent).not.toContain("PRIVATE_CHAIN_OF_THOUGHT");
+
+    await act(async () => container.querySelector('[aria-label="Stop narrator"]').click());
+    await act(async () => root.unmount());
+    container.remove();
+  }, 35_000);
+
+  it("lets the player stop a stalled narrator and restores the composer", async () => {
+    let requestSignal = null;
+    narratorMocks.call.mockImplementation((_state, _message, _onProgress, { signal }) => (
+      new Promise((_resolve, reject) => {
+        requestSignal = signal;
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })
+    ));
+    const { Solitaire } = await import("../src/App.jsx");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<Solitaire />));
+    await flushUntil(
+      () => container.querySelector('.visual-novel-stage__next[aria-label="Continue story"]'),
+      "campaign never exposed its narrator control",
+    );
+    await act(async () => container.querySelector('.visual-novel-stage__next[aria-label="Continue story"]').click());
+    await flushUntil(() => container.querySelector('[aria-label="Stop narrator"]'), "stalled narrator had no stop action");
+
+    await act(async () => container.querySelector('[aria-label="Stop narrator"]').click());
+    await flushUntil(
+      () => !container.querySelector(".story-input").hidden,
+      "composer stayed hidden after narrator cancellation",
+    );
+    expect(requestSignal.aborted).toBe(true);
+    expect(container.querySelector('.visual-novel-stage__next[aria-label="Continue story"]').disabled).toBe(false);
+    expect(container.querySelector(".story-input__field").disabled).toBe(false);
 
     await act(async () => root.unmount());
     container.remove();

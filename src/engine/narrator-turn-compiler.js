@@ -1178,7 +1178,6 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
   if (violations.length) return { ok: false, violations };
   const trustedMetadata = metadata ? {
     _raw: metadata.raw,
-    _thinking: metadata.thinking,
     _userMsg: metadata.userMsg,
     _model: metadata.model,
     _reasoningDetails: metadata.reasoningDetails,

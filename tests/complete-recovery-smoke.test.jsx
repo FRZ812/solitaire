@@ -54,7 +54,7 @@ describe("complete recovery closure", () => {
     expect(container.querySelector(".story-log")).toBeNull();
     expect(container.querySelector('[data-character-id="glass-spire-key-master-iorin"] img')).toBeTruthy();
     expect(container.textContent).toContain("The shadows remember you.");
-    expect(container.textContent).toContain("composing a validated response");
+    expect(container.textContent).toContain("Connecting to the narrator");
 
     await act(async () => container.querySelector('[aria-label="Previous story beat"]').click());
     expect(container.textContent).toContain("I enter the archive.");

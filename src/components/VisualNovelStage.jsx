@@ -95,6 +95,8 @@ export function VisualNovelStage({
   loading = false,
   disabled = false,
   queuedCount = 0,
+  narratorActive = false,
+  onCancelNarrator,
 
   onContinue,
   onBeatMenu,
@@ -125,12 +127,17 @@ export function VisualNovelStage({
   const atLiveEdge = pages.length === 0 || pageIndex >= pages.length - 1;
   const character = visualNovelCharacter(state, page);
   const nextLabel = atLiveEdge ? (queuedCount > 0 ? "Answer" : "Continue") : "Next";
+  const canStopNarrator = loading && atLiveEdge && typeof onCancelNarrator === "function";
 
   function showPrevious() {
     setPageIndex((current) => Math.max(0, current - 1));
   }
 
   function showNext() {
+    if (canStopNarrator) {
+      onCancelNarrator();
+      return;
+    }
     if (!atLiveEdge) {
       setPageIndex((current) => Math.min(pages.length - 1, current + 1));
       return;
@@ -139,14 +146,7 @@ export function VisualNovelStage({
   }
 
   return (
-    <section className="visual-novel-stage" aria-label="Story scene">
-      <header className="visual-novel-stage__meta">
-        <span>{character?.name || (page?.type === "player" ? "You" : "Narrator")}</span>
-        <output className="visual-novel-stage__counter" aria-label="Story position">
-          {pages.length ? pageIndex + 1 : 0} / {pages.length}
-        </output>
-      </header>
-
+    <section className={`visual-novel-stage${loading ? " is-narrating" : ""}`} aria-label="Story scene">
       <div className="visual-novel-stage__scene">
         <CharacterStage character={character} />
         <div
@@ -154,6 +154,12 @@ export function VisualNovelStage({
           data-beat-id={page?.id || undefined}
           aria-live="polite"
         >
+          <header className="visual-novel-stage__meta">
+            <span>{character?.name || (page?.type === "player" ? "You" : "Narrator")}</span>
+            <output className="visual-novel-stage__counter" aria-label="Story position">
+              {pages.length ? pageIndex + 1 : 0} / {pages.length}
+            </output>
+          </header>
           {page ? (
             <BeatRender
               beat={page}
@@ -164,7 +170,7 @@ export function VisualNovelStage({
               <div className="beat__prose">The scene waits for your next move.</div>
             </article>
           )}
-          {loading && atLiveEdge ? <LiveNarratorStream /> : null}
+          {loading && atLiveEdge ? <LiveNarratorStream active={narratorActive} /> : null}
         </div>
       </div>
 
@@ -185,10 +191,10 @@ export function VisualNovelStage({
           type="button"
           className="visual-novel-stage__next"
           onClick={showNext}
-          disabled={disabled || (atLiveEdge && loading)}
-          aria-label={atLiveEdge ? "Continue story" : "Next story beat"}
+          disabled={disabled || (atLiveEdge && loading && !canStopNarrator)}
+          aria-label={canStopNarrator ? "Stop narrator" : (atLiveEdge ? "Continue story" : "Next story beat")}
         >
-          {loading && atLiveEdge ? "Narrator…" : nextLabel}
+          {canStopNarrator ? "Stop" : (loading && atLiveEdge ? "Narrator…" : nextLabel)}
           <span aria-hidden="true">→</span>
         </button>
       </nav>

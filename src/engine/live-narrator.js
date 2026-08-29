@@ -2,7 +2,7 @@ import { extractJSON } from "./json.js";
 import { storyFromResponse } from "./narrative-sequence.js";
 
 export function emptyLiveNarrator() {
-  return { raw: "", thinking: "", story: [] };
+  return { raw: "", thinking: false, story: [] };
 }
 
 function storyLength(story) {
@@ -33,7 +33,8 @@ export function advanceLiveNarrator(current, chunk) {
 
   const next = {
     ...current,
-    thinking: chunk.thinking ? current.thinking + chunk.thinking : current.thinking,
+    // Provider reasoning is private. Retain only an activity bit for the UI.
+    thinking: chunk.thinking ? true : current.thinking,
     raw: chunk.text ? current.raw + chunk.text : current.raw,
   };
 
