@@ -21,8 +21,8 @@ export const NARRATOR_EFFORTS = [
 
 // Prices are the exact OpenRouter floor-route input/output/cached-input rates
 // in USD per 1M tokens, refreshed 2026-08-28. The edge function sorts by price,
-// requires tool/reasoning compatibility, disables provider fallback, and caps
-// prompt/completion prices at these values. Intelligence is OpenRouter's
+// requires tool/reasoning compatibility, allows compatible endpoint fallback,
+// and caps prompt/completion prices at these values. Intelligence is OpenRouter's
 // Artificial Analysis Intelligence Index snapshot from the same refresh.
 export const NARRATOR_MODELS = [
   { id: "poolside/laguna-s-2.1:free", label: "Laguna S 2.1", note: "Poolside", provider: "OpenRouter floor", fallback: "poolside/laguna-s-2.1", price: { input: 0, output: 0, cachedInput: null }, fallbackPrice: { input: 0.09, output: 0.18, cachedInput: 0.009 }, intelligence: null },

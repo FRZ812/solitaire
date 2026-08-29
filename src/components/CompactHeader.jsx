@@ -89,7 +89,7 @@ function OverflowMarquee({ children }) {
   );
 }
 
-export function CompactHeader({ state, onMap, onOpenDeck }) {
+export function CompactHeader({ state, onMap, onOpenDeck, poiAction = null }) {
   const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
   const t = getTile(state, cur.x, cur.y);
@@ -124,7 +124,20 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
         </div>
       </div>
 
-      <nav className="compact-header__actions" aria-label="World and dossier">
+      <nav className="compact-header__actions" aria-label="World, place, and dossier actions">
+        {poiAction && (
+          <button
+            type="button"
+            className={`compact-header__action compact-header__action--poi${poiAction.available ? " is-available" : ""}`}
+            onClick={poiAction.available ? poiAction.onActivate : undefined}
+            disabled={!poiAction.available}
+            aria-label={poiAction.label}
+            title={poiAction.title || poiAction.label}
+          >
+            <Icon name={poiAction.icon || "bagOpen"} size={21} />
+            {poiAction.available && <span className="compact-header__poi-marker" aria-hidden="true" />}
+          </button>
+        )}
         <button className="compact-header__action" onClick={onMap} aria-label="World atlas"><Icon name="atlas" size={22} /></button>
         <button className="compact-header__action" onClick={onOpenDeck} aria-label="Character, company, skills, inventory, and codex">
           <Icon name="character" size={21} />

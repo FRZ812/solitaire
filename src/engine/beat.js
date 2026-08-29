@@ -57,7 +57,6 @@ export function applyBeat(state, beat, options = {}) {
   for (let index = 0; index < story.length; index++) {
     const item = story[index];
     const shared = {
-      thinking: index === 0 ? (beat._thinking || null) : null,
       model: index === 0 ? (beat._model || null) : null,
       truncated: index === story.length - 1 && !!beat._truncated,
     };

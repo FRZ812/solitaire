@@ -70,7 +70,11 @@ export function selectedProvider(model: string) {
   return {
     sort: "price",
     require_parameters: true,
-    allow_fallbacks: false,
+    // A cheapest endpoint can be unavailable or reject one tool-choice mode
+    // mid-turn. Keep the price and capability filters, but let OpenRouter try
+    // the next compatible endpoint instead of leaving the player waiting on a
+    // single provider.
+    allow_fallbacks: true,
     max_price: MODEL_PRICE_CEILINGS.get(model),
     ...(ignore ? { ignore } : {}),
   };

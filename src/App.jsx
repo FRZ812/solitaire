@@ -46,6 +46,8 @@ import {
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { applyStoryFontScale } from "./engine/preferences.js";
 import {
+  activeNarrationOwner,
+  canApplyTravelNarration,
   createTravelMarchWaiter,
   isTravelLifecycleTokenCurrent,
   settleTravelLifecycle,
@@ -203,7 +205,7 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { QuickStartLane } from "./components/creation/QuickStartLane.jsx";
 import { PracticeFight } from "./components/creation/PracticeFight.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
-import { emptyLiveNarrator } from "./engine/live-narrator.js";
+import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
 import { buildChatContextSections } from "./components/chatContextModel.js";
 import { getNarratorModel, narratorModelLabel } from "./engine/narrator-models.js";
 import { pinStoryToBottom, storyDistanceFromBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
@@ -566,7 +568,12 @@ export function Solitaire() {
   // Async travel may outlive the campaign that launched it (sign-out, reset,
   // opening another save). Every travel tail checks this generation before it
   // is allowed to land the party or surface an encounter.
-  const travelLifecycleRef = useRef({ generation: 0, controller: null });
+  const travelLifecycleRef = useRef({
+    generation: 0,
+    controller: null,
+    narrationController: null,
+    narrationState: null,
+  });
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
 
@@ -605,19 +612,27 @@ export function Solitaire() {
 
   function captureTravelLifecycle(baseState = liveStateRef.current) {
     const controller = new AbortController();
-    travelLifecycleRef.current.controller?.abort(new Error("Travel superseded."));
+    const narrationController = new AbortController();
+    abortActiveTravel("Travel superseded.");
     for (const waiter of travelMarchWaitersRef.current.values()) {
       waiter.resolve?.("cancelled");
     }
     travelMarchWaitersRef.current.clear();
-    travelLifecycleRef.current.generation += 1;
+    const generation = travelLifecycleRef.current.generation + 1;
+    const narrationState = { stoppedByPlayer: false };
+    travelLifecycleRef.current.generation = generation;
     travelLifecycleRef.current.controller = controller;
-    return {
-      generation: travelLifecycleRef.current.generation,
+    travelLifecycleRef.current.narrationController = narrationController;
+    travelLifecycleRef.current.narrationState = narrationState;
+    const lifecycle = {
+      generation,
       campaignId: currentCampaignIdRef.current,
       baseState,
       controller,
+      narrationController,
+      narrationState,
     };
+    return lifecycle;
   }
 
   function isTravelLifecycleCurrent(lifecycle) {
@@ -629,9 +644,14 @@ export function Solitaire() {
   }
 
   function abortActiveTravel(reason = "Travel cancelled.") {
-    const controller = travelLifecycleRef.current.controller;
-    travelLifecycleRef.current.controller = null;
-    if (controller && !controller.signal.aborted) controller.abort(new Error(reason));
+    const lifecycle = travelLifecycleRef.current;
+    const controllers = [lifecycle.controller, lifecycle.narrationController];
+    lifecycle.controller = null;
+    lifecycle.narrationController = null;
+    lifecycle.narrationState = null;
+    for (const controller of controllers) {
+      if (controller && !controller.signal.aborted) controller.abort(new Error(reason));
+    }
   }
 
   function cancelTravelLifecycle({ closeMap = true, preserveEncounter = false } = {}) {
@@ -684,6 +704,25 @@ export function Solitaire() {
     setLiveNarrator(emptyLiveNarrator());
     setLoading(false);
     setRetry(null);
+  }
+
+  function handleCancelActiveNarration() {
+    const owner = activeNarrationOwner(
+      activeNarratorRequestRef.current,
+      travelLifecycleRef.current,
+    );
+    if (owner === "turn") {
+      cancelNarratorRequest("Narrator request stopped by the player.");
+      setError("Narration stopped. You can continue when ready.");
+      return;
+    }
+    if (owner === "travel") {
+      const lifecycle = travelLifecycleRef.current;
+      lifecycle.narrationState.stoppedByPlayer = true;
+      lifecycle.narrationController.abort(new Error("Travel narration stopped by the player."));
+      setLiveNarrator(emptyLiveNarrator());
+      setError("Narration stopped. Travel will finish without it.");
+    }
   }
 
   useEffect(() => () => {
@@ -1580,7 +1619,10 @@ export function Solitaire() {
     setLiveNarrator(emptyLiveNarrator());
     const projection = buildNarratorProjection(st);
     const turnPolicy = narratorTurnPolicy(msg, st, policyOptions);
-    return callNarrator(st, msg, undefined, {
+    return callNarrator(st, msg, (chunk) => {
+      if (!isCurrent()) return;
+      setLiveNarrator((current) => advanceLiveNarrator(current, chunk));
+    }, {
       signal,
       projection,
       turnPolicy,
@@ -2021,8 +2063,11 @@ export function Solitaire() {
     const narration = Promise.resolve().then(() => narrate(
       stateWithPlayer,
       fullMsg,
-      () => isTravelLifecycleCurrent(lifecycle),
-      lifecycle.controller?.signal,
+      () => (
+        isTravelLifecycleCurrent(lifecycle)
+        && activeNarrationOwner(null, lifecycle) === "travel"
+      ),
+      lifecycle.narrationController?.signal,
       policyOptions,
     ));
     const hostileEncounter = travel.encounter?.posture === "hostile"
@@ -2074,7 +2119,11 @@ export function Solitaire() {
           }
         },
         onNarration: (travelBeat) => {
-          if (!isTravelLifecycleCurrent(lifecycle) || turnIndex < 0) return;
+          if (!canApplyTravelNarration(
+            lifecycle,
+            isTravelLifecycleCurrent(lifecycle),
+            turnIndex,
+          )) return;
           const presented = applyCompiledNarratorPresentation(
             liveStateRef.current,
             travelBeat,
@@ -2091,12 +2140,15 @@ export function Solitaire() {
         },
         onNarrationError: (error) => {
           if (!isTravelLifecycleCurrent(lifecycle)) return;
+          if (lifecycle.narrationState?.stoppedByPlayer) return;
           setError(error.message || String(error));
         },
       });
     } finally {
       if (travelLifecycleRef.current.controller === lifecycle.controller) {
         travelLifecycleRef.current.controller = null;
+        travelLifecycleRef.current.narrationController = null;
+        travelLifecycleRef.current.narrationState = null;
       }
       if (!isTravelLifecycleCurrent(lifecycle)) return;
       setTravelMarch((current) => (current?.id === marchId ? null : current));
@@ -4031,6 +4083,26 @@ export function Solitaire() {
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
   const buildingHere = combat ? null : buildingForTile(standingTile());
   const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
+  const buildingKindLabel = buildingHere
+    ? (buildingHere.kind === "trader" ? "trader"
+      : buildingHere.kind === "smith" ? "smith"
+        : buildingHere.kind === "tavern" ? "tavern"
+          : buildingHere.kind === "gaol" ? "gaol"
+            : buildingHere.kind === "slavemarket" ? "auction"
+              : buildingHere.kind === "stable" ? "stable"
+                : "building")
+    : null;
+  const buildingAction = buildingHere && !shopTile ? {
+    icon: "bagOpen",
+    available: buildingOpenNow,
+    onActivate: openShop,
+    label: buildingOpenNow
+      ? `Enter ${buildingHere.label} ${buildingKindLabel}`
+      : `${buildingHere.label} is closed until ${String(buildingHours(buildingHere).open).padStart(2, "0")}:00`,
+    title: buildingOpenNow
+      ? `${buildingHere.marketTierLabel ? `${buildingHere.marketTierLabel} · ` : ""}${buildingHere.label} · ${buildingKindLabel}`
+      : `${buildingHere.label} · Closed`,
+  } : null;
   // Every unfinished campaign returns to the same deterministic archetype start. Legacy
   // limbo beats may remain in an old save, but no route renders or resumes that interview.
   const inLimbo = state.created === false;
@@ -4040,6 +4112,10 @@ export function Solitaire() {
   // campaign-list, and game-over screens all return above this point. Keeping a
   // hook here would change Solitaire's hook count when a session opens (#310).
   const contextPreview = buildChatContextSections({ state, draft: input });
+  const narrationOwner = activeNarrationOwner(
+    activeNarratorRequestRef.current,
+    travelLifecycleRef.current,
+  );
   const gameSurfaceBlocked = showCreationHub || campaignInteractionBlocked;
   return (
     <div className="game-shell" style={{
@@ -4072,6 +4148,7 @@ export function Solitaire() {
               state={state}
               onMap={() => setMapOpen(true)}
               onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
+              poiAction={buildingAction}
             />
             <VitalsStrip state={state} onExtinguish={handleExtinguish} />
           </div>
@@ -4084,6 +4161,8 @@ export function Solitaire() {
             loading={loading}
             disabled={gameSurfaceBlocked}
             queuedCount={queuedPlayerCount}
+            narratorActive={Boolean(liveNarrator.thinking || liveNarrator.raw)}
+            onCancelNarrator={narrationOwner ? handleCancelActiveNarration : undefined}
 
             onContinue={handleRunNarrator}
             onBeatMenu={(beat, index) => openBeatMenu(beat, index)}
@@ -4367,33 +4446,6 @@ export function Solitaire() {
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>Leave</button>
-          </div>
-        )}
-        {state.created !== false && buildingHere && !shopTile && (
-          <div className="fade-in" style={{
-            margin: "0 12px 8px", padding: "11px 14px",
-            backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,
-            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.55)", marginBottom: "2px" }}>
-                {buildingHere.marketTierLabel ? `${buildingHere.marketTierLabel} · ` : ""}
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : buildingHere.kind === "slavemarket" ? "Auction" : buildingHere.kind === "stable" ? "Stable" : "Building"}
-              </div>
-              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
-                {buildingOpenNow
-                  ? `${buildingHere.label} — ${(buildingHere.kind === "tavern" || buildingHere.kind === "gaol") ? "read the board." : buildingHere.kind === "slavemarket" ? "look over the lots." : "step up to the counter."}`
-                  : `${buildingHere.label} is shut — it opens at ${String(buildingHours(buildingHere).open).padStart(2, "0")}:00.`}
-              </div>
-            </div>
-            <button onClick={buildingOpenNow ? openShop : undefined} disabled={!buildingOpenNow} style={{
-              padding: "9px 16px", borderRadius: 12,
-              backgroundColor: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.12)",
-              color: buildingOpenNow ? colors.ink : "rgba(215,167,111,0.45)",
-              border: "none", fontSize: "13px", fontWeight: 800,
-              cursor: buildingOpenNow ? "pointer" : "not-allowed", fontFamily: "inherit", flexShrink: 0,
-            }}>{buildingOpenNow ? "Enter" : "Closed"}</button>
           </div>
         )}
         <InputBar

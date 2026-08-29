@@ -125,7 +125,6 @@ export function applyCompiledNarratorStoryPresentation(
   const stamp = Date.now();
   const storyBeats = story.map((item, index) => {
     const shared = {
-      thinking: index === 0 ? (turn._thinking || null) : null,
       model: index === 0 ? (turn._model || null) : null,
       truncated: index === story.length - 1 && !!turn._truncated,
     };

@@ -185,7 +185,6 @@ async function callNarratorWithinDeadline(
       state,
       metadata: {
         raw: response.text,
-        thinking: response.thinking,
         userMsg: response.userMsg,
         model,
         memories: response.memories,
@@ -276,7 +275,7 @@ async function runOneAttemptWithinDeadline(
     throw new Error(`narrate ${response.status}`);
   }
 
-  const { text, thinking, memories, memoryProposals } = await accumulateAnthropicSSE(
+  const { text, memories, memoryProposals } = await accumulateAnthropicSSE(
     response.body,
     onProgress,
   );
@@ -284,7 +283,7 @@ async function runOneAttemptWithinDeadline(
   // persisting it inside every history item multiplied payload and save size.
   const userMsg = canonicalUserMsg;
   const parsed = parseStrictNarratorCandidate(text);
-  return { candidate: parsed, text, thinking, userMsg, memories, memoryProposals };
+  return { candidate: parsed, text, userMsg, memories, memoryProposals };
 }
 
 async function accumulateAnthropicSSE(body, onProgress) {
@@ -292,7 +291,7 @@ async function accumulateAnthropicSSE(body, onProgress) {
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let buffer = "";
   let text = "";
-  let thinking = "";
+
   const memories = [];
   const memoryProposals = [];
   let sawSuccessfulTerminalEvent = false;
@@ -340,8 +339,8 @@ async function accumulateAnthropicSSE(body, onProgress) {
         if (evt.delta?.type === "text_delta" && typeof evt.delta.text === "string") {
           text += evt.delta.text;
         } else if (evt.delta?.type === "thinking_delta" && typeof evt.delta.thinking === "string") {
-          thinking += evt.delta.thinking;
-          onProgress?.({ thinking: evt.delta.thinking });
+          // Never retain or expose provider reasoning text; it is activity only.
+          onProgress?.({ thinking: true });
         } else {
           throw new Error("Narrator stream contained an invalid event shape.");
         }
@@ -355,7 +354,6 @@ async function accumulateAnthropicSSE(body, onProgress) {
         if (typeof fact === "string" && fact) memories.push(fact);
       } else if (evt.type === "narrator_round_reset") {
         text = "";
-        thinking = "";
         onProgress?.({ reset: true });
       } else if (evt.type === "message_stop") {
         sawSuccessfulTerminalEvent = true;
@@ -375,7 +373,6 @@ async function accumulateAnthropicSSE(body, onProgress) {
     }
     return {
       text,
-      thinking,
       memories: mergeMemoryBank([], memories),
       memoryProposals,
     };

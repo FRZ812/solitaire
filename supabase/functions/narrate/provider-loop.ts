@@ -97,7 +97,9 @@ function readOptionalDeltaText(delta: Record<string, unknown>, key: string) {
 
 function toAnthropicEvent(type: "text_delta" | "thinking_delta", value: string) {
   if (!value) return "";
-  const delta = type === "text_delta" ? { type, text: value } : { type, thinking: value };
+  // Reasoning content is private provider data. The browser receives only an
+  // activity sentinel so it can distinguish connecting from active reasoning.
+  const delta = type === "text_delta" ? { type, text: value } : { type, thinking: "active" };
   return `data: ${JSON.stringify({ type: "content_block_delta", delta })}\n\n`;
 }
 

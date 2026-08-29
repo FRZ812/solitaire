@@ -42,6 +42,13 @@ import {
   NARRATOR_MODEL_IDS,
   buildNarratorRequest,
 } from "../supabase/functions/narrate/routing.ts";
+import { streamProviderToolLoop } from "../supabase/functions/narrate/provider-loop.ts";
+import {
+  activeNarrationOwner,
+  canApplyTravelNarration,
+  isTravelLifecycleTokenCurrent,
+  settleTravelLifecycle,
+} from "../src/engine/travel-lifecycle.js";
 
 const ROOT = process.cwd().replaceAll("\\", "/");
 
@@ -207,8 +214,107 @@ describe("recovery integrity closure", () => {
     const terraRequest = buildNarratorRequest({ model: terra.id, effort: "max", messages: [], tools: [], toolChoice: "none" });
     expect(lunaRequest.provider.max_price).toEqual({ prompt: 0.44, completion: 2.64 });
     expect(terraRequest.provider.max_price).toEqual({ prompt: 4, completion: 24 });
+    expect(lunaRequest.provider.allow_fallbacks).toBe(true);
+    expect(terraRequest.provider.allow_fallbacks).toBe(true);
     expect(lunaRequest).not.toHaveProperty("service_tier");
     expect(terraRequest).not.toHaveProperty("service_tier");
+  });
+
+  it("distinguishes ordinary and travel narration cancellation ownership", () => {
+    const turnController = new AbortController();
+    const travelController = new AbortController();
+    const travelNarrationController = new AbortController();
+    const travel = {
+      controller: travelController,
+      narrationController: travelNarrationController,
+    };
+
+    expect(activeNarrationOwner({ controller: turnController }, travel)).toBe("turn");
+    expect(activeNarrationOwner(null, travel)).toBe("travel");
+    travelNarrationController.abort(new Error("presentation stopped"));
+    expect(activeNarrationOwner(null, travel)).toBeNull();
+    expect(travelController.signal.aborted).toBe(false);
+    expect(isTravelLifecycleTokenCurrent({
+      ...travel,
+      generation: 4,
+      campaignId: "campaign-a",
+    }, 4, "campaign-a")).toBe(true);
+    travelController.abort(new Error("travel cancelled"));
+    expect(isTravelLifecycleTokenCurrent({
+      ...travel,
+      generation: 4,
+      campaignId: "campaign-a",
+    }, 4, "campaign-a")).toBe(false);
+  });
+
+  it("discards travel narration stopped after the response but before arrival", async () => {
+    const travelController = new AbortController();
+    const narrationController = new AbortController();
+    const narrationState = { stoppedByPlayer: false };
+    const lifecycle = {
+      generation: 5,
+      campaignId: "campaign-a",
+      controller: travelController,
+      narrationController,
+      narrationState,
+    };
+    let finishVisual;
+    const visual = new Promise((resolve) => { finishVisual = resolve; });
+    let mechanicsCommits = 0;
+    let presentationCommits = 0;
+    const settlement = settleTravelLifecycle({
+      visual,
+      narration: Promise.resolve({ story: [{ type: "narration", text: "Discard me." }] }),
+      onArrival: () => { mechanicsCommits += 1; },
+      onNarration: () => {
+        if (canApplyTravelNarration(lifecycle, true, 0)) presentationCommits += 1;
+      },
+    });
+
+    await Promise.resolve();
+    narrationState.stoppedByPlayer = true;
+    narrationController.abort(new Error("presentation stopped"));
+    finishVisual("finished");
+    await settlement;
+
+    expect(mechanicsCommits).toBe(1);
+    expect(presentationCommits).toBe(0);
+    expect(travelController.signal.aborted).toBe(false);
+    expect(activeNarrationOwner(null, lifecycle)).toBeNull();
+    expect(readFileSync(`${ROOT}/src/App.jsx`, "utf8")).toContain("canApplyTravelNarration(");
+  });
+
+  it("turns provider reasoning into activity without forwarding private text", async () => {
+    const encoder = new TextEncoder();
+    const upstream = [
+      { choices: [{ delta: { reasoning: "PRIVATE_CHAIN_OF_THOUGHT" }, finish_reason: null }] },
+      { choices: [{ delta: { content: "{}" }, finish_reason: null }] },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n";
+    const stream = streamProviderToolLoop({
+      requestRound: async () => ({
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(upstream));
+            controller.close();
+          },
+        }),
+        text: async () => "",
+      }),
+      request: { apiKey: "test", model: EDGE_DEFAULT_MODEL, effort: "max" },
+      messages: [],
+      tools: [],
+      maxRounds: 1,
+      resolveToolCall: () => null,
+    });
+
+    const downstream = await new Response(stream).text();
+    expect(downstream).toContain('"thinking":"active"');
+    expect(downstream).not.toContain("PRIVATE_CHAIN_OF_THOUGHT");
+    expect(readFileSync(`${ROOT}/src/engine/narrator-turn-compiler.js`, "utf8")).not.toContain("_thinking");
+    expect(readFileSync(`${ROOT}/src/engine/narrator-turn-application.js`, "utf8")).not.toContain("turn._thinking");
   });
 
   it("physically retires the prototype/reference UI and keeps all archetypes", () => {

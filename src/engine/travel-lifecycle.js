@@ -7,6 +7,22 @@ export function isTravelLifecycleTokenCurrent(lifecycle, generation, campaignId)
     && !lifecycle.controller?.signal?.aborted;
 }
 
+export function activeNarrationOwner(turnRequest, travelLifecycle) {
+  if (turnRequest?.controller && !turnRequest.controller.signal.aborted) return "turn";
+  if (travelLifecycle?.controller
+    && !travelLifecycle.controller.signal.aborted
+    && travelLifecycle.narrationController
+    && !travelLifecycle.narrationController.signal.aborted) return "travel";
+  return null;
+}
+
+export function canApplyTravelNarration(lifecycle, lifecycleIsCurrent, turnIndex) {
+  return lifecycleIsCurrent
+    && turnIndex >= 0
+    && !lifecycle?.narrationState?.stoppedByPlayer
+    && activeNarrationOwner(null, lifecycle) === "travel";
+}
+
 export function travelHaltBeat(travel, id = `travel-halt-${Date.now()}`) {
   const encounter = travel?.encounter;
   if (!encounter) return null;
