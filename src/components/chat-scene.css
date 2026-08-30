@@ -1158,6 +1158,7 @@
 }
 
 .visual-novel-character {
+  --portrait-bubble-overlap: clamp(42px, 5.5dvh, 68px);
   position: relative;
   z-index: 1;
   grid-row: 1;
@@ -1167,6 +1168,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  transform: translateY(var(--portrait-bubble-overlap));
   pointer-events: none;
 }
 
@@ -1181,8 +1183,10 @@
   object-fit: contain;
   object-position: 50% 100%;
   filter: saturate(.96) contrast(1.025) drop-shadow(0 20px 24px rgba(0, 0, 0, .54));
-  -webkit-mask-image: linear-gradient(180deg, #000 0 88%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 0 88%, transparent 100%);
+  /* The opaque story panel is the crop. A fading image edge makes the
+     character float above it instead of standing behind the interface. */
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .visual-novel-character > div {
@@ -1497,6 +1501,7 @@
     grid-template-rows: minmax(72px, 1fr) clamp(128px, 42dvh, 180px);
   }
   .visual-novel-character {
+    --portrait-bubble-overlap: clamp(18px, 5dvh, 28px);
     position: relative;
     inset: auto;
     height: auto;
