@@ -103,7 +103,9 @@ export function VisualNovelStage({
 }) {
   const pages = useMemo(() => visualNovelBeats(beats), [beats]);
   const [pageIndex, setPageIndex] = useState(() => Math.max(0, pages.length - 1));
+  const [copyOverflow, setCopyOverflow] = useState({ pageKey: null, hasMore: false });
   const previousCountRef = useRef(pages.length);
+  const copyRef = useRef(null);
   const pageIdentity = pages.map((beat, index) => beat.id || `${beat.type}:${index}`).join("|");
 
   useEffect(() => {
@@ -123,11 +125,45 @@ export function VisualNovelStage({
   }, [disabled, pageIdentity, pages.length]);
 
   const page = pages[pageIndex] || null;
+  const pageKey = page?.id || `${page?.type || "empty"}:${pageIndex}`;
+  const copyHasMore = copyOverflow.pageKey === pageKey && copyOverflow.hasMore;
   const atFirst = pageIndex <= 0;
   const atLiveEdge = pages.length === 0 || pageIndex >= pages.length - 1;
   const character = visualNovelCharacter(state, page);
+  const pageLabel = page?.type === "narration"
+    ? "Narrator"
+    : page?.type === "player"
+      ? (character?.name || "You")
+      : (character?.name || "Story");
   const nextLabel = atLiveEdge ? (queuedCount > 0 ? "Answer" : "Continue") : "Next";
   const canStopNarrator = loading && atLiveEdge && typeof onCancelNarrator === "function";
+
+  function syncCopyOverflow(element = copyRef.current) {
+    if (!element) return;
+    const hasMore = element.scrollHeight - element.clientHeight - element.scrollTop > 2;
+    setCopyOverflow((current) => (
+      current.pageKey === pageKey && current.hasMore === hasMore
+        ? current
+        : { pageKey, hasMore }
+    ));
+  }
+
+  useEffect(() => {
+    const element = copyRef.current;
+    if (!element) return;
+    element.scrollTop = 0;
+    syncCopyOverflow(element);
+  }, [page, pageKey]);
+
+  useEffect(() => {
+    const element = copyRef.current;
+    if (!element) return undefined;
+    syncCopyOverflow(element);
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(() => syncCopyOverflow(element));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [page, pageKey, loading, narratorActive]);
 
   function showPrevious() {
     setPageIndex((current) => Math.max(0, current - 1));
@@ -150,27 +186,39 @@ export function VisualNovelStage({
       <div className="visual-novel-stage__scene">
         <CharacterStage character={character} />
         <div
-          className="visual-novel-stage__page"
+          className={`visual-novel-stage__page${copyHasMore ? " has-more" : ""}`}
           data-beat-id={page?.id || undefined}
           aria-live="polite"
         >
           <header className="visual-novel-stage__meta">
-            <span>{character?.name || (page?.type === "player" ? "You" : "Narrator")}</span>
-            <output className="visual-novel-stage__counter" aria-label="Story position">
-              {pages.length ? pageIndex + 1 : 0} / {pages.length}
-            </output>
+            <span>{pageLabel}</span>
+            {pages.length > 1 ? (
+              <output className="visual-novel-stage__counter" aria-label="Story position">
+                <span>Page</span>{" "}<b>{pageIndex + 1}</b>{" "}<i>of</i>{" "}{pages.length}
+              </output>
+            ) : null}
           </header>
-          {page ? (
-            <BeatRender
-              beat={page}
-              onMenu={onBeatMenu ? () => onBeatMenu(page, beats.indexOf(page)) : undefined}
-            />
-          ) : (
-            <article className="beat beat--narration">
-              <div className="beat__prose">The scene waits for your next move.</div>
-            </article>
-          )}
-          {loading && atLiveEdge ? <LiveNarratorStream active={narratorActive} /> : null}
+          <div
+            ref={copyRef}
+            className="visual-novel-stage__copy"
+            role="region"
+            aria-label="Current story page"
+            tabIndex="0"
+            onScroll={(event) => syncCopyOverflow(event.currentTarget)}
+          >
+            {page ? (
+              <BeatRender
+                beat={page}
+                onMenu={onBeatMenu ? () => onBeatMenu(page, beats.indexOf(page)) : undefined}
+              />
+            ) : (
+              <article className="beat beat--narration">
+                <div className="beat__prose">The scene waits for your next move.</div>
+              </article>
+            )}
+            {loading && atLiveEdge ? <LiveNarratorStream active={narratorActive} /> : null}
+          </div>
+          {copyHasMore ? <div className="visual-novel-stage__more">Scroll for more <span aria-hidden="true">↓</span></div> : null}
         </div>
       </div>
 
@@ -184,18 +232,15 @@ export function VisualNovelStage({
           <span aria-hidden="true">←</span>
           Back
         </button>
-        <span aria-hidden="true" className="visual-novel-stage__progress">
-          <i style={{ "--story-progress": pages.length ? (pageIndex + 1) / pages.length : 1 }} />
-        </span>
         <button
           type="button"
-          className="visual-novel-stage__next"
+          className={`visual-novel-stage__next${canStopNarrator ? " is-stop" : ""}`}
           onClick={showNext}
           disabled={disabled || (atLiveEdge && loading && !canStopNarrator)}
           aria-label={canStopNarrator ? "Stop narrator" : (atLiveEdge ? "Continue story" : "Next story beat")}
         >
-          {canStopNarrator ? "Stop" : (loading && atLiveEdge ? "Narrator…" : nextLabel)}
-          <span aria-hidden="true">→</span>
+          {canStopNarrator ? "Stop narration" : (loading && atLiveEdge ? "Narrator…" : nextLabel)}
+          {!canStopNarrator ? <span aria-hidden="true">→</span> : null}
         </button>
       </nav>
     </section>
