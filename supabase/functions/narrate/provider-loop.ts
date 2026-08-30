@@ -131,15 +131,25 @@ async function pumpOpenRouterRound(
     if (sawTerminalMarker) {
       throw new Error("Provider stream continued after its terminal marker.");
     }
-    const lines = frame.split(/\r?\n/).filter(Boolean);
-    if (lines.length !== 1) {
-      throw new Error("Provider stream contained an invalid SSE frame.");
+    const lines = frame
+      .split(String.fromCharCode(10))
+      .map((line) => line.endsWith(String.fromCharCode(13)) ? line.slice(0, -1) : line);
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      // OpenRouter uses spec-compliant SSE comments such as
+      // `: OPENROUTER PROCESSING` while a provider is still preparing its
+      // first token. They are liveness heartbeats, not malformed payloads.
+      if (!line || line.startsWith(":")) continue;
+      if (!line.startsWith("data:")) {
+        throw new Error("Provider stream contained an invalid SSE frame.");
+      }
+      const value = line.slice(5);
+      dataLines.push(value.startsWith(" ") ? value.slice(1) : value);
     }
-    const line = lines[0];
-    if (!line.startsWith("data:")) {
-      throw new Error("Provider stream contained an invalid SSE frame.");
-    }
-    const payload = line.slice(5).trim();
+    // A comment-only event carries no model payload. Multiple data fields are
+    // one SSE event and join with newlines per the event-stream specification.
+    if (dataLines.length === 0) return;
+    const payload = dataLines.join("\n").trim();
     if (!payload) return;
     if (payload === "[DONE]") {
       sawTerminalMarker = true;

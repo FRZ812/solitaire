@@ -387,7 +387,7 @@ describe("mounted App story presentation", () => {
 
     expect(emitProgress).toEqual(expect.any(Function));
     await act(async () => emitProgress({ thinking: "PRIVATE_CHAIN_OF_THOUGHT" }));
-    expect(container.textContent).toContain("The narrator is reasoning through the scene");
+    expect(container.textContent).toContain("Narrator is composing the scene");
     expect(container.textContent).not.toContain("PRIVATE_CHAIN_OF_THOUGHT");
 
     await act(async () => container.querySelector('[aria-label="Stop narrator"]').click());

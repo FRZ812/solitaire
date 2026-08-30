@@ -54,13 +54,132 @@ describe("complete recovery closure", () => {
     expect(container.querySelector(".story-log")).toBeNull();
     expect(container.querySelector('[data-character-id="glass-spire-key-master-iorin"] img')).toBeTruthy();
     expect(container.textContent).toContain("The shadows remember you.");
-    expect(container.textContent).toContain("Connecting to the narrator");
+    expect(container.textContent).toContain("Opening narrator stream");
 
     await act(async () => container.querySelector('[aria-label="Previous story beat"]').click());
     expect(container.textContent).toContain("I enter the archive.");
     expect(container.querySelector('[data-character-id="wanderer"] img')).toBeTruthy();
     await act(async () => root.unmount());
     container.remove();
+  });
+
+  it("labels narration as narration and omits a redundant one-page count", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const state = currentCampaign();
+    await act(async () => root.render(
+      <VisualNovelStage
+        state={state}
+        beats={[{ id: "narrator-only", type: "narration", actorId: "wanderer", content: "The square opens ahead." }]}
+      />,
+    ));
+
+    expect(container.querySelector(".visual-novel-stage__meta > span").textContent).toBe("Narrator");
+    expect(container.querySelector('[aria-label="Story position"]')).toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("presents narrator cancellation as a stop action rather than forward navigation", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(
+      <VisualNovelStage
+        state={currentCampaign()}
+        beats={[{ id: "pending", type: "narration", content: "The square waits." }]}
+        loading
+        onCancelNarrator={vi.fn()}
+      />,
+    ));
+
+    const stop = container.querySelector('[aria-label="Stop narrator"]');
+    expect(stop.textContent.trim()).toBe("Stop narration");
+    expect(stop.classList.contains("is-stop")).toBe(true);
+    expect(stop.querySelector('[aria-hidden="true"]')).toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("shows and clears an explicit overflow cue for a scrollable story page", async () => {
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() { return this.classList?.contains("visual-novel-stage__copy") ? 420 : 0; },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() { return this.classList?.contains("visual-novel-stage__copy") ? 220 : 0; },
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(
+      <VisualNovelStage
+        state={currentCampaign()}
+        beats={[{ id: "overflow", type: "narration", content: "A long page." }]}
+      />,
+    ));
+
+    expect(container.textContent).toContain("Scroll for more");
+    const copy = container.querySelector(".visual-novel-stage__copy");
+    await act(async () => {
+      copy.scrollTop = 200;
+      copy.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    expect(container.textContent).not.toContain("Scroll for more");
+
+    await act(async () => root.unmount());
+    container.remove();
+    if (scrollHeightDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    else delete HTMLElement.prototype.scrollHeight;
+    if (clientHeightDescriptor) Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeightDescriptor);
+    else delete HTMLElement.prototype.clientHeight;
+  });
+
+  it("drops a stale overflow cue when a newly appended page fits without that cue", async () => {
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        if (!this.classList?.contains("visual-novel-stage__copy")) return 0;
+        return this.parentElement?.dataset.beatId === "long-page" ? 420 : 240;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        if (!this.classList?.contains("visual-novel-stage__copy")) return 0;
+        return this.parentElement?.classList.contains("has-more") ? 220 : 252;
+      },
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const longPage = { id: "long-page", type: "narration", content: "A long page." };
+    const fittingPage = { id: "fitting-page", type: "narration", content: "A fitting page." };
+    await act(async () => root.render(
+      <VisualNovelStage state={currentCampaign()} beats={[longPage]} />,
+    ));
+    expect(container.textContent).toContain("Scroll for more");
+
+    await act(async () => root.render(
+      <VisualNovelStage state={currentCampaign()} beats={[longPage, fittingPage]} />,
+    ));
+    expect(container.querySelector(".visual-novel-stage__page").dataset.beatId).toBe("fitting-page");
+    expect(container.textContent).not.toContain("Scroll for more");
+
+    await act(async () => root.unmount());
+    container.remove();
+    if (scrollHeightDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    else delete HTMLElement.prototype.scrollHeight;
+    if (clientHeightDescriptor) Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeightDescriptor);
+    else delete HTMLElement.prototype.clientHeight;
   });
 
   it("keeps a warm campaign snapshot inert until authoritative hydration finishes", async () => {
@@ -108,7 +227,7 @@ describe("complete recovery closure", () => {
       />,
     ));
     expect(container.textContent).toContain("Four.");
-    expect(container.querySelector('[aria-label="Story position"]').textContent).toContain("4 / 4");
+    expect(container.querySelector('[aria-label="Story position"]').textContent).toContain("Page 4 of 4");
     await act(async () => root.unmount());
     container.remove();
   });

@@ -284,6 +284,42 @@ describe("recovery integrity closure", () => {
     expect(readFileSync(`${ROOT}/src/App.jsx`, "utf8")).toContain("canApplyTravelNarration(");
   });
 
+  it("ignores OpenRouter SSE keepalive comments while preserving the answer stream", async () => {
+    const encoder = new TextEncoder();
+    const events = [
+      { choices: [{ delta: { content: "{}" }, finish_reason: null }] },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+    ];
+    const upstream = [
+      ": OPENROUTER PROCESSING\n\n",
+      `data: ${JSON.stringify(events[0])}\n\n`,
+      ": OPENROUTER PROCESSING\n\n",
+      `data: ${JSON.stringify(events[1])}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+    const stream = streamProviderToolLoop({
+      requestRound: async () => ({
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(upstream.slice(0, 41)));
+            controller.enqueue(encoder.encode(upstream.slice(41)));
+            controller.close();
+          },
+        }),
+        text: async () => "",
+      }),
+      request: { apiKey: "test-key", model: EDGE_DEFAULT_MODEL, effort: "max" },
+      messages: [],
+      tools: [],
+      maxRounds: 1,
+      resolveToolCall: () => null,
+    });
+
+    await expect(new Response(stream).text()).resolves.toContain('"text":"{}"');
+  });
+
   it("turns provider reasoning into activity without forwarding private text", async () => {
     const encoder = new TextEncoder();
     const upstream = [
