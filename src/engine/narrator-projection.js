@@ -6,7 +6,7 @@ import {
   narratorAssassinationCapabilities,
 } from "./assassination.js";
 
-export const NARRATOR_CONTRACT_VERSION = 2;
+export const NARRATOR_CONTRACT_VERSION = 3;
 
 export function narratorStateRevision(state) {
   const canonical = JSON.stringify({
