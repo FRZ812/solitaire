@@ -95,6 +95,28 @@ function readOptionalDeltaText(delta: Record<string, unknown>, key: string) {
   return delta[key] as string;
 }
 
+function isContentFreeUsageDelta(delta: Record<string, unknown>) {
+  if (Object.keys(delta).some((key) => key !== "role" && key !== "content")) return false;
+  if (hasOwn(delta, "role") && delta.role !== "assistant") return false;
+  return !hasOwn(delta, "content") || delta.content === "" || delta.content === null;
+}
+
+function lineEndingLengthAt(text: string, index: number) {
+  const code = text.charCodeAt(index);
+  if (code === 10) return 1;
+  return code === 13 && text.charCodeAt(index + 1) === 10 ? 2 : 0;
+}
+
+function findEventSeparator(text: string) {
+  for (let index = 0; index < text.length; index++) {
+    const firstLength = lineEndingLengthAt(text, index);
+    if (!firstLength) continue;
+    const secondLength = lineEndingLengthAt(text, index + firstLength);
+    if (secondLength) return { index, length: firstLength + secondLength };
+  }
+  return null;
+}
+
 function toAnthropicEvent(type: "text_delta" | "thinking_delta", value: string) {
   if (!value) return "";
   // Reasoning content is private provider data. The browser receives only an
@@ -124,6 +146,9 @@ async function pumpOpenRouterRound(
 
   let sawTerminalMarker = false;
   let finishReason: string | null = null;
+  let terminalNativeFinishPresent = false;
+  let terminalNativeFinishReason: string | null = null;
+  let sawUsageTail = false;
   const reasoningDetails: unknown[] = [];
   const toolCallsByIndex = new Map<number, ToolCallAcc>();
 
@@ -165,9 +190,6 @@ async function pumpOpenRouterRound(
     if (Object.prototype.hasOwnProperty.call(chunk, "error")) {
       throw new Error("Provider stream reported an error.");
     }
-    if (finishReason !== null) {
-      throw new Error("Provider stream continued after its finish reason.");
-    }
     const choices = chunk.choices;
     if (!Array.isArray(choices) || choices.length !== 1) {
       throw new Error("Provider stream must contain exactly one choice.");
@@ -192,13 +214,44 @@ async function pumpOpenRouterRound(
         && typeof choice.finish_reason !== "string") {
         throw new Error("Provider stream contained an invalid choice shape.");
       }
+      if (hasOwn(choice, "native_finish_reason")
+        && choice.native_finish_reason !== null
+        && typeof choice.native_finish_reason !== "string") {
+        throw new Error("Provider stream contained an invalid choice shape.");
+      }
+      if (finishReason !== null) {
+        if (sawUsageTail || !isPlainRecord(chunk.usage) || !isContentFreeUsageDelta(delta)) {
+          throw new Error("Provider stream continued after its finish reason.");
+        }
+        const nativeFinishPresent = hasOwn(choice, "native_finish_reason");
+        const finishMetadataMatches = choice.finish_reason === finishReason
+          && nativeFinishPresent === terminalNativeFinishPresent
+          && (!nativeFinishPresent || choice.native_finish_reason === terminalNativeFinishReason);
+        if (!finishMetadataMatches) {
+          throw new Error("Provider usage tail did not match its finish metadata.");
+        }
+        // OpenRouter appends one content-free usage event that repeats the
+        // already accepted finish reason immediately before [DONE]. It is
+        // observability-only and cannot add answer or tool data.
+        sawUsageTail = true;
+        return;
+      }
+      if (hasOwn(chunk, "usage")) {
+        throw new Error("Provider usage appeared outside its accounting tail.");
+      }
       const nextFinishReason = typeof choice.finish_reason === "string"
         ? choice.finish_reason
         : null;
-      if (nextFinishReason !== null && Object.keys(delta).length !== 0) {
-        throw new Error("Provider finish event contained a non-empty delta.");
+      // OpenAI-compatible providers may attach the final content/tool delta and
+      // finish_reason to the same chunk. Validate and consume that allowlisted
+      // delta below, then make the finish reason terminal for later frames.
+      if (nextFinishReason !== null) {
+        finishReason = nextFinishReason;
+        terminalNativeFinishPresent = hasOwn(choice, "native_finish_reason");
+        terminalNativeFinishReason = terminalNativeFinishPresent
+          ? choice.native_finish_reason as string | null
+          : null;
       }
-      if (nextFinishReason !== null) finishReason = nextFinishReason;
 
       const reasoning = readOptionalDeltaText(
         delta,
@@ -309,11 +362,20 @@ async function pumpOpenRouterRound(
       }
       buffer += decoder.decode(value, { stream: true });
       while (true) {
-        const separator = /\r?\n\r?\n/.exec(buffer);
-        if (!separator || separator.index === undefined) break;
+        const separator = findEventSeparator(buffer);
+        if (!separator) break;
         const frame = buffer.slice(0, separator.index);
-        buffer = buffer.slice(separator.index + separator[0].length);
+        buffer = buffer.slice(separator.index + separator.length);
         if (frame) consumeFrame(frame);
+      }
+      if (sawTerminalMarker) {
+        if (buffer) {
+          throw new Error("Provider stream continued after its terminal marker.");
+        }
+        // [DONE] is the protocol terminal. Do not let a provider that keeps its
+        // HTTP body open strand the narrator until the 30-minute client limit.
+        await reader.cancel("Provider terminal received.").catch(() => {});
+        break;
       }
     }
     buffer += decoder.decode();

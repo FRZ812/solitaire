@@ -63,6 +63,21 @@ describe("complete recovery closure", () => {
     container.remove();
   });
 
+  it("sinks the portrait under the story bubble instead of fading above it", () => {
+    const css = readFileSync(`${ROOT}/src/components/chat-scene.css`, "utf8");
+    const characterRule = css.match(/\.visual-novel-character\s*\{([^}]*)\}/)?.[1] || "";
+    const portraitRule = css.match(/\.visual-novel-character > img,\s*\.visual-novel-character > div\s*\{([^}]*)\}/)?.[1] || "";
+    const pageRule = css.match(/\.visual-novel-stage__page\s*\{([^}]*)\}/)?.[1] || "";
+
+    expect(characterRule).toMatch(/--portrait-bubble-overlap:\s*clamp\(/);
+    expect(characterRule).toContain("transform: translateY(var(--portrait-bubble-overlap));");
+    expect(characterRule).toMatch(/z-index:\s*1/);
+    expect(portraitRule).toMatch(/-webkit-mask-image:\s*none/);
+    expect(portraitRule).toMatch(/mask-image:\s*none/);
+    expect(pageRule).toMatch(/z-index:\s*3/);
+    expect(css).toMatch(/@media \(max-height: 500px\)[\s\S]*?\.visual-novel-character\s*\{[\s\S]*?--portrait-bubble-overlap:\s*clamp\(18px, 5dvh, 28px\)/);
+  });
+
   it("labels narration as narration and omits a redundant one-page count", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
