@@ -166,6 +166,10 @@ function isBoundedString(value, max = 5_000) {
   return isNonEmptyString(value) && value.length <= max;
 }
 
+function directlyAddressesPlayer(text) {
+  return /\b(?:you|your|yours|yourself|yourselves)\b/i.test(text);
+}
+
 function validateDiscoveryEntries(discoveries, violations) {
   if (!discoveries) return;
   const requiredStrings = {
@@ -935,11 +939,35 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     }
   }
   const story = [];
+  let informativeStoryEntries = 0;
   let assassinationDeathCues = 0;
   const deadInStory = new Set();
 
   for (let index = 0; index < (candidate?.story || []).length; index++) {
     const item = candidate.story[index];
+    if (item?.type === "narration") {
+      const path = `/story/${index}`;
+      rejectUnknownKeys(item, ["type", "text"], path, violations);
+      if (!isBoundedString(item.text, 5_000)) {
+        violations.push(violation(
+          "SCHEMA_TYPE",
+          `${path}/text`,
+          "Narration must be non-empty bounded presentation prose.",
+        ));
+        continue;
+      }
+      if (directlyAddressesPlayer(item.text)) {
+        violations.push(violation(
+          "PLAYER_SOVEREIGNTY",
+          `${path}/text`,
+          "Narration must describe the world and NPCs without addressing or writing for the player.",
+        ));
+        continue;
+      }
+      story.push({ type: "beat", text: item.text });
+      informativeStoryEntries += 1;
+      continue;
+    }
     if (item?.type === "beat") {
       const path = `/story/${index}`;
       rejectUnknownKeys(item, ["type", "cue"], path, violations);
@@ -1073,7 +1101,7 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
       violations.push(violation(
         "SCHEMA_TYPE",
         `/story/${index}/type`,
-        "Story entries must be narrative beats or character dialogue.",
+        "Story entries must be narration, closed narrative beats, or character dialogue.",
       ));
       continue;
     }
@@ -1101,6 +1129,16 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     }
     if (!validLine) continue;
     story.push({ type: "dialogue", speakerId, name: character.name, line: item.line });
+    informativeStoryEntries += 1;
+  }
+
+  if (/^\[(?:PLAYER ACTION|CHARACTER CREATION)\]/.test(metadata?.userMsg || "")
+    && informativeStoryEntries === 0) {
+    violations.push(violation(
+      "UNINFORMATIVE_STORY",
+      "/story",
+      "A substantive player contribution requires narration or dialogue; ambient cues alone are not an answer.",
+    ));
   }
 
   if (assassination?.outcome === "killed" && assassinationDeathCues !== 1) {

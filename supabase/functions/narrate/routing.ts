@@ -39,6 +39,14 @@ const MODEL_PROVIDER_IGNORES = new Map<string, string[]>([
   ["minimax/minimax-m3", ["morph"]],
 ]);
 
+const MODEL_PROVIDER_ROUTES = new Map<string, string[]>([
+  // Relace's cheaper FP4 endpoint was repeatedly observed streaming private
+  // reasoning without completing the narrator turn. Use the official model
+  // endpoint first; DeepInfra remains the parameter-complete fallback for
+  // reserved `tool_choice: none` rounds that Z.AI itself does not expose.
+  ["z-ai/glm-5.3-flash", ["z-ai", "deepinfra"]],
+]);
+
 
 const UNIVERSAL_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const MODEL_EFFORT_VALUES = new Map<string, Record<string, string>>([
@@ -67,8 +75,9 @@ export function selectedModels(model: string) {
 
 export function selectedProvider(model: string) {
   const ignore = MODEL_PROVIDER_IGNORES.get(model);
+  const route = MODEL_PROVIDER_ROUTES.get(model);
   return {
-    sort: "price",
+    ...(route ? { order: [...route], only: [...route] } : { sort: "price" }),
     require_parameters: true,
     // A cheapest endpoint can be unavailable or reject one tool-choice mode
     // mid-turn. Keep the price and capability filters, but let OpenRouter try

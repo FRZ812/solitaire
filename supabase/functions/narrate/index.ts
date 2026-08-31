@@ -120,6 +120,7 @@ function streamNarratorTurn(opts: {
   preloadedSkillIds: string[];
   signal: AbortSignal;
 }) {
+  const traceId = crypto.randomUUID();
   const knownMemoryKeys = new Set(opts.existingMemories.map(memoryFingerprint).filter(Boolean));
   const loadedSkillIds = new Set<string>(opts.preloadedSkillIds);
   const tools = [
@@ -138,6 +139,9 @@ function streamNarratorTurn(opts: {
     tools,
     maxRounds: MAX_PROVIDER_ROUNDS,
     signal: opts.signal,
+    trace(event) {
+      console.info("narrator_trace", JSON.stringify({ trace_id: traceId, ...event }));
+    },
     resolveToolCall(toolCall) {
       const instructionResult = resolveInstructionToolCall(
         toolCall,

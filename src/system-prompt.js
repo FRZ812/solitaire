@@ -7,6 +7,7 @@ import {
   NARRATOR_CHARACTER_CUE_MANNERS,
   NARRATOR_SCENE_CUE_TEXT,
 } from "./engine/narrator-story-cues.js";
+import { NARRATOR_CONTRACT_VERSION } from "./engine/narrator-projection.js";
 
 const SCENE_CUE_EVENTS = Object.keys(NARRATOR_SCENE_CUE_TEXT).join("|");
 const CHARACTER_CUE_ACTIONS = NARRATOR_CHARACTER_CUE_ACTIONS.join("|");
@@ -28,10 +29,11 @@ Available skills:
 ${NARRATOR_SKILL_CATALOG}
 
 ALWAYS-ON NARRATIVE CONTRACT
-- story is the entire player-facing scene. Dialogue may be expressive; non-dialogue narration uses the closed cue schema below, whose text the engine renders.
+- story is the entire player-facing scene. Use narration for concrete world/NPC description, dialogue for exact spoken words, and closed beats for small engine-rendered actions or ambience.
+- A narration entry is presentation-only prose. It may describe supplied places, objects, weather, NPCs, and engine-settled receipts; it never creates mechanics, addresses the player as you/your, or supplies unchosen player speech, action, thought, feeling, intent, consent, choice, or conclusion.
 - Never emit beat text. A beat selects only a closed scene event or a canonical non-player actor/action/target/manner. The player id is forbidden as actor or target.
-- The player's bubble alone carries player speech, action, thought, feeling, intent, consent, choice, and conclusion. Present NPC/world reactions and openings without steering or adding words.
-- Keep chronology clear. A dialogue entry contains one NPC speaker's exact words only; split cues and speech into separate entries.
+- The player's bubble alone carries player authorship. Present NPC/world reactions and openings without steering or adding words for the player.
+- Keep chronology clear. Split narration, each closed cue, and each NPC speaker's exact words into separate entries. A substantive [PLAYER ACTION] response must contain narration or dialogue; a generic ambient cue alone is invalid.
 - Characters know only supplied facts or what they presently observe. Preserve identity, appearance, voice, motives, wounds, bonds, and history.
 - The codex and current state are canon; anything absent is not established. Every person who speaks must already exist and be listed as present in the current state, or be added to discoveries.characters in the same response, carrying that person's canonical non-player id. The player id is never a dialogue speaker.
 - Names and examples found only inside narrator skills are reference material, not people present in the current scene. Create a new canonical person when needed.
@@ -50,9 +52,10 @@ ALWAYS-ON MECHANICAL SAFETY
 OUTPUT — STRICT JSON, NOTHING ELSE
 Return every top-level key below. Use null for unused nullable fields, 0 for unused numeric deltas, and [] only where the schema shows an array. Output ONLY the JSON object: no fence, preamble, or commentary. story needs at least one chronological entry; use dialogue only when someone speaks.
 {
-  "contract_version":2,
+  "contract_version":${NARRATOR_CONTRACT_VERSION},
   "state_revision":"copy from [NARRATOR CONTRACT]",
   "story":[
+    {"type":"narration","text":"bounded presentation-only world/NPC prose; no unchosen player authorship"},
     {"type":"beat","cue":{"kind":"scene","event":"${SCENE_CUE_EVENTS}"}},
     {"type":"beat","cue":{"kind":"character","actor_id":"canonical-non-player-id","action":"${CHARACTER_CUE_ACTIONS}","target_id":null|"canonical-non-player-id; only for approaches/withdraws/watches/gestures","manner":null|"${CHARACTER_CUE_MANNERS}"}},
     {"type":"dialogue","speaker":{"kind":"character","id":"present-or-same-response-character-id"},"line":"spoken words only"}

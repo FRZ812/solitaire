@@ -4167,27 +4167,27 @@ export function Solitaire() {
             onContinue={handleRunNarrator}
             onBeatMenu={(beat, index) => openBeatMenu(beat, index)}
           />
+          {(error || campaignError) && (
+            <div className="visual-novel-notices" role="alert" aria-live="assertive">
+              {error && (
+                <ErrorBanner>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
+                    <span style={{ minWidth: 0 }}>{error}</span>
+                    {retry && (
+                      <button onClick={handleRetry} disabled={loading} style={{
+                        flexShrink: 0, padding: "6px 14px", borderRadius: 10,
+                        backgroundColor: "rgba(215,167,111,0.18)", color: colors.parchmentLight,
+                        border: "1px solid rgba(215,167,111,0.4)", fontSize: "12px", fontWeight: 800,
+                        cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.5 : 1,
+                      }}>Retry</button>
+                    )}
+                  </div>
+                </ErrorBanner>
+              )}
+              {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
+            </div>
+          )}
         </div>
-        {(error || campaignError) && (
-          <div className="visual-novel-notices">
-            {error && (
-              <ErrorBanner>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
-                  <span style={{ minWidth: 0 }}>{error}</span>
-                  {retry && (
-                    <button onClick={handleRetry} disabled={loading} style={{
-                      flexShrink: 0, padding: "6px 14px", borderRadius: 10,
-                      backgroundColor: "rgba(215,167,111,0.18)", color: colors.parchmentLight,
-                      border: "1px solid rgba(215,167,111,0.4)", fontSize: "12px", fontWeight: 800,
-                      cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.5 : 1,
-                    }}>Retry</button>
-                  )}
-                </div>
-              </ErrorBanner>
-            )}
-            {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
-          </div>
-        )}
         {state.created !== false && pendingCombat && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",

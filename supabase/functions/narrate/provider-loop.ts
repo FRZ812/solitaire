@@ -9,6 +9,16 @@ export type ProviderToolResolution = {
   events?: string[];
 };
 
+export type ProviderTraceEvent = {
+  event: "round_start" | "provider_stream" | "round_finish" | "turn_error" | "turn_cancelled";
+  round: number;
+  model: string;
+  toolChoice?: "auto" | "none";
+  provider?: string | null;
+  finishReason?: string | null;
+  elapsedMs?: number;
+};
+
 type ProviderRoundResponse = {
   ok: boolean;
   body: ReadableStream<Uint8Array> | null;
@@ -38,6 +48,7 @@ type ProviderLoopOptions = {
   maxProviderBytes?: number;
   maxProviderRequestBytes?: number;
   signal?: AbortSignal;
+  trace?: (event: ProviderTraceEvent) => void;
   resolveToolCall: (toolCall: ProviderToolCall) => ProviderToolResolution | null;
 };
 
@@ -62,6 +73,7 @@ type RoundResult = {
   toolCalls: ProviderToolCall[];
   finishReason: string | null;
   reasoningDetails: unknown[];
+  provider: string | null;
 };
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -82,6 +94,19 @@ const PROVIDER_DELTA_KEYS = new Set([
 ]);
 const PROVIDER_TOOL_CALL_KEYS = new Set(["index", "id", "type", "function"]);
 const PROVIDER_TOOL_FUNCTION_KEYS = new Set(["name", "arguments"]);
+const TRACE_PROVIDER_NAMES = new Set([
+  "Z.AI", "DeepInfra", "OpenAI", "Azure", "Amazon Bedrock", "xAI", "Moonshot AI",
+  "Poolside", "MiniMax", "DeepSeek", "Novita", "Relace",
+]);
+const TRACE_FINISH_REASONS = new Set(["stop", "tool_calls", "length", "content_filter", "error"]);
+
+function traceProviderName(value: unknown) {
+  return typeof value === "string" && TRACE_PROVIDER_NAMES.has(value) ? value : "other";
+}
+
+function traceFinishReason(value: unknown) {
+  return typeof value === "string" && TRACE_FINISH_REASONS.has(value) ? value : "other";
+}
 
 function readOptionalDeltaText(delta: Record<string, unknown>, key: string) {
   if (!hasOwn(delta, key) || delta[key] === null) return "";
@@ -137,6 +162,7 @@ async function pumpOpenRouterRound(
   encoder: TextEncoder,
   providerBytes: ProviderByteLedger,
   lifecycle: ProviderLoopLifecycle,
+  onProviderStream?: (provider: string) => void,
 ): Promise<RoundResult> {
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const reader = body.getReader();
@@ -149,6 +175,7 @@ async function pumpOpenRouterRound(
   let terminalNativeFinishPresent = false;
   let terminalNativeFinishReason: string | null = null;
   let sawUsageTail = false;
+  let provider: string | null = null;
   const reasoningDetails: unknown[] = [];
   const toolCallsByIndex = new Map<number, ToolCallAcc>();
 
@@ -189,6 +216,10 @@ async function pumpOpenRouterRound(
     }
     if (Object.prototype.hasOwnProperty.call(chunk, "error")) {
       throw new Error("Provider stream reported an error.");
+    }
+    if (provider === null && typeof chunk.provider === "string") {
+      provider = traceProviderName(chunk.provider);
+      onProviderStream?.(provider);
     }
     const choices = chunk.choices;
     if (!Array.isArray(choices) || choices.length !== 1) {
@@ -417,6 +448,7 @@ async function pumpOpenRouterRound(
     })),
     finishReason,
     reasoningDetails,
+    provider,
   };
 }
 
@@ -444,20 +476,37 @@ export function streamProviderToolLoop(options: ProviderLoopOptions) {
     ? Math.max(1, Math.trunc(options.maxProviderRequestBytes as number))
     : 2_000_000;
   const providerBytes: ProviderByteLedger = { received: 0, limit: maxProviderBytes };
+  const emitTrace = (event: ProviderTraceEvent) => {
+    try {
+      options.trace?.(Object.freeze({ ...event }));
+    } catch {
+      // Observability can never decide whether a narrator turn succeeds.
+    }
+  };
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const messages = [...options.messages];
+      let activeRound = 0;
       try {
         for (let round = 0; round < maxRounds; round++) {
+          activeRound = round + 1;
           const finalRound = round === maxRounds - 1;
+          const toolChoice = finalRound ? "none" : "auto";
+          const roundStartedAt = Date.now();
           const roundRequest = {
             ...options.request,
             messages,
             tools: options.tools,
-            toolChoice: finalRound ? "none" : "auto",
+            toolChoice,
             signal: abortController.signal,
           } as ProviderRoundRequest;
+          emitTrace({
+            event: "round_start",
+            round: activeRound,
+            model: options.request.model,
+            toolChoice,
+          });
           const { apiKey: _apiKey, signal: _signal, ...providerBodyInput } = roundRequest;
           void _apiKey;
           void _signal;
@@ -471,13 +520,35 @@ export function streamProviderToolLoop(options: ProviderLoopOptions) {
             throw new Error("narrator provider request failed");
           }
 
-          const { text, toolCalls, finishReason, reasoningDetails } = await pumpOpenRouterRound(
+          let providerStreamReported = false;
+          const { text, toolCalls, finishReason, reasoningDetails, provider } = await pumpOpenRouterRound(
             upstream.body,
             controller,
             encoder,
             providerBytes,
             lifecycle,
+            (routedProvider) => {
+              if (providerStreamReported) return;
+              providerStreamReported = true;
+              emitTrace({
+                event: "provider_stream",
+                round: activeRound,
+                model: options.request.model,
+                toolChoice,
+                provider: routedProvider,
+                elapsedMs: Date.now() - roundStartedAt,
+              });
+            },
           );
+          emitTrace({
+            event: "round_finish",
+            round: activeRound,
+            model: options.request.model,
+            toolChoice,
+            provider,
+            finishReason: traceFinishReason(finishReason),
+            elapsedMs: Date.now() - roundStartedAt,
+          });
           if (finishReason !== "tool_calls") {
             if (finishReason !== "stop") {
               throw new Error("Provider stream ended with a non-success finish reason.");
@@ -528,6 +599,11 @@ export function streamProviderToolLoop(options: ProviderLoopOptions) {
           }
         }
       } catch (error) {
+        emitTrace({
+          event: abortController.signal.aborted ? "turn_cancelled" : "turn_error",
+          round: activeRound,
+          model: options.request.model,
+        });
         if (!downstreamCancelled) {
           controller.error(abortController.signal.aborted ? abortController.signal.reason : error);
         }
